@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+  <title>FCR-N Batterikalkulator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>FCR-N Kalkulator</h1>
+        <p class="subtitle">Inntektsestimator for batteri</p>
+      </div>
+
+      <section class="config-section">
+        <h2>Batterikonfigurasjon</h2>
+
+        <div class="input-group">
+          <label for="powerMw">Effektkapasitet (MW)</label>
+          <input type="number" id="powerMw" value="1.0" min="0.1" max="100" step="0.1">
+        </div>
+
+        <div class="input-group">
+          <label for="capacityMwh">Energikapasitet (MWh)</label>
+          <input type="number" id="capacityMwh" value="2.0" min="0.1" max="500" step="0.1">
+        </div>
+
+        <div class="input-group">
+          <label for="efficiency">Virkningsgrad: <span id="efficiencyValue">90</span>%</label>
+          <input type="range" id="efficiency" value="90" min="70" max="99">
+        </div>
+
+        <div class="input-group">
+          <label for="socMin">Minimum SOC: <span id="socMinValue">20</span>%</label>
+          <input type="range" id="socMin" value="20" min="0" max="50">
+        </div>
+
+        <div class="input-group">
+          <label for="socMax">Maksimum SOC: <span id="socMaxValue">80</span>%</label>
+          <input type="range" id="socMax" value="80" min="50" max="100">
+        </div>
+      </section>
+
+      <section class="config-section">
+        <h2>Datavalg</h2>
+
+        <div class="input-group">
+          <label for="year">År</label>
+          <select id="year"></select>
+        </div>
+      </section>
+
+      <input type="hidden" id="simHours" value="8760">
+      <input type="hidden" name="profile" value="medium">
+      <input type="hidden" id="seed" value="42">
+
+      <button id="calculateBtn" class="btn btn-primary">Beregn inntekt</button>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <div id="loadingState" class="loading-state">
+        <p>Laster prisdata...</p>
+      </div>
+
+      <div id="resultsContainer" style="display: none;">
+        <!-- Status message -->
+        <div id="statusMessage" class="status-message"></div>
+
+        <!-- Metrics -->
+        <div class="metrics-row">
+          <div class="metric-card">
+            <span class="metric-value" id="totalRevenue">-</span>
+            <span class="metric-label">Total inntekt</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value" id="availableHours">-</span>
+            <span class="metric-label">Tilgjengelige timer</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value" id="availability">-</span>
+            <span class="metric-label">Tilgjengelighet</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value" id="avgPrice">-</span>
+            <span class="metric-label">Snittpris</span>
+          </div>
+        </div>
+
+        <p id="annualizedNote" class="annualized-note" style="display: none;"></p>
+
+        <!-- Charts -->
+        <section class="chart-section">
+          <h2>Månedlig inntekt</h2>
+          <div class="chart-container">
+            <canvas id="monthlyChart"></canvas>
+          </div>
+        </section>
+
+        <section class="chart-section">
+          <h2>Prisfordeling</h2>
+          <div class="chart-container">
+            <canvas id="priceChart"></canvas>
+          </div>
+        </section>
+
+        <section id="socSection" class="chart-section" style="display: none;">
+          <h2>SOC-utvikling</h2>
+          <div class="chart-container chart-container-wide">
+            <canvas id="socChart"></canvas>
+          </div>
+        </section>
+
+        <section id="freqSection" class="chart-section" style="display: none;">
+          <h2>Frekvensfordeling</h2>
+          <div class="chart-container">
+            <canvas id="freqChart"></canvas>
+          </div>
+        </section>
+
+        <!-- Export -->
+        <section class="export-section">
+          <button id="exportBtn" class="btn btn-secondary">Eksporter timedata (CSV)</button>
+        </section>
+
+        <!-- Summary Table -->
+        <section class="summary-section">
+          <h2>Månedlig oppsummering</h2>
+          <div class="table-container">
+            <table id="summaryTable">
+              <thead>
+                <tr>
+                  <th>Måned</th>
+                  <th>Inntekt (EUR)</th>
+                  <th>Timer</th>
+                  <th>Snittpris (EUR/MW)</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../node_modules/chart.js/dist/chart.umd.js"></script>
+  <script src="../../node_modules/papaparse/papaparse.min.js"></script>
+  <script src="calculator.js"></script>
+  <script src="frequency.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
