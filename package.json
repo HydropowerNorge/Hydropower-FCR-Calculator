@@ -1,0 +1,31 @@
+{
+  "name": "fcr-calculator",
+  "version": "1.0.0",
+  "description": "FCR-N Battery Income Calculator",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron-forge start",
+    "convex:dev": "npx convex dev",
+    "convex:dev:local": "CONVEX_AGENT_MODE=anonymous npx convex dev",
+    "convex:deploy": "npx convex deploy",
+    "convex:seed": "node scripts/seed-convex.js",
+    "convex:seed:local": "CONVEX_AGENT_MODE=anonymous npx convex dev --once --run-sh \"node scripts/seed-convex.js\"",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.6.0",
+    "@electron-forge/maker-dmg": "^7.6.0",
+    "@electron-forge/maker-zip": "^7.6.0",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.6.0",
+    "@electron-forge/plugin-fuses": "^7.6.0",
+    "electron": "^32.2.0"
+  },
+  "dependencies": {
+    "chart.js": "^4.4.7",
+    "convex": "^1.31.7",
+    "dotenv": "^17.3.1",
+    "exceljs": "^4.4.0",
+    "papaparse": "^5.4.1"
+  }
+}
