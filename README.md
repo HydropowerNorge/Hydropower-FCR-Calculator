@@ -62,7 +62,7 @@ npm run convex:seed
 - Guard: workflow validates `tag === v${package.json.version}`
 - Build targets:
   - macOS (`.dmg` + `.zip`)
-  - Windows (Squirrel packages for auto-update)
+  - Windows (`x64` and `arm64` Squirrel packages for auto-update)
   - Linux (`.zip`)
 - Publishing targets:
   - S3-compatible storage (MEGA S4 bucket)
@@ -118,6 +118,7 @@ xcrun stapler validate "/path/to/Hydropower.app"
 - Requirements:
   - macOS app must be code-signed for production auto-updates.
   - macOS and Windows are supported by this updater path.
+  - Windows update feeds are architecture-specific (`win32/x64` and `win32/arm64`).
   - Linux auto-update is not provided by Electron's built-in updater flow.
 - Runtime overrides:
   - `ELECTRON_DISABLE_AUTO_UPDATE=1` to disable checks.

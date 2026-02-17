@@ -15,16 +15,21 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish on ${{ matrix.os }}
+    name: Publish on ${{ matrix.os }} (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-latest
+        include:
+          - os: ubuntu-latest
+            arch: x64
+          - os: windows-latest
+            arch: x64
+          - os: windows-latest
+            arch: arm64
+          - os: macos-latest
+            arch: arm64
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -125,7 +130,7 @@ jobs:
           attempt=1
           while [ "$attempt" -le "$max_attempts" ]; do
             echo "Publish attempt ${attempt}/${max_attempts}"
-            if npm run publish; then
+            if npm run publish -- --arch=${{ matrix.arch }}; then
               exit 0
             fi
             if [ "$attempt" -lt "$max_attempts" ]; then
