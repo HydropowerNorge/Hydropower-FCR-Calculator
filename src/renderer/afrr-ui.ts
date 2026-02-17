@@ -287,7 +287,17 @@ export function createAfrrUI(): { init: () => Promise<void> } {
       });
 
       displayResults(currentResult);
-      console.info(`[aFRR UI] Calculation completed for ${selectedYear}`);
+      console.info(
+        `[aFRR UI] === ${selectedYear} Summary ===\n` +
+        `  Data: ${afrrRows.length} aFRR rows, ${solarRows.length} solar rows, ${spotRowsForYear.length} spot rows\n` +
+        `  Bid hours: ${currentResult.bidHours} / ${currentResult.totalHours} (${((currentResult.bidHours / currentResult.totalHours) * 100).toFixed(1)}%)\n` +
+        `  Avg bid capacity: ${currentResult.avgBidCapacityMw.toFixed(2)} MW\n` +
+        `  Avg aFRR price: ${currentResult.avgAfrrPriceEurMw.toFixed(2)} EUR/MW\n` +
+        `  aFRR income: ${currentResult.totalAfrrIncomeEur.toFixed(2)} EUR\n` +
+        `  Spot income: ${currentResult.totalSpotIncomeEur.toFixed(2)} EUR\n` +
+        `  Activation cost: ${currentResult.totalActivationCostEur.toFixed(2)} EUR\n` +
+        `  Total income: ${currentResult.totalIncomeEur.toFixed(2)} EUR`,
+      );
       showStatus('aFRR-beregning fullført for hele året.', 'success');
     } catch (error) {
       console.error('aFRR calculation failed:', error);
