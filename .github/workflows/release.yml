@@ -45,6 +45,7 @@ jobs:
         run: npm ci
 
       - name: Publish artifacts to S4 and GitHub Releases
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.S4_ACCESS_KEY_ID }}
@@ -57,4 +58,21 @@ jobs:
           S4_UPDATES_PREFIX: ${{ secrets.S4_UPDATES_PREFIX }}
           S4_OMIT_ACL: ${{ secrets.S4_OMIT_ACL }}
           S4_ENABLE_WINDOWS_REMOTE_RELEASES: ${{ secrets.S4_ENABLE_WINDOWS_REMOTE_RELEASES }}
-        run: npm run publish
+        run: |
+          set -euo pipefail
+          max_attempts=3
+          attempt=1
+          while [ "$attempt" -le "$max_attempts" ]; do
+            echo "Publish attempt ${attempt}/${max_attempts}"
+            if npm run publish; then
+              exit 0
+            fi
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              echo "Publish failed. Retrying in 15 seconds..."
+              sleep 15
+            fi
+            attempt=$((attempt + 1))
+          done
+
+          echo "Publish failed after ${max_attempts} attempts."
+          exit 1
