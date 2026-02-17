@@ -14,11 +14,13 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const SAFE_CODE_PATTERN = /^[A-Z0-9_-]{2,12}$/;
 const UPDATE_MENU_ITEM_ID = 'check-for-updates';
+const DEFAULT_AUTO_UPDATE_REPO = 'HydropowerNorge/Hydropower-FCR-Calculator';
+const DEFAULT_AUTO_UPDATE_HOST = 'https://update.electronjs.org';
 
 let autoUpdatesConfigured = false;
 let autoUpdateListenersAttached = false;
 let manualUpdateCheckInProgress = false;
-let autoUpdateBaseUrl = null;
+let autoUpdateSourceReference = null;
 let autoUpdateConfigurationIssue = null;
 let lastAutoUpdateErrorMessage = null;
 
@@ -44,12 +46,12 @@ function buildAutoUpdateErrorDetail(rawMessage) {
     ? rawMessage.trim()
     : 'Unknown error';
 
-  if (/invalid response/i.test(message) && autoUpdateBaseUrl) {
-    if (/s4\.mega\.io/i.test(autoUpdateBaseUrl)) {
-      return `${message}\n\nThe configured MEGA S4 endpoint is not publicly readable by anonymous clients. Set a public updates URL with ELECTRON_AUTO_UPDATE_PUBLIC_BASE_URL (or ELECTRON_AUTO_UPDATE_BASE_URL).`;
-    }
+  if (/invalid response|404|cannot find channel/i.test(message) && autoUpdateSourceReference) {
+    return `${message}\n\nGitHub update endpoint:\n${autoUpdateSourceReference}\n\nVerify the repository is public and that release artifacts exist for this platform.`;
+  }
 
-    return `${message}\n\nVerify this updates URL is publicly readable without authentication:\n${autoUpdateBaseUrl}`;
+  if (/403|401|forbidden|unauthorized|rate limit/i.test(message)) {
+    return `${message}\n\nVerify GitHub release access is public and not blocked by API limits.`;
   }
 
   return message;
@@ -273,31 +275,18 @@ async function checkForUpdatesFromMenu() {
   }
 }
 
-function resolveStaticUpdateBaseUrl() {
-  const explicitBaseUrl = process.env.ELECTRON_AUTO_UPDATE_BASE_URL;
-  if (typeof explicitBaseUrl === 'string' && explicitBaseUrl.trim().length > 0) {
-    return explicitBaseUrl.trim().replace(/\/+$/, '');
-  }
-
-  const explicitPublicBase = process.env.ELECTRON_AUTO_UPDATE_PUBLIC_BASE_URL
-    || process.env.S4_PUBLIC_UPDATES_BASE_URL;
-  if (typeof explicitPublicBase === 'string' && explicitPublicBase.trim().length > 0) {
-    const publicBase = explicitPublicBase.trim().replace(/\/+$/, '');
-    return `${publicBase}/${process.platform}/${process.arch}`;
-  }
-
-  const endpoint = (process.env.S4_ENDPOINT || 'https://s3.eu-central-1.s4.mega.io')
+function resolveGitHubUpdateSource() {
+  const repo = (process.env.ELECTRON_AUTO_UPDATE_REPO || DEFAULT_AUTO_UPDATE_REPO).trim();
+  const host = (process.env.ELECTRON_AUTO_UPDATE_HOST || DEFAULT_AUTO_UPDATE_HOST)
+    .trim()
     .replace(/\/+$/, '');
-  const bucket = process.env.S4_BUCKET || 'app';
-  const updatesPrefix = (process.env.S4_UPDATES_PREFIX || 'updates')
-    .replace(/^\/+/, '')
-    .replace(/\/+$/, '');
-  return `${endpoint}/${bucket}/${updatesPrefix}/${process.platform}/${process.arch}`;
+
+  return { repo, host };
 }
 
 function initializeAutoUpdates() {
   autoUpdatesConfigured = false;
-  autoUpdateBaseUrl = null;
+  autoUpdateSourceReference = null;
   autoUpdateConfigurationIssue = null;
   lastAutoUpdateErrorMessage = null;
   if (!app.isPackaged) return;
@@ -305,20 +294,27 @@ function initializeAutoUpdates() {
   if (!isAutoUpdateSupportedPlatform()) return;
 
   try {
-    const baseUrl = resolveStaticUpdateBaseUrl();
-    autoUpdateBaseUrl = baseUrl;
-    if (!baseUrl.startsWith('https://')) {
-      console.warn(`Auto-update skipped: base URL must be HTTPS. Got: ${baseUrl}`);
-      autoUpdateConfigurationIssue = `Updates URL must start with HTTPS. Current value: ${baseUrl}`;
+    const source = resolveGitHubUpdateSource();
+    autoUpdateSourceReference = `${source.host}/${source.repo}/${process.platform}-${process.arch}/${app.getVersion()}`;
+
+    if (!source.repo.includes('/')) {
+      autoUpdateConfigurationIssue = `ELECTRON_AUTO_UPDATE_REPO must be in "owner/repo" format. Current value: ${source.repo}`;
       return;
     }
 
-    // Poll static S3-compatible storage for update artifacts.
+    if (!source.host.startsWith('https://')) {
+      console.warn(`Auto-update skipped: update host must be HTTPS. Got: ${source.host}`);
+      autoUpdateConfigurationIssue = `Update host must start with HTTPS. Current value: ${source.host}`;
+      return;
+    }
+
+    // Poll GitHub Releases through update.electronjs.org.
     const { updateElectronApp, UpdateSourceType } = require('update-electron-app');
     updateElectronApp({
       updateSource: {
-        type: UpdateSourceType.StaticStorage,
-        baseUrl
+        type: UpdateSourceType.ElectronPublicUpdateService,
+        repo: source.repo,
+        host: source.host
       },
       logger: console
     });

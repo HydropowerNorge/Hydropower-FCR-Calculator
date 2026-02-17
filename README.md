@@ -80,7 +80,7 @@ npm run convex:seed
 - `S4_REGION` (example: `eu-central-1`)
 - `S4_UPDATES_PREFIX` (example: `updates`)
 - `CONVEX_URL` (production Convex URL used by packaged desktop app runtime)
-- Optional: `S4_PUBLIC_UPDATES_BASE_URL` (public HTTPS base URL for updates, without platform/arch suffix).
+- Optional: `S4_PUBLIC_UPDATES_BASE_URL` (public HTTPS base URL for S4 links/metadata; in-app auto-update now uses GitHub Releases).
 - `MACOS_SIGNING_CERT_P12` (base64-encoded `.p12` containing **Developer ID Application** certificate + private key)
 - `MACOS_SIGNING_CERT_PASSWORD` (password used when exporting the `.p12`)
 - `MACOS_CODESIGN_IDENTITY` (example: `Developer ID Application: DrivstoffAppen AS (3AC7D55KP8)`)
@@ -115,18 +115,18 @@ xcrun stapler validate "/path/to/Hydropower.app"
 
 ### Auto-update behavior
 - App uses `update-electron-app` in `src/main.js` when packaged.
-- Update source: static S3-compatible storage (`UpdateSourceType.StaticStorage`).
+- Update source: GitHub public releases via `update.electronjs.org` (`UpdateSourceType.ElectronPublicUpdateService`).
 - Manual checks are available from menu bar: `Help -> Check for updates...`
 - Requirements:
+  - Repository must be public (`HydropowerNorge/Hydropower-FCR-Calculator` by default).
+  - New versions must be published as GitHub Releases with the expected Electron artifacts.
   - macOS app must be code-signed for production auto-updates.
   - macOS and Windows are supported by this updater path.
-  - Windows update feeds are architecture-specific (`win32/x64` and `win32/arm64`).
   - Linux auto-update is not provided by Electron's built-in updater flow.
-  - The updates URL must be publicly readable without authentication.
 - Runtime overrides:
   - `ELECTRON_DISABLE_AUTO_UPDATE=1` to disable checks.
-  - `ELECTRON_AUTO_UPDATE_BASE_URL=https://.../updates/<platform>/<arch>` to override feed URL.
-  - `ELECTRON_AUTO_UPDATE_PUBLIC_BASE_URL=https://.../updates` to override the public updates root.
+  - `ELECTRON_AUTO_UPDATE_REPO=owner/repo` to override repository.
+  - `ELECTRON_AUTO_UPDATE_HOST=https://update.electronjs.org` to override update service host.
 
 ## Solar Production Import
 - The seed script imports solar production into `solarProduction` as separate time series by `resolutionMinutes`.

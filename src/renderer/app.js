@@ -33,6 +33,8 @@ const elements = {
   availability: document.getElementById('availability'),
   avgPrice: document.getElementById('avgPrice'),
   annualizedNote: document.getElementById('annualizedNote'),
+  heroTitle: document.getElementById('heroTitle'),
+  heroDescription: document.getElementById('heroDescription'),
   socSection: document.getElementById('socSection'),
   freqSection: document.getElementById('freqSection'),
   summaryTable: document.getElementById('summaryTable').querySelector('tbody')
@@ -147,29 +149,66 @@ function setFcrVisualStates(state, message) {
 }
 
 function setupTabs() {
-  const tabBtns = document.querySelectorAll('.tab-btn');
-  const tabContents = document.querySelectorAll('.tab-content');
-  const tabConfigs = document.querySelectorAll('[data-tab-config]');
+  const tabBtns = Array.from(document.querySelectorAll('.tab-btn'));
+  const tabContents = Array.from(document.querySelectorAll('.tab-content'));
+  const tabConfigs = Array.from(document.querySelectorAll('[data-tab-config]'));
 
-  tabBtns.forEach(btn => {
+  function applyHeroCopy(tab) {
+    const activeBtn = tabBtns.find(btn => btn.dataset.tab === tab);
+    if (!activeBtn) return;
+
+    if (elements.heroTitle && activeBtn.dataset.heroTitle) {
+      elements.heroTitle.textContent = activeBtn.dataset.heroTitle;
+    }
+
+    if (elements.heroDescription && activeBtn.dataset.heroDescription) {
+      elements.heroDescription.textContent = activeBtn.dataset.heroDescription;
+    }
+  }
+
+  function activateTab(tab) {
+    tabBtns.forEach(btn => {
+      const isActive = btn.dataset.tab === tab;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', String(isActive));
+      btn.setAttribute('tabindex', isActive ? '0' : '-1');
+    });
+
+    tabContents.forEach(content => {
+      const isActive = content.dataset.tabPanel === tab;
+      content.classList.toggle('active', isActive);
+      content.setAttribute('aria-hidden', String(!isActive));
+    });
+
+    tabConfigs.forEach(config => {
+      config.style.display = config.dataset.tabConfig === tab ? '' : 'none';
+    });
+
+    applyHeroCopy(tab);
+  }
+
+  tabBtns.forEach((btn, index) => {
     btn.addEventListener('click', () => {
-      const tab = btn.dataset.tab;
+      activateTab(btn.dataset.tab);
+    });
 
-      // Update active button
-      tabBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-
-      // Toggle main content
-      tabContents.forEach(c => c.classList.remove('active'));
-      const targetContent = document.getElementById(tab === 'fcr' ? 'fcrContent' : 'arbitrageContent');
-      if (targetContent) targetContent.classList.add('active');
-
-      // Toggle sidebar config sections
-      tabConfigs.forEach(c => {
-        c.style.display = c.dataset.tabConfig === tab ? '' : 'none';
-      });
+    btn.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+      event.preventDefault();
+      const direction = event.key === 'ArrowRight' ? 1 : -1;
+      const nextIndex = (index + direction + tabBtns.length) % tabBtns.length;
+      const nextBtn = tabBtns[nextIndex];
+      if (!nextBtn) return;
+      nextBtn.focus();
+      activateTab(nextBtn.dataset.tab);
     });
   });
+
+  const initialTab = tabBtns.find(btn => btn.classList.contains('active'))?.dataset.tab
+    || tabBtns[0]?.dataset.tab;
+  if (initialTab) {
+    activateTab(initialTab);
+  }
 }
 
 // Initialize app

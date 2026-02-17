@@ -110,7 +110,7 @@ body {
 /* Tab Navigation */
 .tab-nav {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(94px, 1fr));
   gap: 6px;
   background: rgba(8, 16, 20, 0.75);
   border: 1px solid rgba(56, 95, 106, 0.5);
@@ -130,6 +130,9 @@ body {
   font-weight: 600;
   cursor: pointer;
   transition: color 0.18s ease, background-color 0.18s ease, transform 0.12s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tab-btn:hover {
@@ -162,6 +165,10 @@ body {
 
 .config-section:last-of-type {
   margin-bottom: 0;
+}
+
+.config-section-compact {
+  margin-bottom: 10px;
 }
 
 .config-section h2 {
@@ -247,6 +254,12 @@ body {
 #calculateBtn,
 #calculateArbitrageBtn {
   margin-top: 6px;
+}
+
+[data-tab-config='afrr'] .btn,
+[data-tab-config='nodes'] .btn,
+[data-tab-config='combined'] .btn {
+  margin-top: 4px;
 }
 
 .btn:hover {
@@ -529,6 +542,67 @@ tr:hover td {
   animation: visual-spin 0.9s linear infinite;
 }
 
+.module-panel {
+  border: 1px solid rgba(65, 108, 121, 0.54);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(24, 44, 52, 0.94) 0%, rgba(19, 36, 43, 0.98) 100%);
+  box-shadow: var(--shadow-card);
+  padding: 22px;
+}
+
+.module-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(79, 203, 115, 0.38);
+  background: rgba(79, 203, 115, 0.12);
+  color: #a5e7b5;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  padding: 3px 10px;
+  margin-bottom: 10px;
+}
+
+.module-panel h3 {
+  font-size: 1.18rem;
+  margin-bottom: 6px;
+}
+
+.module-intro {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  max-width: 720px;
+}
+
+.module-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.module-card {
+  border: 1px solid rgba(58, 100, 112, 0.55);
+  border-radius: 12px;
+  background: rgba(15, 30, 37, 0.88);
+  padding: 13px 14px;
+}
+
+.module-card h4 {
+  font-size: 0.86rem;
+  margin-bottom: 4px;
+  color: var(--text-primary);
+}
+
+.module-card p {
+  color: var(--text-secondary);
+  font-size: 0.81rem;
+  line-height: 1.45;
+}
+
 @keyframes visual-spin {
   to {
     transform: rotate(360deg);
@@ -632,6 +706,10 @@ tr:hover td {
   .chart-container-wide {
     height: 240px;
     padding: 12px;
+  }
+
+  .module-panel {
+    padding: 16px;
   }
 
   th,

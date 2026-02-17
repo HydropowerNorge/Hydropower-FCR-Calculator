@@ -22,9 +22,57 @@
         </div>
       </div>
 
-      <nav class="tab-nav">
-        <button class="tab-btn active" data-tab="fcr">FCR-N</button>
-        <button class="tab-btn" data-tab="arbitrage">Arbitrasje</button>
+      <nav class="tab-nav" role="tablist" aria-label="Analysemoduler">
+        <button
+          id="tab-fcr"
+          class="tab-btn active"
+          data-tab="fcr"
+          role="tab"
+          aria-controls="fcrContent"
+          aria-selected="true"
+          data-hero-title="FCR-N analyse"
+          data-hero-description="Bruk historiske NO1-data til å estimere batteriinntekter med tydelige KPI-er og eksportklare rapporter."
+        >FCR-N</button>
+        <button
+          id="tab-arbitrage"
+          class="tab-btn"
+          data-tab="arbitrage"
+          role="tab"
+          aria-controls="arbitrageContent"
+          aria-selected="false"
+          data-hero-title="Arbitrasjeanalyse"
+          data-hero-description="Evaluer spotprisbaserte lade- og utladningssykluser for å finne intradag-potensial."
+        >Arbitrasje</button>
+        <button
+          id="tab-afrr"
+          class="tab-btn"
+          data-tab="afrr"
+          role="tab"
+          aria-controls="afrrContent"
+          aria-selected="false"
+          data-hero-title="aFRR"
+          data-hero-description="Planlagt modul for automatisk frekvensgjenoppretting med bud- og aktiveringsanalyse."
+        >aFRR</button>
+        <button
+          id="tab-nodes"
+          class="tab-btn"
+          data-tab="nodes"
+          role="tab"
+          aria-controls="nodesContent"
+          aria-selected="false"
+          data-hero-title="Nodes"
+          data-hero-description="Planlagt nodenivå-visning for lokasjon, begrensninger og ytelsesoversikt."
+        >Nodes</button>
+        <button
+          id="tab-combined"
+          class="tab-btn"
+          data-tab="combined"
+          role="tab"
+          aria-controls="combinedContent"
+          aria-selected="false"
+          data-hero-title="Kombinert"
+          data-hero-description="Planlagt samlekjøring av markeder for helhetlig verdiestimat og sammenligning."
+        >Kombinert</button>
       </nav>
 
       <section class="config-section">
@@ -98,6 +146,30 @@
 
         <button id="calculateArbitrageBtn" class="btn btn-primary">Beregn arbitrasje</button>
       </div>
+
+      <div data-tab-config="afrr" style="display: none;">
+        <section class="config-section config-section-compact">
+          <h2>aFRR</h2>
+          <p class="info-text">Denne modulen er under utvikling. Her kommer reserveprodukt, aktiveringslogikk og resultatanalyse.</p>
+        </section>
+        <button class="btn btn-secondary" type="button" disabled>Kommer snart</button>
+      </div>
+
+      <div data-tab-config="nodes" style="display: none;">
+        <section class="config-section config-section-compact">
+          <h2>Nodes</h2>
+          <p class="info-text">Denne modulen er under utvikling. Her kommer nodevalg, nettflyt og begrensningsanalyse.</p>
+        </section>
+        <button class="btn btn-secondary" type="button" disabled>Kommer snart</button>
+      </div>
+
+      <div data-tab-config="combined" style="display: none;">
+        <section class="config-section config-section-compact">
+          <h2>Kombinert</h2>
+          <p class="info-text">Denne modulen er under utvikling. Her kommer kombinert analyse på tvers av markedene.</p>
+        </section>
+        <button class="btn btn-secondary" type="button" disabled>Kommer snart</button>
+      </div>
     </aside>
 
     <!-- Main Content -->
@@ -105,13 +177,13 @@
       <section class="hero-banner">
         <div class="hero-content">
           <p class="hero-kicker">Hydropower</p>
-          <h2>FCR-N og arbitrasjeanalyse</h2>
-          <p>Bruk historiske NO1-data til å estimere batteriinntekter med tydelige KPI-er og eksportklare rapporter.</p>
+          <h2 id="heroTitle">FCR-N analyse</h2>
+          <p id="heroDescription">Bruk historiske NO1-data til å estimere batteriinntekter med tydelige KPI-er og eksportklare rapporter.</p>
         </div>
       </section>
 
       <!-- FCR-N Tab Content -->
-      <div id="fcrContent" class="tab-content active">
+      <div id="fcrContent" class="tab-content active" data-tab-panel="fcr" role="tabpanel" aria-labelledby="tab-fcr">
       <div id="loadingState" class="loading-state">
         <p>Laster prisdata...</p>
       </div>
@@ -207,7 +279,7 @@
       </div><!-- /fcrContent -->
 
       <!-- Arbitrage Tab Content -->
-      <div id="arbitrageContent" class="tab-content">
+      <div id="arbitrageContent" class="tab-content" data-tab-panel="arbitrage" role="tabpanel" aria-labelledby="tab-arbitrage">
         <div id="arbStatusMessage" class="status-message"></div>
 
         <!-- Metrics -->
@@ -284,6 +356,72 @@
           </div>
         </section>
       </div><!-- /arbitrageContent -->
+
+      <div id="afrrContent" class="tab-content" data-tab-panel="afrr" role="tabpanel" aria-labelledby="tab-afrr">
+        <section class="module-panel">
+          <p class="module-pill">Planlagt modul</p>
+          <h3>aFRR</h3>
+          <p class="module-intro">Vi bygger en modul for å modellere bud, aktiveringer og effektiv leveranse i aFRR-markedet.</p>
+          <div class="module-grid">
+            <article class="module-card">
+              <h4>Markedsvalg</h4>
+              <p>Produkt, kapasitet og tidsoppløsning konfigureres per kjøring.</p>
+            </article>
+            <article class="module-card">
+              <h4>Aktiveringsspor</h4>
+              <p>Viser forventet aktiveringsgrad, energiutslag og tilgjengelighet.</p>
+            </article>
+            <article class="module-card">
+              <h4>Rapporter</h4>
+              <p>Samme eksportflyt som dagens moduler med tabeller og KPI-er.</p>
+            </article>
+          </div>
+        </section>
+      </div>
+
+      <div id="nodesContent" class="tab-content" data-tab-panel="nodes" role="tabpanel" aria-labelledby="tab-nodes">
+        <section class="module-panel">
+          <p class="module-pill">Planlagt modul</p>
+          <h3>Nodes</h3>
+          <p class="module-intro">Her kommer en nodebasert visning for lokasjon, kapasitet og nettbegrensninger i samme arbeidsflate.</p>
+          <div class="module-grid">
+            <article class="module-card">
+              <h4>Nodeliste</h4>
+              <p>Rask filtrering på geografi, kapasitet og tekniske begrensninger.</p>
+            </article>
+            <article class="module-card">
+              <h4>Driftsvindu</h4>
+              <p>Oversikt over når anlegget er optimalt for frekvens og spot.</p>
+            </article>
+            <article class="module-card">
+              <h4>Sammenligning</h4>
+              <p>Lik visning for flere noder så du kan prioritere investeringer.</p>
+            </article>
+          </div>
+        </section>
+      </div>
+
+      <div id="combinedContent" class="tab-content" data-tab-panel="combined" role="tabpanel" aria-labelledby="tab-combined">
+        <section class="module-panel">
+          <p class="module-pill">Planlagt modul</p>
+          <h3>Kombinert</h3>
+          <p class="module-intro">Denne fanen samler FCR-N, arbitrasje og kommende markeder i ett scenario med felles resultater.</p>
+          <div class="module-grid">
+            <article class="module-card">
+              <h4>Scenariokjøring</h4>
+              <p>Kjør markeder side om side uten å endre grunnkonfigurasjon.</p>
+            </article>
+            <article class="module-card">
+              <h4>Prioriteringsregler</h4>
+              <p>Definer hvilke markeder som får kapasitet ved konflikt.</p>
+            </article>
+            <article class="module-card">
+              <h4>Samlet verdi</h4>
+              <p>En konsolidert KPI-visning med eksport for ledelse og drift.</p>
+            </article>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
 
