@@ -15,9 +15,19 @@ function getS4Config() {
   return { endpoint, bucket, region, updatesPrefix, omitAcl };
 }
 
-function updateArtifactsBaseUrl(platform, arch) {
+function resolvePublicUpdatesBaseUrl() {
+  const explicitPublicBase = process.env.S4_PUBLIC_UPDATES_BASE_URL;
+  if (typeof explicitPublicBase === 'string' && explicitPublicBase.trim().length > 0) {
+    return explicitPublicBase.trim().replace(/\/+$/, '');
+  }
+
   const s4 = getS4Config();
-  return `${s4.endpoint}/${s4.bucket}/${s4.updatesPrefix}/${platform}/${arch}`;
+  return `${s4.endpoint}/${s4.bucket}/${s4.updatesPrefix}`;
+}
+
+function updateArtifactsBaseUrl(platform, arch) {
+  const publicBase = resolvePublicUpdatesBaseUrl();
+  return `${publicBase}/${platform}/${arch}`;
 }
 
 function resolveWindowsRemoteReleases(arch) {

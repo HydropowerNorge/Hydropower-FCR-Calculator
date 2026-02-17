@@ -79,6 +79,7 @@ npm run convex:seed
 - `S4_BUCKET` (example: `app`)
 - `S4_REGION` (example: `eu-central-1`)
 - `S4_UPDATES_PREFIX` (example: `updates`)
+- Optional: `S4_PUBLIC_UPDATES_BASE_URL` (public HTTPS base URL for updates, without platform/arch suffix).
 - `MACOS_SIGNING_CERT_P12` (base64-encoded `.p12` containing **Developer ID Application** certificate + private key)
 - `MACOS_SIGNING_CERT_PASSWORD` (password used when exporting the `.p12`)
 - `MACOS_CODESIGN_IDENTITY` (example: `Developer ID Application: DrivstoffAppen AS (3AC7D55KP8)`)
@@ -120,9 +121,11 @@ xcrun stapler validate "/path/to/Hydropower.app"
   - macOS and Windows are supported by this updater path.
   - Windows update feeds are architecture-specific (`win32/x64` and `win32/arm64`).
   - Linux auto-update is not provided by Electron's built-in updater flow.
+  - The updates URL must be publicly readable without authentication.
 - Runtime overrides:
   - `ELECTRON_DISABLE_AUTO_UPDATE=1` to disable checks.
   - `ELECTRON_AUTO_UPDATE_BASE_URL=https://.../updates/<platform>/<arch>` to override feed URL.
+  - `ELECTRON_AUTO_UPDATE_PUBLIC_BASE_URL=https://.../updates` to override the public updates root.
 
 ## Solar Production Import
 - The seed script imports solar production into `solarProduction` as separate time series by `resolutionMinutes`.

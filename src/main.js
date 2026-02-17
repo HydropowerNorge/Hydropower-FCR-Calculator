@@ -18,6 +18,9 @@ const UPDATE_MENU_ITEM_ID = 'check-for-updates';
 let autoUpdatesConfigured = false;
 let autoUpdateListenersAttached = false;
 let manualUpdateCheckInProgress = false;
+let autoUpdateBaseUrl = null;
+let autoUpdateConfigurationIssue = null;
+let lastAutoUpdateErrorMessage = null;
 
 function isAutoUpdateSupportedPlatform() {
   return process.platform === 'darwin' || process.platform === 'win32';
@@ -34,6 +37,22 @@ function showMessageBoxWithWindow(options) {
   }
 
   return dialog.showMessageBox(options);
+}
+
+function buildAutoUpdateErrorDetail(rawMessage) {
+  const message = typeof rawMessage === 'string' && rawMessage.trim().length > 0
+    ? rawMessage.trim()
+    : 'Unknown error';
+
+  if (/invalid response/i.test(message) && autoUpdateBaseUrl) {
+    if (/s4\.mega\.io/i.test(autoUpdateBaseUrl)) {
+      return `${message}\n\nThe configured MEGA S4 endpoint is not publicly readable by anonymous clients. Set a public updates URL with ELECTRON_AUTO_UPDATE_PUBLIC_BASE_URL (or ELECTRON_AUTO_UPDATE_BASE_URL).`;
+    }
+
+    return `${message}\n\nVerify this updates URL is publicly readable without authentication:\n${autoUpdateBaseUrl}`;
+  }
+
+  return message;
 }
 
 function createCheckForUpdatesMenuItem() {
@@ -165,6 +184,9 @@ function attachAutoUpdateFeedbackHandlers() {
   });
 
   autoUpdater.on('error', (error) => {
+    const rawMessage = error instanceof Error ? error.message : String(error ?? 'Unknown error');
+    lastAutoUpdateErrorMessage = rawMessage;
+
     if (!manualUpdateCheckInProgress) {
       return;
     }
@@ -174,7 +196,7 @@ function attachAutoUpdateFeedbackHandlers() {
       type: 'error',
       title: 'Update check failed',
       message: 'Could not check for updates.',
-      detail: error instanceof Error ? error.message : String(error ?? 'Unknown error')
+      detail: buildAutoUpdateErrorDetail(rawMessage)
     });
   });
 
@@ -225,10 +247,14 @@ async function checkForUpdatesFromMenu() {
   }
 
   if (!autoUpdatesConfigured) {
+    const detail = autoUpdateConfigurationIssue || (lastAutoUpdateErrorMessage
+      ? buildAutoUpdateErrorDetail(lastAutoUpdateErrorMessage)
+      : undefined);
     await showMessageBoxWithWindow({
       type: 'error',
       title: 'Update check failed',
-      message: 'Auto-update is not configured correctly for this app.'
+      message: 'Auto-update is not configured correctly for this app.',
+      ...(detail ? { detail } : {})
     });
     return;
   }
@@ -253,6 +279,13 @@ function resolveStaticUpdateBaseUrl() {
     return explicitBaseUrl.trim().replace(/\/+$/, '');
   }
 
+  const explicitPublicBase = process.env.ELECTRON_AUTO_UPDATE_PUBLIC_BASE_URL
+    || process.env.S4_PUBLIC_UPDATES_BASE_URL;
+  if (typeof explicitPublicBase === 'string' && explicitPublicBase.trim().length > 0) {
+    const publicBase = explicitPublicBase.trim().replace(/\/+$/, '');
+    return `${publicBase}/${process.platform}/${process.arch}`;
+  }
+
   const endpoint = (process.env.S4_ENDPOINT || 'https://s3.eu-central-1.s4.mega.io')
     .replace(/\/+$/, '');
   const bucket = process.env.S4_BUCKET || 'app';
@@ -264,14 +297,19 @@ function resolveStaticUpdateBaseUrl() {
 
 function initializeAutoUpdates() {
   autoUpdatesConfigured = false;
+  autoUpdateBaseUrl = null;
+  autoUpdateConfigurationIssue = null;
+  lastAutoUpdateErrorMessage = null;
   if (!app.isPackaged) return;
   if (process.env.ELECTRON_DISABLE_AUTO_UPDATE === '1') return;
   if (!isAutoUpdateSupportedPlatform()) return;
 
   try {
     const baseUrl = resolveStaticUpdateBaseUrl();
+    autoUpdateBaseUrl = baseUrl;
     if (!baseUrl.startsWith('https://')) {
       console.warn(`Auto-update skipped: base URL must be HTTPS. Got: ${baseUrl}`);
+      autoUpdateConfigurationIssue = `Updates URL must start with HTTPS. Current value: ${baseUrl}`;
       return;
     }
 
@@ -287,6 +325,8 @@ function initializeAutoUpdates() {
     attachAutoUpdateFeedbackHandlers();
     autoUpdatesConfigured = true;
   } catch (error) {
+    const rawMessage = error instanceof Error ? error.message : String(error ?? 'Unknown error');
+    autoUpdateConfigurationIssue = buildAutoUpdateErrorDetail(rawMessage);
     console.error('Failed to initialize auto-update:', error);
   }
 }
