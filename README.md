@@ -54,7 +54,19 @@ npm run convex:seed
 - `npm run convex:seed` - parse CSV and upsert into Convex
 - `npm run convex:deploy` - deploy Convex functions to prod
 - `npm start` - run Electron app
+- `npm run test` - run tests once (Vitest)
+- `npm run test:watch` - run tests in watch mode
+- `npm run test:coverage` - run tests with coverage report
+- `npm run typecheck:test` - type-check test files
 - `npm run publish` - package + publish desktop artifacts (used by CI)
+
+## Testing Baseline
+- Tests live outside app source in `tests/`.
+- Suggested locations:
+  - Main-process tests: `tests/main/`
+  - Renderer tests: `tests/renderer/`
+  - Shared test setup: `tests/setup/`
+- Vitest configuration is in `vitest.config.ts`.
 
 ## Desktop Release + Auto Update
 - Release workflow: `.github/workflows/release.yml`
