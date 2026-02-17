@@ -145,7 +145,6 @@
             </label>
           </div>
 
-          <p id="afrrDataStatus" class="info-text"></p>
         </section>
         <button id="calculateAfrrBtn" class="btn btn-primary" type="button">Beregn aFRR</button>
       </div>
@@ -299,12 +298,8 @@
 
         <div class="metrics-row">
           <div class="metric-card">
-            <span class="metric-value" id="afrrTotalRevenue">-</span>
-            <span class="metric-label">Total inntekt</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-value" id="afrrAfrrRevenue">-</span>
-            <span class="metric-label">aFRR netto</span>
+            <span class="metric-value" id="afrrRevenue">-</span>
+            <span class="metric-label">aFRR-inntekt</span>
           </div>
           <div class="metric-card">
             <span class="metric-value" id="afrrBidHours">-</span>
@@ -317,25 +312,12 @@
         </div>
 
         <section class="chart-section">
-          <h2>Månedlig totalinntekt</h2>
+          <h2>Månedlig aFRR-inntekt</h2>
           <div class="chart-container">
             <canvas id="afrrMonthlyChart"></canvas>
           </div>
         </section>
 
-        <section class="chart-section">
-          <h2>Aktiveringsfordeling</h2>
-          <div class="chart-container">
-            <canvas id="afrrActivationChart"></canvas>
-          </div>
-        </section>
-
-        <section class="chart-section">
-          <h2>Kumulativ inntekt</h2>
-          <div class="chart-container">
-            <canvas id="afrrCumulativeChart"></canvas>
-          </div>
-        </section>
 
         <section class="export-section">
           <button id="afrrExportCsvBtn" class="btn btn-secondary">Eksporter CSV</button>
@@ -348,10 +330,9 @@
               <thead>
                 <tr>
                   <th>Måned</th>
-                  <th>Total (NOK)</th>
-                  <th>aFRR netto (NOK)</th>
+                  <th>aFRR-inntekt (EUR)</th>
                   <th>Budtimer</th>
-                  <th>Snitt aFRR-pris (NOK/MW)</th>
+                  <th>Snitt aFRR-pris (EUR/MW)</th>
                 </tr>
               </thead>
               <tbody></tbody>

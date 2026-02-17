@@ -14,6 +14,7 @@ export interface AfrrMarketRow {
   timestamp: number;
   marketPriceEurMw?: number;
   contractedPriceEurMw?: number;
+  contractedQuantityMw?: number;
   activationPriceEurMwh?: number;
   marketVolumeMw?: number;
   marketActivatedVolumeMw?: number;

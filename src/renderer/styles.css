@@ -211,6 +211,11 @@ body {
   transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
+.input-group select option:disabled {
+  text-decoration: line-through;
+  color: rgba(255, 255, 255, 0.32);
+}
+
 .input-group input[type='number']:focus,
 .input-group select:focus {
   outline: none;

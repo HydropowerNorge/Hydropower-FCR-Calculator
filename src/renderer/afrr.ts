@@ -15,6 +15,7 @@ interface AfrrInputRow {
   contractedPriceEurMw?: number;
   marketVolumeMw?: number;
   marketActivatedVolumeMw?: number;
+  contractedQuantityMw?: number;
 }
 
 interface SpotInputRow {
@@ -191,7 +192,10 @@ export function calculateAfrrYearlyRevenue({
     const afrrPriceEurMw = (mktPrice !== null && mktPrice > 0) ? mktPrice
       : (ctrPrice !== null && ctrPrice > 0) ? ctrPrice : 0;
 
-    const marketVolumeMw = toFiniteNumber(afrr?.marketVolumeMw) ?? 0;
+    const mktVolume = toFiniteNumber(afrr?.marketVolumeMw);
+    const ctrVolume = toFiniteNumber(afrr?.contractedQuantityMw);
+    const marketVolumeMw = (mktVolume !== null && mktVolume > 0) ? mktVolume
+      : (ctrVolume !== null && ctrVolume > 0) ? ctrVolume : 0;
     const marketActivatedMw = toFiniteNumber(afrr?.marketActivatedVolumeMw) ?? 0;
 
     // Bid sizing
