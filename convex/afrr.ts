@@ -13,6 +13,54 @@ function normalizeString(value: string | undefined, fallback: string) {
   return trimmed.length > 0 ? trimmed : fallback;
 }
 
+function normalizeResolutionMinutes(value: number | undefined): number {
+  return Number.isFinite(value) ? Number(value) : DEFAULT_RESOLUTION_MIN;
+}
+
+function normalizeAfrrFilters(args: {
+  biddingZone?: string;
+  direction?: string;
+  reserveType?: string;
+  resolutionMin?: number;
+}) {
+  return {
+    biddingZone: normalizeString(args.biddingZone, DEFAULT_ZONE),
+    direction: normalizeString(args.direction, DEFAULT_DIRECTION),
+    reserveType: normalizeString(args.reserveType, DEFAULT_RESERVE_TYPE),
+    resolutionMin: normalizeResolutionMinutes(args.resolutionMin),
+  };
+}
+
+function mapAfrrMarketRow(row: {
+  timestamp: number;
+  biddingZone: string;
+  direction: string;
+  reserveType: string;
+  resolutionMin: number;
+  marketVolumeMw?: number | null;
+  marketPriceEurMw?: number | null;
+  marketActivatedVolumeMw?: number | null;
+  marketGotActivated?: boolean | null;
+  contractedQuantityMw?: number | null;
+  contractedPriceEurMw?: number | null;
+  activationPriceEurMwh?: number | null;
+}) {
+  return {
+    timestamp: row.timestamp,
+    biddingZone: row.biddingZone,
+    direction: row.direction,
+    reserveType: row.reserveType,
+    resolutionMin: row.resolutionMin,
+    marketVolumeMw: row.marketVolumeMw ?? null,
+    marketPriceEurMw: row.marketPriceEurMw ?? null,
+    marketActivatedVolumeMw: row.marketActivatedVolumeMw ?? null,
+    marketGotActivated: row.marketGotActivated ?? null,
+    contractedQuantityMw: row.contractedQuantityMw ?? null,
+    contractedPriceEurMw: row.contractedPriceEurMw ?? null,
+    activationPriceEurMwh: row.activationPriceEurMwh ?? null,
+  };
+}
+
 export const getAvailableYears = query({
   args: {
     biddingZone: v.optional(v.string()),
@@ -21,12 +69,7 @@ export const getAvailableYears = query({
     resolutionMin: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const biddingZone = normalizeString(args.biddingZone, DEFAULT_ZONE);
-    const direction = normalizeString(args.direction, DEFAULT_DIRECTION);
-    const reserveType = normalizeString(args.reserveType, DEFAULT_RESERVE_TYPE);
-    const resolutionMin = Number.isFinite(args.resolutionMin)
-      ? Number(args.resolutionMin)
-      : DEFAULT_RESOLUTION_MIN;
+    const { biddingZone, direction, reserveType, resolutionMin } = normalizeAfrrFilters(args);
 
     const seriesRows = await ctx.db
       .query("afrrSeries")
@@ -78,12 +121,7 @@ export const getAfrrDataPage = query({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    const biddingZone = normalizeString(args.biddingZone, DEFAULT_ZONE);
-    const direction = normalizeString(args.direction, DEFAULT_DIRECTION);
-    const reserveType = normalizeString(args.reserveType, DEFAULT_RESERVE_TYPE);
-    const resolutionMin = Number.isFinite(args.resolutionMin)
-      ? Number(args.resolutionMin)
-      : DEFAULT_RESOLUTION_MIN;
+    const { biddingZone, direction, reserveType, resolutionMin } = normalizeAfrrFilters(args);
 
     const page = await ctx.db
       .query("afrrMarket")
@@ -99,20 +137,7 @@ export const getAfrrDataPage = query({
 
     return {
       ...page,
-      page: page.page.map((row) => ({
-        timestamp: row.timestamp,
-        biddingZone: row.biddingZone,
-        direction: row.direction,
-        reserveType: row.reserveType,
-        resolutionMin: row.resolutionMin,
-        marketVolumeMw: row.marketVolumeMw ?? null,
-        marketPriceEurMw: row.marketPriceEurMw ?? null,
-        marketActivatedVolumeMw: row.marketActivatedVolumeMw ?? null,
-        marketGotActivated: row.marketGotActivated ?? null,
-        contractedQuantityMw: row.contractedQuantityMw ?? null,
-        contractedPriceEurMw: row.contractedPriceEurMw ?? null,
-        activationPriceEurMwh: row.activationPriceEurMwh ?? null,
-      })),
+      page: page.page.map((row) => mapAfrrMarketRow(row)),
     };
   },
 });

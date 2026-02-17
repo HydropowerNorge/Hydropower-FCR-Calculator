@@ -56,6 +56,13 @@ export interface NodeTenderFilters {
   market?: string;
 }
 
+export interface MonthlySummaryRow {
+  month: string;
+  revenue: number;
+  hours: number;
+  avgPrice: number;
+}
+
 export interface ExcelExportData {
   hourlyData: {
     timestamp: number | string | Date;
@@ -65,12 +72,7 @@ export interface ExcelExportData {
     socStart: number | null;
     socEnd: number | null;
   }[];
-  monthly: {
-    month: string;
-    revenue: number;
-    hours: number;
-    avgPrice: number;
-  }[];
+  monthly: MonthlySummaryRow[];
   config: {
     powerMw: number;
     capacityMwh: number;
@@ -90,12 +92,7 @@ export interface PdfExportData {
     soc: string | null;
     freq: string | null;
   };
-  monthly: {
-    month: string;
-    revenue: number;
-    hours: number;
-    avgPrice: number;
-  }[];
+  monthly: MonthlySummaryRow[];
   config: {
     powerMw: number;
     capacityMwh: number;

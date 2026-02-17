@@ -44,6 +44,9 @@ export interface RevenueResult {
   freqSummary?: FrequencySummary;
 }
 
+const SECONDS_PER_HOUR = 3600;
+const MILLISECONDS_PER_HOUR = 60 * 60 * 1000;
+
 export class BatteryConfig {
   powerMw: number;
   capacityMwh: number;
@@ -58,6 +61,18 @@ export class BatteryConfig {
     this.socMin = socMin;
     this.socMax = socMax;
   }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function applyRoundTripEfficiency(deltaEnergy: number, sqrtEfficiency: number): number {
+  if (deltaEnergy > 0) {
+    return deltaEnergy / sqrtEfficiency;
+  }
+
+  return deltaEnergy * sqrtEfficiency;
 }
 
 // Calculate FCR-N power activation based on frequency
@@ -92,7 +107,7 @@ export function simulateSocHourly(freqData: FrequencyData, config: BatteryConfig
 
   const frequencies = freqData.frequencies;
   const nSamples = frequencies.length;
-  const nHours = Math.floor(nSamples / 3600);
+  const nHours = Math.floor(nSamples / SECONDS_PER_HOUR);
   const startTimeMs = freqData.startTime.getTime();
 
   const results: SocHourlyResult[] = [];
@@ -109,12 +124,12 @@ export function simulateSocHourly(freqData: FrequencyData, config: BatteryConfig
 
   for (let h = 0; h < nHours; h++) {
     const hourStartEnergy = currentEnergy;
-    const hourTimestamp = new Date(startTimeMs + h * 3600000);
+    const hourTimestamp = new Date(startTimeMs + h * MILLISECONDS_PER_HOUR);
     let unavailableSeconds = 0;
 
     // Process 3600 samples for this hour
-    const hourStart = h * 3600;
-    const hourEnd = hourStart + 3600;
+    const hourStart = h * SECONDS_PER_HOUR;
+    const hourEnd = hourStart + SECONDS_PER_HOUR;
     for (let i = hourStart; i < hourEnd; i++) {
       const freq = frequencies[i];
       const soc = currentEnergy / config.capacityMwh;
@@ -165,21 +180,14 @@ export function simulateSocHourly(freqData: FrequencyData, config: BatteryConfig
       const totalPower = fcrPower + nemPower;
 
       // Energy change per second
-      let deltaEnergy = totalPower / 3600;
-
-      // Apply efficiency
-      if (deltaEnergy > 0) {
-        deltaEnergy /= sqrtEfficiency;
-      } else {
-        deltaEnergy *= sqrtEfficiency;
-      }
+      const deltaEnergy = applyRoundTripEfficiency(totalPower / SECONDS_PER_HOUR, sqrtEfficiency);
 
       let newEnergy = currentEnergy - deltaEnergy;
 
       // Check hard SOC limits
       if (newEnergy < minEnergy || newEnergy > maxEnergy) {
         unavailableSeconds++;
-        newEnergy = Math.max(minEnergy, Math.min(maxEnergy, newEnergy));
+        newEnergy = clamp(newEnergy, minEnergy, maxEnergy);
       }
 
       currentEnergy = newEnergy;
@@ -221,7 +229,7 @@ export function calculateRevenue(
     const hourKey = new Date(priceRow.timestamp).setMinutes(0, 0, 0);
     const socRow = socByHour.get(hourKey);
 
-    const available = socRow ? socRow.available : true;
+    const available = socRow?.available ?? true;
     const revenue = available ? config.powerMw * priceRow.price : 0;
 
     totalRevenue += revenue;

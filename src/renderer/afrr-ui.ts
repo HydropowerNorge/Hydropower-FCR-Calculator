@@ -29,7 +29,20 @@ interface AfrrElements {
   exportCsvBtn: HTMLButtonElement | null;
 }
 
-export function createAfrrUI() {
+function normalizeYearList(values: unknown): number[] {
+  return (Array.isArray(values) ? values : [])
+    .map((year) => Number(year))
+    .filter((year) => Number.isInteger(year))
+    .sort((a, b) => a - b);
+}
+
+function readPowerMwInputValue(): number {
+  const powerInput = document.getElementById('powerMw') as HTMLInputElement | null;
+  const valueFromAttribute = powerInput?.getAttribute('value');
+  return Number(valueFromAttribute || powerInput?.value || 0);
+}
+
+export function createAfrrUI(): { init: () => Promise<void> } {
   const charts: {
     monthly: Chart | null;
     activation: Chart | null;
@@ -72,7 +85,7 @@ export function createAfrrUI() {
     return stateEl;
   }
 
-  function setContainerState(container: HTMLElement | null, state: string, message: string) {
+  function setContainerState(container: HTMLElement | null, state: string, message: string): void {
     if (!container) return;
     container.dataset.state = state || 'ready';
     const stateEl = ensureVisualState(container);
@@ -81,7 +94,7 @@ export function createAfrrUI() {
     }
   }
 
-  function setChartState(chartId: string, state: string, message: string) {
+  function setChartState(chartId: string, state: string, message: string): void {
     const canvas = document.getElementById(chartId) as HTMLCanvasElement | null;
     if (!canvas) return;
     const container = canvas.closest<HTMLElement>('.chart-container');
@@ -90,7 +103,7 @@ export function createAfrrUI() {
     canvas.style.opacity = state === 'ready' ? '1' : '0.18';
   }
 
-  function setTableState(state: string, message: string) {
+  function setTableState(state: string, message: string): void {
     const table = document.getElementById('afrrSummaryTable');
     if (!table) return;
     const container = table.closest<HTMLElement>('.table-container');
@@ -99,14 +112,14 @@ export function createAfrrUI() {
     table.style.opacity = state === 'ready' ? '1' : '0.35';
   }
 
-  function setAllVisualStates(state: string, message: string) {
+  function setAllVisualStates(state: string, message: string): void {
     setChartState('afrrMonthlyChart', state, message);
     setChartState('afrrActivationChart', state, message);
     setChartState('afrrCumulativeChart', state, message);
     setTableState(state, message);
   }
 
-  function showStatus(message: string, type = 'info') {
+  function showStatus(message: string, type = 'info'): void {
     if (!el.statusMessage) return;
     el.statusMessage.textContent = message;
     el.statusMessage.className = `status-message ${type}`;
@@ -121,7 +134,7 @@ export function createAfrrUI() {
     return result;
   }
 
-  function populateSelect(selectEl: HTMLSelectElement | null, values: number[]) {
+  function populateSelect(selectEl: HTMLSelectElement | null, values: number[]): void {
     if (!selectEl) return;
     selectEl.innerHTML = '';
     values.forEach((value) => {
@@ -132,7 +145,7 @@ export function createAfrrUI() {
     });
   }
 
-  async function loadStaticInputs() {
+  async function loadStaticInputs(): Promise<void> {
     console.log('[afrr-ui] Loading static inputs (aFRR years + solar years)');
     const [afrrYearsRaw, solarYearsRaw] = await Promise.all([
       window.electronAPI.getAfrrAvailableYears({
@@ -144,15 +157,8 @@ export function createAfrrUI() {
       window.electronAPI.getSolarAvailableYears(60),
     ]);
 
-    const afrrYears = (Array.isArray(afrrYearsRaw) ? afrrYearsRaw : [])
-      .map((year) => Number(year))
-      .filter((year) => Number.isInteger(year))
-      .sort((a, b) => a - b);
-
-    const solarYears = (Array.isArray(solarYearsRaw) ? solarYearsRaw : [])
-      .map((year) => Number(year))
-      .filter((year) => Number.isInteger(year))
-      .sort((a, b) => a - b);
+    const afrrYears = normalizeYearList(afrrYearsRaw);
+    const solarYears = normalizeYearList(solarYearsRaw);
 
     console.log('[afrr-ui] aFRR years:', afrrYears, 'Solar years:', solarYears);
 
@@ -171,7 +177,7 @@ export function createAfrrUI() {
     }
   }
 
-  function updateMonthlyChart(monthly: AfrrMonthlyRow[]) {
+  function updateMonthlyChart(monthly: AfrrMonthlyRow[]): void {
     if (!Array.isArray(monthly) || monthly.length === 0) {
       if (charts.monthly) {
         charts.monthly.destroy();
@@ -211,7 +217,7 @@ export function createAfrrUI() {
     setChartState('afrrMonthlyChart', 'ready', '');
   }
 
-  function updateActivationChart(hourlyData: AfrrHourlyRow[]) {
+  function updateActivationChart(hourlyData: AfrrHourlyRow[]): void {
     const bidRows = (Array.isArray(hourlyData) ? hourlyData : []).filter((row) => row.hasBid);
     if (bidRows.length === 0) {
       if (charts.activation) {
@@ -252,7 +258,7 @@ export function createAfrrUI() {
     setChartState('afrrActivationChart', 'ready', '');
   }
 
-  function updateCumulativeChart(hourlyData: AfrrHourlyRow[]) {
+  function updateCumulativeChart(hourlyData: AfrrHourlyRow[]): void {
     if (!Array.isArray(hourlyData) || hourlyData.length === 0) {
       if (charts.cumulative) {
         charts.cumulative.destroy();
@@ -302,7 +308,7 @@ export function createAfrrUI() {
     setChartState('afrrCumulativeChart', 'ready', '');
   }
 
-  function updateSummaryTable(monthly: AfrrMonthlyRow[]) {
+  function updateSummaryTable(monthly: AfrrMonthlyRow[]): void {
     if (!Array.isArray(monthly) || monthly.length === 0) {
       if (el.summaryTable) el.summaryTable.innerHTML = '';
       setTableState('empty', 'Ingen månedlige rader.');
@@ -324,7 +330,7 @@ export function createAfrrUI() {
     setTableState('ready', '');
   }
 
-  function displayResults(result: AfrrYearlyResult) {
+  function displayResults(result: AfrrYearlyResult): void {
     if (el.totalRevenue) el.totalRevenue.textContent = formatNok(Math.round(result.totalRevenueNok));
     if (el.afrrRevenue) el.afrrRevenue.textContent = formatNok(Math.round(result.totalAfrrRevenueNok));
     if (el.bidHours) el.bidHours.textContent = `${result.bidHours.toLocaleString('nb-NO')} / ${result.totalHours.toLocaleString('nb-NO')}`;
@@ -336,7 +342,7 @@ export function createAfrrUI() {
     updateSummaryTable(result.monthly);
   }
 
-  async function calculate() {
+  async function calculate(): Promise<void> {
     if (isCalculating) return;
     isCalculating = true;
     if (el.calculateBtn) el.calculateBtn.disabled = true;
@@ -355,7 +361,7 @@ export function createAfrrUI() {
         return;
       }
 
-      const powerMw = Number(document.getElementById('powerMw')?.getAttribute('value') || (document.getElementById('powerMw') as HTMLInputElement)?.value || 0);
+      const powerMw = readPowerMwInputValue();
       const eurToNok = Number(el.eurToNok?.value);
       const minBidMw = Number(el.minBidMw?.value);
       const activationMaxPct = Number(el.activationMaxPct?.value);
@@ -406,7 +412,7 @@ export function createAfrrUI() {
     }
   }
 
-  async function exportCsv() {
+  async function exportCsv(): Promise<void> {
     if (!currentResult) return;
 
     const csvContent = Papa.unparse(currentResult.hourlyData.map((row) => ({
@@ -424,7 +430,7 @@ export function createAfrrUI() {
     await window.electronAPI.saveFile(csvContent, `afrr_inntekt_${currentResult.year}.csv`);
   }
 
-  async function init() {
+  async function init(): Promise<void> {
     console.log('[afrr-ui] init() starting');
     el.statusMessage = document.getElementById('afrrStatusMessage');
     el.totalRevenue = document.getElementById('afrrTotalRevenue');

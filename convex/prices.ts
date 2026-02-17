@@ -4,12 +4,30 @@ import { query } from "./_generated/server";
 
 const DEFAULT_AREA = "NO1";
 
+function resolveArea(area: string | undefined): string {
+  return area ?? DEFAULT_AREA;
+}
+
+function mapPriceRow(row: {
+  timestamp: number;
+  hourNumber: number;
+  priceEurMw: number;
+  volumeMw: number;
+}) {
+  return {
+    timestamp: row.timestamp,
+    hourNumber: row.hourNumber,
+    priceEurMw: row.priceEurMw,
+    volumeMw: row.volumeMw,
+  };
+}
+
 export const getAvailableYears = query({
   args: {
     area: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const area = args.area ?? DEFAULT_AREA;
+    const area = resolveArea(args.area);
     const rows = await ctx.db
       .query("fcrPrices")
       .withIndex("by_area_timestamp", (q) => q.eq("area", area))
@@ -31,7 +49,7 @@ export const getPriceDataPage = query({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    const area = args.area ?? DEFAULT_AREA;
+    const area = resolveArea(args.area);
 
     const page = await ctx.db
       .query("fcrPrices")
@@ -42,12 +60,7 @@ export const getPriceDataPage = query({
 
     return {
       ...page,
-      page: page.page.map((row) => ({
-        timestamp: row.timestamp,
-        hourNumber: row.hourNumber,
-        priceEurMw: row.priceEurMw,
-        volumeMw: row.volumeMw,
-      })),
+      page: page.page.map((row) => mapPriceRow(row)),
     };
   },
 });

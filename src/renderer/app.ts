@@ -6,6 +6,7 @@ import * as Calculator from './calculator';
 import type { FrequencySummary, HourlyRevenueRow, RevenueResult } from './calculator';
 import * as FrequencySimulator from './frequency';
 import { createAfrrUI } from './afrr-ui';
+import type { NodeTenderFilterOptions, NodeTenderRow } from '../shared/electron-api';
 
 console.log('[app] Modules imported successfully');
 console.log('[app] electronAPI available:', !!window.electronAPI);
@@ -38,7 +39,14 @@ interface WorkerPayload {
   totalSamples: number;
 }
 
-let priceData: { timestamp: Date; price: number; hourNumber: number; volume: number }[] = [];
+interface PriceDataRow {
+  timestamp: Date;
+  price: number;
+  hourNumber: number;
+  volume: number;
+}
+
+let priceData: PriceDataRow[] = [];
 let currentResult: (RevenueResult & { freqSummary?: FrequencySummary }) | null = null;
 let nodeTenderRows: NormalizedNodeTenderRow[] = [];
 const afrrUI = createAfrrUI();
@@ -172,7 +180,7 @@ function ensureVisualState(container: HTMLElement): HTMLElement | null {
   return stateEl;
 }
 
-function setContainerState(container: HTMLElement | null, state: string, message: string) {
+function setContainerState(container: HTMLElement | null, state: string, message: string): void {
   if (!container) return;
   const nextState = state || 'ready';
   container.dataset.state = nextState;
@@ -182,7 +190,7 @@ function setContainerState(container: HTMLElement | null, state: string, message
   }
 }
 
-function setChartState(chartId: string, state: string, message: string) {
+function setChartState(chartId: string, state: string, message: string): void {
   const canvas = document.getElementById(chartId) as HTMLCanvasElement | null;
   if (!canvas) return;
   const container = canvas.closest<HTMLElement>('.chart-container');
@@ -191,7 +199,7 @@ function setChartState(chartId: string, state: string, message: string) {
   canvas.style.opacity = state === 'ready' ? '1' : '0.18';
 }
 
-function setTableState(tableId: string, state: string, message: string) {
+function setTableState(tableId: string, state: string, message: string): void {
   const table = document.getElementById(tableId);
   if (!table) return;
   const container = table.closest<HTMLElement>('.table-container');
@@ -200,7 +208,7 @@ function setTableState(tableId: string, state: string, message: string) {
   table.style.opacity = state === 'ready' ? '1' : '0.35';
 }
 
-function setFcrVisualStates(state: string, message: string) {
+function setFcrVisualStates(state: string, message: string): void {
   setChartState('monthlyChart', state, message);
   setChartState('priceChart', state, message);
   setChartState('socChart', state, message);
@@ -208,7 +216,12 @@ function setFcrVisualStates(state: string, message: string) {
   setTableState('summaryTable', state, message);
 }
 
-function showNodesStatus(message: string, type = 'info') {
+function setFcrResultContainerVisible(visible: boolean): void {
+  elements.loadingState.style.display = visible ? 'none' : 'flex';
+  elements.resultsContainer.style.display = visible ? 'block' : 'none';
+}
+
+function showNodesStatus(message: string, type = 'info'): void {
   if (!elements.nodesStatusMessage) return;
   elements.nodesStatusMessage.textContent = message;
   elements.nodesStatusMessage.className = `status-message ${type}`;
@@ -247,7 +260,12 @@ function formatSchedule(activeDays: string[], activeWindows: { start: string; en
   return `${days} | ${windows}`;
 }
 
-function setSelectOptions(selectElement: HTMLSelectElement | null, values: string[], placeholderLabel = 'Alle', preserveSelection = true) {
+function setSelectOptions(
+  selectElement: HTMLSelectElement | null,
+  values: string[],
+  placeholderLabel = 'Alle',
+  preserveSelection = true,
+): void {
   if (!selectElement) return;
   const previousValue = selectElement.value;
   selectElement.innerHTML = '';
@@ -269,7 +287,16 @@ function setSelectOptions(selectElement: HTMLSelectElement | null, values: strin
   }
 }
 
-function buildNodeFilterOptionsFromRows(rows: NormalizedNodeTenderRow[]) {
+function createEmptyNodeFilterOptions(): NodeTenderFilterOptions {
+  return {
+    gridNodes: [],
+    markets: [],
+    statuses: [],
+    total: 0,
+  };
+}
+
+function buildNodeFilterOptionsFromRows(rows: NormalizedNodeTenderRow[]): NodeTenderFilterOptions {
   const gridNodes = new Set<string>();
   const markets = new Set<string>();
   const statuses = new Set<string>();
@@ -288,7 +315,7 @@ function buildNodeFilterOptionsFromRows(rows: NormalizedNodeTenderRow[]) {
   };
 }
 
-function updateNodesMetrics(rows: NormalizedNodeTenderRow[]) {
+function updateNodesMetrics(rows: NormalizedNodeTenderRow[]): void {
   const totalTenders = rows.length;
   const totalMw = rows.reduce((sum, row) => sum + (Number(row.quantityMw) || 0), 0);
 
@@ -315,7 +342,7 @@ function updateNodesMetrics(rows: NormalizedNodeTenderRow[]) {
   }
 }
 
-function renderNodesTable(rows: NormalizedNodeTenderRow[]) {
+function renderNodesTable(rows: NormalizedNodeTenderRow[]): void {
   if (!elements.nodesTableBody) return;
   if (!Array.isArray(rows) || rows.length === 0) {
     elements.nodesTableBody.innerHTML = '';
@@ -347,15 +374,10 @@ function renderNodesTable(rows: NormalizedNodeTenderRow[]) {
   setTableState('nodesTable', 'ready', '');
 }
 
-async function loadNodeFilterOptions(dataset: string, keepSelections = true) {
+async function loadNodeFilterOptions(dataset: string, keepSelections = true): Promise<void> {
   if (!window.electronAPI?.loadNodeTenders) return;
 
-  let result = {
-    gridNodes: [] as string[],
-    markets: [] as string[],
-    statuses: [] as string[],
-    total: 0,
-  };
+  let result = createEmptyNodeFilterOptions();
 
   try {
     const rows = await window.electronAPI.loadNodeTenders({ dataset });
@@ -374,7 +396,7 @@ async function loadNodeFilterOptions(dataset: string, keepSelections = true) {
   }
 }
 
-function normalizeNodeTenderRow(row: import('../shared/electron-api').NodeTenderRow): NormalizedNodeTenderRow {
+function normalizeNodeTenderRow(row: NodeTenderRow): NormalizedNodeTenderRow {
   const quantityMw = Number(row?.quantityMw);
   const reservationPriceNokMwH = Number(row?.reservationPriceNokMwH);
   const activationPriceNokMwH = Number(row?.activationPriceNokMwH);
@@ -393,7 +415,7 @@ function normalizeNodeTenderRow(row: import('../shared/electron-api').NodeTender
   };
 }
 
-async function loadNodeTenderData() {
+async function loadNodeTenderData(): Promise<void> {
   if (!window.electronAPI?.loadNodeTenders) { console.log('[app] loadNodeTenders not available, skipping'); return; }
 
   const dataset = elements.nodesDataset?.value || 'nodes_2026_pilot';
@@ -430,7 +452,7 @@ async function loadNodeTenderData() {
   }
 }
 
-async function initializeNodesModule() {
+async function initializeNodesModule(): Promise<void> {
   if (!elements.nodesDataset) return;
 
   try {
@@ -444,12 +466,12 @@ async function initializeNodesModule() {
   }
 }
 
-function setupTabs() {
+function setupTabs(): void {
   const tabBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.tab-btn'));
   const tabContents = Array.from(document.querySelectorAll<HTMLElement>('.tab-content'));
   const tabConfigs = Array.from(document.querySelectorAll<HTMLElement>('[data-tab-config]'));
 
-  function applyHeroCopy(tab: string) {
+  function applyHeroCopy(tab: string): void {
     const activeBtn = tabBtns.find(btn => btn.dataset.tab === tab);
     if (!activeBtn) return;
 
@@ -462,7 +484,7 @@ function setupTabs() {
     }
   }
 
-  function activateTab(tab: string) {
+  function activateTab(tab: string): void {
     tabBtns.forEach(btn => {
       const isActive = btn.dataset.tab === tab;
       btn.classList.toggle('active', isActive);
@@ -507,7 +529,7 @@ function setupTabs() {
   }
 }
 
-async function init() {
+async function init(): Promise<void> {
   console.log('[app] init() starting');
   setupTabs();
   console.log('[app] Tabs set up');
@@ -543,8 +565,7 @@ async function init() {
     await loadPriceData(defaultYear);
     setFcrVisualStates('empty', 'Trykk "Beregn inntekt" for å vise visualiseringer.');
   } else {
-    elements.loadingState.style.display = 'none';
-    elements.resultsContainer.style.display = 'block';
+    setFcrResultContainerVisible(true);
     showStatus('Ingen prisdata funnet i Convex for NO1.', 'warning');
     setFcrVisualStates('empty', 'Ingen data tilgjengelig for visualisering.');
   }
@@ -600,7 +621,7 @@ async function init() {
   }
 }
 
-function setupSliders() {
+function setupSliders(): void {
   const sliders = [
     { input: elements.efficiency, display: elements.efficiencyValue },
     { input: elements.socMin, display: elements.socMinValue },
@@ -614,17 +635,15 @@ function setupSliders() {
   });
 }
 
-async function loadPriceData(year: number) {
+async function loadPriceData(year: number): Promise<void> {
   console.log('[app] loadPriceData() called for year:', year);
-  elements.loadingState.style.display = 'flex';
-  elements.resultsContainer.style.display = 'none';
+  setFcrResultContainerVisible(false);
   setFcrVisualStates('loading', 'Laster prisdata...');
 
   const rows = await window.electronAPI.loadPriceData(year, 'NO1');
   console.log('[app] Price data received:', rows?.length || 0, 'rows');
   if (!rows || rows.length === 0) {
-    elements.loadingState.style.display = 'none';
-    elements.resultsContainer.style.display = 'block';
+    setFcrResultContainerVisible(true);
     showStatus(`Ingen Convex-prisdata funnet for ${year}`, 'warning');
     setFcrVisualStates('empty', `Ingen prisdata for ${year}.`);
     return;
@@ -640,14 +659,13 @@ async function loadPriceData(year: number) {
     .filter(row => !Number.isNaN(row.timestamp.getTime()))
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-  elements.loadingState.style.display = 'none';
-  elements.resultsContainer.style.display = 'block';
+  setFcrResultContainerVisible(true);
 
   showStatus('Prisdata lastet', 'success');
   setFcrVisualStates('empty', 'Trykk "Beregn inntekt" for å vise visualiseringer.');
 }
 
-async function calculate() {
+async function calculate(): Promise<void> {
   console.log('[app] calculate() called');
   if (isCalculating) { console.log('[app] Calculation already in progress, skipping'); return; }
   isCalculating = true;
@@ -732,7 +750,7 @@ async function calculate() {
   }
 }
 
-function displayResults(result: RevenueResult & { freqSummary?: FrequencySummary }, showSoc: boolean, showFreq: boolean) {
+function displayResults(result: RevenueResult & { freqSummary?: FrequencySummary }, showSoc: boolean, showFreq: boolean): void {
   elements.totalRevenue.textContent = `€${result.totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   elements.availableHours.textContent = `${result.availableHours.toLocaleString()} / ${result.totalHours.toLocaleString()}`;
   elements.availability.textContent = `${result.availabilityPct.toFixed(1)}%`;
@@ -791,7 +809,7 @@ function aggregateMonthly(hourlyData: HourlyRevenueRow[]): MonthlyAggregate[] {
   }));
 }
 
-function updateMonthlyChart(monthly: MonthlyAggregate[]) {
+function updateMonthlyChart(monthly: MonthlyAggregate[]): void {
   if (!Array.isArray(monthly) || monthly.length === 0) {
     if (charts.monthly) {
       charts.monthly.destroy();
@@ -834,7 +852,7 @@ function updateMonthlyChart(monthly: MonthlyAggregate[]) {
   setChartState('monthlyChart', 'ready', '');
 }
 
-function updatePriceChart(hourlyData: HourlyRevenueRow[]) {
+function updatePriceChart(hourlyData: HourlyRevenueRow[]): void {
   const prices = hourlyData.map(h => h.price);
   if (prices.length === 0) {
     if (charts.price) {
@@ -897,7 +915,7 @@ function updatePriceChart(hourlyData: HourlyRevenueRow[]) {
   setChartState('priceChart', 'ready', '');
 }
 
-function updateSocChart(hourlyData: HourlyRevenueRow[]) {
+function updateSocChart(hourlyData: HourlyRevenueRow[]): void {
   const dataWithSoc = hourlyData.filter(h => h.socStart !== null);
   if (dataWithSoc.length === 0) {
     if (charts.soc) {
@@ -967,7 +985,7 @@ function updateSocChart(hourlyData: HourlyRevenueRow[]) {
   setChartState('socChart', 'ready', '');
 }
 
-function updateFreqChart(summary: FrequencySummary) {
+function updateFreqChart(summary: FrequencySummary): void {
   if (!summary || !Array.isArray(summary.histogramLabels) || !Array.isArray(summary.histogram) || summary.histogram.length === 0) {
     if (charts.freq) {
       charts.freq.destroy();
@@ -1021,7 +1039,7 @@ function updateFreqChart(summary: FrequencySummary) {
   setChartState('freqChart', 'ready', '');
 }
 
-function updateSummaryTable(monthly: MonthlyAggregate[]) {
+function updateSummaryTable(monthly: MonthlyAggregate[]): void {
   if (!Array.isArray(monthly) || monthly.length === 0) {
     elements.summaryTable.innerHTML = '';
     setTableState('summaryTable', 'empty', 'Ingen rader å vise.');
@@ -1039,7 +1057,7 @@ function updateSummaryTable(monthly: MonthlyAggregate[]) {
   setTableState('summaryTable', 'ready', '');
 }
 
-async function exportCsv() {
+async function exportCsv(): Promise<void> {
   if (!currentResult) return;
 
   const csvContent = Papa.unparse(currentResult.hourlyData.map(row => ({
@@ -1055,7 +1073,7 @@ async function exportCsv() {
   await window.electronAPI.saveFile(csvContent, `fcr_inntekt_${year}.csv`);
 }
 
-async function exportXlsx() {
+async function exportXlsx(): Promise<void> {
   if (!currentResult) return;
 
   const year = elements.year.value;
@@ -1079,7 +1097,7 @@ async function exportXlsx() {
   await window.electronAPI.saveXlsx(exportData, `fcr_inntekt_${year}.xlsx`);
 }
 
-async function exportPdf() {
+async function exportPdf(): Promise<void> {
   if (!currentResult) return;
 
   showStatus('Genererer PDF...', 'info');
@@ -1121,7 +1139,7 @@ async function exportPdf() {
   }
 }
 
-function showStatus(message: string, type: string) {
+function showStatus(message: string, type: string): void {
   elements.statusMessage.textContent = message;
   elements.statusMessage.className = `status-message ${type}`;
 }
@@ -1129,7 +1147,7 @@ function showStatus(message: string, type: string) {
 const popoverEl = document.getElementById('popover')!;
 let activePopoverBtn: HTMLElement | null = null;
 
-function showPopover(btn: HTMLElement) {
+function showPopover(btn: HTMLElement): void {
   const helpId = 'help-' + (btn as HTMLElement & { dataset: { help: string } }).dataset.help;
   const helpEl = document.getElementById(helpId);
   if (!helpEl) return;
@@ -1171,7 +1189,7 @@ function showPopover(btn: HTMLElement) {
   activePopoverBtn = btn;
 }
 
-function hidePopover() {
+function hidePopover(): void {
   popoverEl.classList.remove('visible', 'arrow-top', 'arrow-bottom');
   activePopoverBtn = null;
 }

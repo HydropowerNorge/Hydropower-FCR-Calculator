@@ -2,6 +2,10 @@ import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { query } from "./_generated/server";
 
+function toSortedUnique(values: number[]): number[] {
+  return Array.from(new Set(values)).sort((a, b) => a - b);
+}
+
 // Resolution must always be explicit (e.g. 60 or 15) to avoid mixing time series.
 export const getAvailableResolutions = query({
   args: {},
@@ -11,13 +15,10 @@ export const getAvailableResolutions = query({
       .withIndex("by_resolution_year")
       .collect();
 
-    const resolutions = new Set<number>();
-    for (const row of seriesRows) {
-      resolutions.add(row.resolutionMinutes);
-    }
+    const resolutions = seriesRows.map((row) => row.resolutionMinutes);
 
-    if (resolutions.size > 0) {
-      return Array.from(resolutions).sort((a, b) => a - b);
+    if (resolutions.length > 0) {
+      return toSortedUnique(resolutions);
     }
 
     // Backward compatibility when metadata has not been populated yet.
@@ -26,11 +27,7 @@ export const getAvailableResolutions = query({
       .withIndex("by_resolution_year_timestamp")
       .collect();
 
-    for (const row of rows) {
-      resolutions.add(row.resolutionMinutes);
-    }
-
-    return Array.from(resolutions).sort((a, b) => a - b);
+    return toSortedUnique(rows.map((row) => row.resolutionMinutes));
   },
 });
 
@@ -58,12 +55,7 @@ export const getAvailableYears = query({
       )
       .collect();
 
-    const years = new Set<number>();
-    for (const row of rows) {
-      years.add(row.year);
-    }
-
-    return Array.from(years).sort((a, b) => a - b);
+    return toSortedUnique(rows.map((row) => row.year));
   },
 });
 

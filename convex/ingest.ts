@@ -97,22 +97,55 @@ const nodeTenderValidator = v.object({
   createdAtTs: v.number(),
 });
 
+function assertRowLimit(rowCount: number, mutationName: string): void {
+  if (rowCount > MAX_ROWS_PER_MUTATION) {
+    throw new Error(
+      `${mutationName} accepts up to ${MAX_ROWS_PER_MUTATION} rows per call`,
+    );
+  }
+}
+
+async function clearBatch(
+  ctx: any,
+  fetchDocs: () => Promise<Array<{ _id: any }>>,
+): Promise<{ deleted: number; done: boolean }> {
+  const docs = await fetchDocs();
+  await Promise.all(docs.map((doc) => ctx.db.delete(doc._id)));
+
+  return {
+    deleted: docs.length,
+    done: docs.length < DELETE_BATCH_SIZE,
+  };
+}
+
+async function insertRows(
+  ctx: any,
+  table: string,
+  rows: any[],
+  mutationName: string,
+): Promise<{ inserted: number }> {
+  assertRowLimit(rows.length, mutationName);
+
+  for (const row of rows) {
+    await ctx.db.insert(table, row);
+  }
+
+  return {
+    inserted: rows.length,
+  };
+}
+
 export const clearPriceYear = mutation({
   args: {
     year: v.number(),
   },
   handler: async (ctx, args) => {
-    const docs = await ctx.db
-      .query("fcrPrices")
-      .withIndex("by_year", (q) => q.eq("year", args.year))
-      .take(DELETE_BATCH_SIZE);
-
-    await Promise.all(docs.map((doc) => ctx.db.delete(doc._id)));
-
-    return {
-      deleted: docs.length,
-      done: docs.length < DELETE_BATCH_SIZE,
-    };
+    return clearBatch(ctx, () =>
+      ctx.db
+        .query("fcrPrices")
+        .withIndex("by_year", (q) => q.eq("year", args.year))
+        .take(DELETE_BATCH_SIZE),
+    );
   },
 });
 
@@ -121,19 +154,7 @@ export const insertPriceRows = mutation({
     rows: v.array(priceRowValidator),
   },
   handler: async (ctx, args) => {
-    if (args.rows.length > MAX_ROWS_PER_MUTATION) {
-      throw new Error(
-        `insertPriceRows accepts up to ${MAX_ROWS_PER_MUTATION} rows per call`,
-      );
-    }
-
-    for (const row of args.rows) {
-      await ctx.db.insert("fcrPrices", row);
-    }
-
-    return {
-      inserted: args.rows.length,
-    };
+    return insertRows(ctx, "fcrPrices", args.rows, "insertPriceRows");
   },
 });
 
@@ -142,17 +163,12 @@ export const clearSpotZone = mutation({
     biddingZone: v.string(),
   },
   handler: async (ctx, args) => {
-    const docs = await ctx.db
-      .query("spotPrices")
-      .withIndex("by_zone_timestamp", (q) => q.eq("biddingZone", args.biddingZone))
-      .take(DELETE_BATCH_SIZE);
-
-    await Promise.all(docs.map((doc) => ctx.db.delete(doc._id)));
-
-    return {
-      deleted: docs.length,
-      done: docs.length < DELETE_BATCH_SIZE,
-    };
+    return clearBatch(ctx, () =>
+      ctx.db
+        .query("spotPrices")
+        .withIndex("by_zone_timestamp", (q) => q.eq("biddingZone", args.biddingZone))
+        .take(DELETE_BATCH_SIZE),
+    );
   },
 });
 
@@ -161,19 +177,7 @@ export const insertSpotRows = mutation({
     rows: v.array(spotRowValidator),
   },
   handler: async (ctx, args) => {
-    if (args.rows.length > MAX_ROWS_PER_MUTATION) {
-      throw new Error(
-        `insertSpotRows accepts up to ${MAX_ROWS_PER_MUTATION} rows per call`,
-      );
-    }
-
-    for (const row of args.rows) {
-      await ctx.db.insert("spotPrices", row);
-    }
-
-    return {
-      inserted: args.rows.length,
-    };
+    return insertRows(ctx, "spotPrices", args.rows, "insertSpotRows");
   },
 });
 
@@ -182,17 +186,12 @@ export const clearAfrrYear = mutation({
     year: v.number(),
   },
   handler: async (ctx, args) => {
-    const docs = await ctx.db
-      .query("afrrMarket")
-      .withIndex("by_year", (q) => q.eq("year", args.year))
-      .take(DELETE_BATCH_SIZE);
-
-    await Promise.all(docs.map((doc) => ctx.db.delete(doc._id)));
-
-    return {
-      deleted: docs.length,
-      done: docs.length < DELETE_BATCH_SIZE,
-    };
+    return clearBatch(ctx, () =>
+      ctx.db
+        .query("afrrMarket")
+        .withIndex("by_year", (q) => q.eq("year", args.year))
+        .take(DELETE_BATCH_SIZE),
+    );
   },
 });
 
@@ -201,17 +200,12 @@ export const clearAfrrSeriesYear = mutation({
     year: v.number(),
   },
   handler: async (ctx, args) => {
-    const docs = await ctx.db
-      .query("afrrSeries")
-      .withIndex("by_year", (q) => q.eq("year", args.year))
-      .take(DELETE_BATCH_SIZE);
-
-    await Promise.all(docs.map((doc) => ctx.db.delete(doc._id)));
-
-    return {
-      deleted: docs.length,
-      done: docs.length < DELETE_BATCH_SIZE,
-    };
+    return clearBatch(ctx, () =>
+      ctx.db
+        .query("afrrSeries")
+        .withIndex("by_year", (q) => q.eq("year", args.year))
+        .take(DELETE_BATCH_SIZE),
+    );
   },
 });
 
@@ -249,19 +243,7 @@ export const insertAfrrRows = mutation({
     rows: v.array(afrrRowValidator),
   },
   handler: async (ctx, args) => {
-    if (args.rows.length > MAX_ROWS_PER_MUTATION) {
-      throw new Error(
-        `insertAfrrRows accepts up to ${MAX_ROWS_PER_MUTATION} rows per call`,
-      );
-    }
-
-    for (const row of args.rows) {
-      await ctx.db.insert("afrrMarket", row);
-    }
-
-    return {
-      inserted: args.rows.length,
-    };
+    return insertRows(ctx, "afrrMarket", args.rows, "insertAfrrRows");
   },
 });
 
@@ -271,19 +253,14 @@ export const clearSolarSeries = mutation({
     resolutionMinutes: v.number(),
   },
   handler: async (ctx, args) => {
-    const docs = await ctx.db
-      .query("solarProduction")
-      .withIndex("by_year_resolution_timestamp", (q) =>
-        q.eq("year", args.year).eq("resolutionMinutes", args.resolutionMinutes),
-      )
-      .take(DELETE_BATCH_SIZE);
-
-    await Promise.all(docs.map((doc) => ctx.db.delete(doc._id)));
-
-    return {
-      deleted: docs.length,
-      done: docs.length < DELETE_BATCH_SIZE,
-    };
+    return clearBatch(ctx, () =>
+      ctx.db
+        .query("solarProduction")
+        .withIndex("by_year_resolution_timestamp", (q) =>
+          q.eq("year", args.year).eq("resolutionMinutes", args.resolutionMinutes),
+        )
+        .take(DELETE_BATCH_SIZE),
+    );
   },
 });
 
@@ -293,19 +270,14 @@ export const clearSolarSeriesMeta = mutation({
     resolutionMinutes: v.number(),
   },
   handler: async (ctx, args) => {
-    const docs = await ctx.db
-      .query("solarSeries")
-      .withIndex("by_resolution_year", (q) =>
-        q.eq("resolutionMinutes", args.resolutionMinutes).eq("year", args.year),
-      )
-      .take(DELETE_BATCH_SIZE);
-
-    await Promise.all(docs.map((doc) => ctx.db.delete(doc._id)));
-
-    return {
-      deleted: docs.length,
-      done: docs.length < DELETE_BATCH_SIZE,
-    };
+    return clearBatch(ctx, () =>
+      ctx.db
+        .query("solarSeries")
+        .withIndex("by_resolution_year", (q) =>
+          q.eq("resolutionMinutes", args.resolutionMinutes).eq("year", args.year),
+        )
+        .take(DELETE_BATCH_SIZE),
+    );
   },
 });
 
@@ -340,17 +312,12 @@ export const clearNodeTenderDataset = mutation({
     dataset: v.string(),
   },
   handler: async (ctx, args) => {
-    const docs = await ctx.db
-      .query("nodeTenders")
-      .withIndex("by_dataset_period", (q) => q.eq("dataset", args.dataset))
-      .take(DELETE_BATCH_SIZE);
-
-    await Promise.all(docs.map((doc) => ctx.db.delete(doc._id)));
-
-    return {
-      deleted: docs.length,
-      done: docs.length < DELETE_BATCH_SIZE,
-    };
+    return clearBatch(ctx, () =>
+      ctx.db
+        .query("nodeTenders")
+        .withIndex("by_dataset_period", (q) => q.eq("dataset", args.dataset))
+        .take(DELETE_BATCH_SIZE),
+    );
   },
 });
 
@@ -359,19 +326,7 @@ export const insertNodeTenderRows = mutation({
     rows: v.array(nodeTenderValidator),
   },
   handler: async (ctx, args) => {
-    if (args.rows.length > MAX_ROWS_PER_MUTATION) {
-      throw new Error(
-        `insertNodeTenderRows accepts up to ${MAX_ROWS_PER_MUTATION} rows per call`,
-      );
-    }
-
-    for (const row of args.rows) {
-      await ctx.db.insert("nodeTenders", row);
-    }
-
-    return {
-      inserted: args.rows.length,
-    };
+    return insertRows(ctx, "nodeTenders", args.rows, "insertNodeTenderRows");
   },
 });
 
@@ -380,18 +335,6 @@ export const insertSolarRows = mutation({
     rows: v.array(solarRowValidator),
   },
   handler: async (ctx, args) => {
-    if (args.rows.length > MAX_ROWS_PER_MUTATION) {
-      throw new Error(
-        `insertSolarRows accepts up to ${MAX_ROWS_PER_MUTATION} rows per call`,
-      );
-    }
-
-    for (const row of args.rows) {
-      await ctx.db.insert("solarProduction", row);
-    }
-
-    return {
-      inserted: args.rows.length,
-    };
+    return insertRows(ctx, "solarProduction", args.rows, "insertSolarRows");
   },
 });

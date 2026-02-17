@@ -1,9 +1,14 @@
 /// <reference types="@electron-forge/plugin-vite/forge-vite-env" />
 
 import { app, BrowserWindow, Menu, autoUpdater, ipcMain, dialog } from 'electron';
-import type { IpcMainInvokeEvent, MessageBoxOptions, MenuItemConstructorOptions } from 'electron';
-import path from 'node:path';
+import type {
+  IpcMainInvokeEvent,
+  MessageBoxOptions,
+  MessageBoxReturnValue,
+  MenuItemConstructorOptions,
+} from 'electron';
 import fs from 'node:fs';
+import path from 'node:path';
 import ExcelJS from 'exceljs';
 import dotenv from 'dotenv';
 import { ConvexHttpClient } from 'convex/browser';
@@ -30,7 +35,21 @@ if (require('electron-squirrel-startup')) {
   app.quit();
 }
 
-function loadDotEnvFiles() {
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error ?? 'Unknown error');
+}
+
+function tryLoadEnvFile(root: string, fileName: '.env.local' | '.env'): void {
+  const filePath = path.join(root, fileName);
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+
+  console.log(`[main] Found ${fileName} at:`, filePath);
+  dotenv.config({ path: filePath });
+}
+
+function loadDotEnvFiles(): void {
   const candidateRoots = new Set([
     app.getAppPath(),
     path.join(__dirname, '..', '..'),
@@ -40,18 +59,8 @@ function loadDotEnvFiles() {
   console.log('[main] Loading .env files from candidate roots:', Array.from(candidateRoots));
 
   for (const root of candidateRoots) {
-    const envLocalPath = path.join(root, '.env.local');
-    const envPath = path.join(root, '.env');
-
-    if (fs.existsSync(envLocalPath)) {
-      console.log('[main] Found .env.local at:', envLocalPath);
-      dotenv.config({ path: envLocalPath });
-    }
-
-    if (fs.existsSync(envPath)) {
-      console.log('[main] Found .env at:', envPath);
-      dotenv.config({ path: envPath });
-    }
+    tryLoadEnvFile(root, '.env.local');
+    tryLoadEnvFile(root, '.env');
   }
 
   console.log('[main] CONVEX_URL configured:', !!process.env.CONVEX_URL);
@@ -79,13 +88,30 @@ function getActiveWindow(): BrowserWindow | null {
   return BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
 }
 
-function showMessageBoxWithWindow(options: MessageBoxOptions) {
+function showMessageBoxWithWindow(options: MessageBoxOptions): Promise<MessageBoxReturnValue> {
   const activeWindow = getActiveWindow();
   if (activeWindow) {
     return dialog.showMessageBox(activeWindow, options);
   }
 
   return dialog.showMessageBox(options);
+}
+
+async function showUpdateCheckInfo(message: string): Promise<void> {
+  await showMessageBoxWithWindow({
+    type: 'info',
+    title: 'Update check',
+    message,
+  });
+}
+
+async function showUpdateCheckFailure(message: string, detail?: string): Promise<void> {
+  await showMessageBoxWithWindow({
+    type: 'error',
+    title: 'Update check failed',
+    message,
+    ...(detail ? { detail } : {}),
+  });
 }
 
 function buildAutoUpdateErrorDetail(rawMessage: string): string {
@@ -200,7 +226,7 @@ function setManualUpdateCheckInProgress(inProgress: boolean) {
   installApplicationMenu();
 }
 
-function attachAutoUpdateFeedbackHandlers() {
+function attachAutoUpdateFeedbackHandlers(): void {
   if (autoUpdateListenersAttached) {
     return;
   }
@@ -233,7 +259,7 @@ function attachAutoUpdateFeedbackHandlers() {
   });
 
   autoUpdater.on('error', (error: Error) => {
-    const rawMessage = error instanceof Error ? error.message : String(error ?? 'Unknown error');
+    const rawMessage = toErrorMessage(error);
     lastAutoUpdateErrorMessage = rawMessage;
 
     if (!manualUpdateCheckInProgress) {
@@ -258,53 +284,33 @@ function attachAutoUpdateFeedbackHandlers() {
   autoUpdateListenersAttached = true;
 }
 
-async function checkForUpdatesFromMenu() {
+async function checkForUpdatesFromMenu(): Promise<void> {
   if (manualUpdateCheckInProgress) {
-    await showMessageBoxWithWindow({
-      type: 'info',
-      title: 'Update check',
-      message: 'An update check is already in progress.'
-    });
+    await showUpdateCheckInfo('An update check is already in progress.');
     return;
   }
 
   if (!app.isPackaged) {
-    await showMessageBoxWithWindow({
-      type: 'info',
-      title: 'Update check',
-      message: 'Update checks are only available in installed builds.'
-    });
+    await showUpdateCheckInfo('Update checks are only available in installed builds.');
     return;
   }
 
   if (!isAutoUpdateSupportedPlatform()) {
-    await showMessageBoxWithWindow({
-      type: 'info',
-      title: 'Update check',
-      message: 'Auto-updates are only supported on macOS and Windows.'
-    });
+    await showUpdateCheckInfo('Auto-updates are only supported on macOS and Windows.');
     return;
   }
 
   if (process.env.ELECTRON_DISABLE_AUTO_UPDATE === '1') {
-    await showMessageBoxWithWindow({
-      type: 'info',
-      title: 'Update check',
-      message: 'Auto-update is disabled for this build.'
-    });
+    await showUpdateCheckInfo('Auto-update is disabled for this build.');
     return;
   }
 
   if (!autoUpdatesConfigured) {
-    const detail = autoUpdateConfigurationIssue || (lastAutoUpdateErrorMessage
-      ? buildAutoUpdateErrorDetail(lastAutoUpdateErrorMessage)
-      : undefined);
-    await showMessageBoxWithWindow({
-      type: 'error',
-      title: 'Update check failed',
-      message: 'Auto-update is not configured correctly for this app.',
-      ...(detail ? { detail } : {})
-    });
+    const detail = autoUpdateConfigurationIssue
+      ?? (lastAutoUpdateErrorMessage
+        ? buildAutoUpdateErrorDetail(lastAutoUpdateErrorMessage)
+        : undefined);
+    await showUpdateCheckFailure('Auto-update is not configured correctly for this app.', detail);
     return;
   }
 
@@ -313,12 +319,7 @@ async function checkForUpdatesFromMenu() {
     autoUpdater.checkForUpdates();
   } catch (error) {
     setManualUpdateCheckInProgress(false);
-    await showMessageBoxWithWindow({
-      type: 'error',
-      title: 'Update check failed',
-      message: 'Could not start checking for updates.',
-      detail: error instanceof Error ? error.message : String(error ?? 'Unknown error')
-    });
+    await showUpdateCheckFailure('Could not start checking for updates.', toErrorMessage(error));
   }
 }
 
@@ -331,7 +332,23 @@ function resolveGitHubUpdateSource() {
   return { repo, host };
 }
 
-function initializeAutoUpdates() {
+function getAutoUpdateSkipReason(): string | null {
+  if (!app.isPackaged) {
+    return 'not packaged';
+  }
+
+  if (process.env.ELECTRON_DISABLE_AUTO_UPDATE === '1') {
+    return 'disabled by env';
+  }
+
+  if (!isAutoUpdateSupportedPlatform()) {
+    return 'unsupported platform';
+  }
+
+  return null;
+}
+
+function initializeAutoUpdates(): void {
   console.log('[main] Initializing auto-updates', {
     isPackaged: app.isPackaged,
     platform: process.platform,
@@ -341,9 +358,12 @@ function initializeAutoUpdates() {
   autoUpdateSourceReference = null;
   autoUpdateConfigurationIssue = null;
   lastAutoUpdateErrorMessage = null;
-  if (!app.isPackaged) { console.log('[main] Auto-update skipped: not packaged'); return; }
-  if (process.env.ELECTRON_DISABLE_AUTO_UPDATE === '1') { console.log('[main] Auto-update skipped: disabled by env'); return; }
-  if (!isAutoUpdateSupportedPlatform()) { console.log('[main] Auto-update skipped: unsupported platform'); return; }
+
+  const skipReason = getAutoUpdateSkipReason();
+  if (skipReason) {
+    console.log('[main] Auto-update skipped:', skipReason);
+    return;
+  }
 
   try {
     const source = resolveGitHubUpdateSource();
@@ -373,7 +393,7 @@ function initializeAutoUpdates() {
     attachAutoUpdateFeedbackHandlers();
     autoUpdatesConfigured = true;
   } catch (error) {
-    const rawMessage = error instanceof Error ? error.message : String(error ?? 'Unknown error');
+    const rawMessage = toErrorMessage(error);
     autoUpdateConfigurationIssue = buildAutoUpdateErrorDetail(rawMessage);
     console.error('Failed to initialize auto-update:', error);
   }
@@ -423,7 +443,36 @@ function sanitizeDefaultName(defaultName: unknown, fallbackName: string): string
   return path.basename(defaultName.trim());
 }
 
-function createWindow() {
+function logRendererDiagnostics(rendererPath: string): void {
+  console.log('[main] Loading renderer file:', rendererPath);
+  console.log('[main] Renderer file exists:', fs.existsSync(rendererPath));
+
+  try {
+    const parentDir = path.join(__dirname, '..');
+    const siblings = fs.readdirSync(parentDir);
+    console.log('[main] Contents of', parentDir, ':', siblings);
+
+    const rendererDir = path.join(__dirname, '../renderer');
+    if (fs.existsSync(rendererDir)) {
+      const rendererContents = fs.readdirSync(rendererDir);
+      console.log('[main] Contents of renderer dir:', rendererContents);
+
+      const windowDir = path.join(rendererDir, MAIN_WINDOW_VITE_NAME);
+      if (fs.existsSync(windowDir)) {
+        const windowContents = fs.readdirSync(windowDir);
+        console.log('[main] Contents of window dir:', windowContents);
+      } else {
+        console.warn('[main] Window dir does not exist:', windowDir);
+      }
+    } else {
+      console.warn('[main] Renderer dir does not exist:', rendererDir);
+    }
+  } catch (err) {
+    console.warn('[main] Could not list directory contents:', err);
+  }
+}
+
+function createWindow(): void {
   const preloadPath = path.join(__dirname, 'preload.js');
   console.log('[main] Creating main window', {
     __dirname,
@@ -468,34 +517,7 @@ function createWindow() {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
     const rendererPath = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
-    console.log('[main] Loading renderer file:', rendererPath);
-    console.log('[main] Renderer file exists:', fs.existsSync(rendererPath));
-
-    // List sibling directories for debugging
-    try {
-      const parentDir = path.join(__dirname, '..');
-      const siblings = fs.readdirSync(parentDir);
-      console.log('[main] Contents of', parentDir, ':', siblings);
-
-      const rendererDir = path.join(__dirname, '../renderer');
-      if (fs.existsSync(rendererDir)) {
-        const rendererContents = fs.readdirSync(rendererDir);
-        console.log('[main] Contents of renderer dir:', rendererContents);
-
-        const windowDir = path.join(rendererDir, MAIN_WINDOW_VITE_NAME);
-        if (fs.existsSync(windowDir)) {
-          const windowContents = fs.readdirSync(windowDir);
-          console.log('[main] Contents of window dir:', windowContents);
-        } else {
-          console.warn('[main] Window dir does not exist:', windowDir);
-        }
-      } else {
-        console.warn('[main] Renderer dir does not exist:', rendererDir);
-      }
-    } catch (err) {
-      console.warn('[main] Could not list directory contents:', err);
-    }
-
+    logRendererDiagnostics(rendererPath);
     mainWindow.loadFile(rendererPath);
   }
 }

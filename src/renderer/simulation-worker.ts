@@ -48,6 +48,16 @@ function toFiniteNumber(value: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function createDefaultConfigValues(): SimulatePayload['config'] {
+  return {
+    powerMw: 1,
+    capacityMwh: 2,
+    efficiency: 0.9,
+    socMin: 0.2,
+    socMax: 0.8,
+  };
+}
+
 function normalizePriceData(priceData: unknown): { timestamp: number; price: number }[] {
   if (!Array.isArray(priceData)) return [];
 
@@ -58,6 +68,17 @@ function normalizePriceData(priceData: unknown): { timestamp: number; price: num
       return { timestamp, price };
     })
     .filter((row) => Number.isFinite(row.timestamp));
+}
+
+function toPriceDataWithDates(priceData: { timestamp: number; price: number }[]): { timestamp: Date; price: number }[] {
+  return priceData.map((row) => ({
+    timestamp: new Date(row.timestamp),
+    price: row.price,
+  }));
+}
+
+function postWorkerMessage(message: WorkerOutgoingMessage): void {
+  self.postMessage(message);
 }
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -78,7 +99,7 @@ self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
     const priceData = normalizePriceData(payload.priceData);
     console.log('[worker] Simulation params:', { year, hours, seed, profileName, priceRows: priceData.length });
 
-    const configValues = payload.config || { powerMw: 1, capacityMwh: 2, efficiency: 0.9, socMin: 0.2, socMax: 0.8 };
+    const configValues = payload.config || createDefaultConfigValues();
     const config = new BatteryConfig(
       toFiniteNumber(configValues.powerMw, 1),
       toFiniteNumber(configValues.capacityMwh, 2),
@@ -87,7 +108,7 @@ self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
       toFiniteNumber(configValues.socMax, 0.8)
     );
 
-    self.postMessage({
+    postWorkerMessage({
       type: 'progress',
       message: 'Simulerer frekvens'
     } satisfies WorkerOutgoingMessage);
@@ -95,15 +116,15 @@ self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
     const startTime = new Date(Date.UTC(year, 0, 1));
     const freqData = simulateFrequency(startTime, hours, 1, seed, profileName);
 
-    self.postMessage({ type: 'progress', message: 'Simulerer batteri' } satisfies WorkerOutgoingMessage);
+    postWorkerMessage({ type: 'progress', message: 'Simulerer batteri' } satisfies WorkerOutgoingMessage);
     const socData = simulateSocHourly(freqData, config);
 
-    self.postMessage({ type: 'progress', message: 'Beregner inntekt' } satisfies WorkerOutgoingMessage);
-    const priceDataWithDates = priceData.map(row => ({ timestamp: new Date(row.timestamp), price: row.price }));
+    postWorkerMessage({ type: 'progress', message: 'Beregner inntekt' } satisfies WorkerOutgoingMessage);
+    const priceDataWithDates = toPriceDataWithDates(priceData);
     const result = calculateRevenue(priceDataWithDates, socData, config);
 
     console.log('[worker] Simulation complete, posting result');
-    self.postMessage({
+    postWorkerMessage({
       type: 'result',
       payload: {
         result,
@@ -113,7 +134,7 @@ self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
     } satisfies WorkerOutgoingMessage);
   } catch (error) {
     console.error('[worker] Simulation failed:', error);
-    self.postMessage({
+    postWorkerMessage({
       type: 'error',
       error: error instanceof Error ? error.message : String(error)
     } satisfies WorkerOutgoingMessage);

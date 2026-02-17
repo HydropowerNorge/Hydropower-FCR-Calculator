@@ -89,6 +89,15 @@ function createRng(seed: number): () => number {
   };
 }
 
+function getFirstPositiveNumber(values: Array<number | null | undefined>): number {
+  for (const value of values) {
+    if (Number.isFinite(value) && Number(value) > 0) {
+      return Number(value);
+    }
+  }
+  return 0;
+}
+
 function getHoursInYear(year: number): number {
   const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
   return isLeapYear ? 8784 : 8760;
@@ -165,24 +174,51 @@ function aggregateMonthly(hourlyData: AfrrHourlyRow[]): AfrrMonthlyRow[] {
 }
 
 function resolveAfrrPriceEurMw(row: AfrrInputRow | null): number {
-  const marketPrice = toFiniteNumber(row?.marketPriceEurMw);
-  if (marketPrice !== null && marketPrice > 0) return marketPrice;
-
-  const contractedPrice = toFiniteNumber(row?.contractedPriceEurMw);
-  if (contractedPrice !== null && contractedPrice > 0) return contractedPrice;
-
-  return 0;
+  return getFirstPositiveNumber([
+    toFiniteNumber(row?.marketPriceEurMw),
+    toFiniteNumber(row?.contractedPriceEurMw),
+  ]);
 }
 
 function resolveSpotPriceEurMwh(row: AfrrInputRow | null, explicitSpotPrice?: number): number {
-  if (Number.isFinite(explicitSpotPrice) && explicitSpotPrice! > 0) {
-    return explicitSpotPrice!;
+  return getFirstPositiveNumber([
+    Number.isFinite(explicitSpotPrice) ? explicitSpotPrice : null,
+    toFiniteNumber(row?.activationPriceEurMwh),
+  ]);
+}
+
+function buildAfrrLookup(rows: AfrrInputRow[]): Map<number, AfrrInputRow> {
+  const lookup = new Map<number, AfrrInputRow>();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const timestamp = toFiniteNumber(row.timestamp);
+    if (timestamp === null) continue;
+    lookup.set(timestamp, row);
+  }
+  return lookup;
+}
+
+function buildSpotLookup(rows: SpotInputRow[]): Map<number, number> {
+  const lookup = new Map<number, number>();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const timestamp = toFiniteNumber(row.timestamp);
+    const spotPriceEurMwh = toFiniteNumber(row.spotPriceEurMwh);
+    if (timestamp === null || spotPriceEurMwh === null) continue;
+    lookup.set(timestamp, spotPriceEurMwh);
+  }
+  return lookup;
+}
+
+function calculateActivationPct(
+  hasBid: boolean,
+  minPct: number,
+  maxPct: number,
+  rng: () => number,
+): number {
+  if (!hasBid) {
+    return 0;
   }
 
-  const activationPrice = toFiniteNumber(row?.activationPriceEurMwh);
-  if (activationPrice !== null && activationPrice > 0) return activationPrice;
-
-  return 0;
+  return minPct + rng() * (maxPct - minPct);
 }
 
 export function calculateAfrrYearlyRevenue({
@@ -223,22 +259,9 @@ export function calculateAfrrYearlyRevenue({
 
   const totalHours = getHoursInYear(safeYear);
   const startTs = Date.UTC(safeYear, 0, 1, 0, 0, 0, 0);
-  const afrrByHour = new Map<number, AfrrInputRow>();
-  const spotByHour = new Map<number, number>();
+  const afrrByHour = buildAfrrLookup(afrrRows);
+  const spotByHour = buildSpotLookup(spotRows);
   const rng = createRng(Number(seed) || 42);
-
-  (Array.isArray(afrrRows) ? afrrRows : []).forEach((row) => {
-    const timestamp = toFiniteNumber(row.timestamp);
-    if (timestamp === null) return;
-    afrrByHour.set(timestamp, row);
-  });
-
-  (Array.isArray(spotRows) ? spotRows : []).forEach((row) => {
-    const timestamp = toFiniteNumber(row.timestamp);
-    const spotPriceEurMwh = toFiniteNumber(row.spotPriceEurMwh);
-    if (timestamp === null || spotPriceEurMwh === null) return;
-    spotByHour.set(timestamp, spotPriceEurMwh);
-  });
 
   const solarCapacityFactors = buildSolarCapacityFactors(solarRows, totalHours);
   const hourlyData: AfrrHourlyRow[] = [];
@@ -263,9 +286,12 @@ export function calculateAfrrYearlyRevenue({
     const bidVolumeMw = floorVolumeMw >= safeMinBidMw ? floorVolumeMw : 0;
     const hasBid = bidVolumeMw > 0;
 
-    const activationPct = hasBid
-      ? safeActivationMinPct + rng() * (safeActivationMaxPct - safeActivationMinPct)
-      : 0;
+    const activationPct = calculateActivationPct(
+      hasBid,
+      safeActivationMinPct,
+      safeActivationMaxPct,
+      rng,
+    );
 
     const activatedEnergyMwh = hasBid ? bidVolumeMw * (activationPct / 100) : 0;
     const solarCurtailmentMwh = Math.min(activatedEnergyMwh, solarProductionMw);

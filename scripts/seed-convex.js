@@ -25,6 +25,7 @@ const SOLAR_DATASET_CONFIGS = [
 ];
 const NODE_TENDERS_FILE_NAME = 'node_tenders_2026.json';
 const AFRR_DATA_FILE_NAME = 'afrr_merged_all_sources_NO1.csv';
+const homeDir = process.env.HOME || process.env.USERPROFILE || '';
 
 dotenv.config({ path: path.join(projectRoot, '.env.local') });
 dotenv.config({ path: path.join(projectRoot, '.env') });
@@ -132,6 +133,14 @@ function parseOptionalBoolean(value) {
   if (normalized === 'true') return true;
   if (normalized === 'false') return false;
   return undefined;
+}
+
+function homePath(...segments) {
+  if (!homeDir) {
+    return null;
+  }
+
+  return path.join(homeDir, ...segments);
 }
 
 function findFirstExisting(paths) {
@@ -275,7 +284,6 @@ function loadAfrrRows(filePath) {
 }
 
 function findSolarProductionDatasets() {
-  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   const datasets = [];
 
   for (const config of SOLAR_DATASET_CONFIGS) {
@@ -286,7 +294,7 @@ function findSolarProductionDatasets() {
       configuredPath,
       path.join(projectRoot, 'data', 'solar', config.fileName),
       path.join(projectRoot, 'data', config.fileName),
-      homeDir ? path.join(homeDir, 'Downloads', config.fileName) : null,
+      homePath('Downloads', config.fileName),
       `/Users/sander/Downloads/${config.fileName}`,
     ].filter(Boolean);
 
@@ -304,24 +312,22 @@ function findSolarProductionDatasets() {
 }
 
 function findNodeTendersFile() {
-  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   return findFirstExisting([
     process.env.NODE_TENDERS_JSON,
     path.join(projectRoot, 'convex', 'seed', NODE_TENDERS_FILE_NAME),
     path.join(projectRoot, 'data', 'nodes', NODE_TENDERS_FILE_NAME),
-    homeDir ? path.join(homeDir, 'Downloads', NODE_TENDERS_FILE_NAME) : null,
+    homePath('Downloads', NODE_TENDERS_FILE_NAME),
     `/Users/sander/Downloads/${NODE_TENDERS_FILE_NAME}`,
   ].filter(Boolean));
 }
 
 function findAfrrMarketFile() {
-  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   return findFirstExisting([
     process.env.AFRR_DATA_CSV,
     path.join(projectRoot, 'data', 'afrr', AFRR_DATA_FILE_NAME),
     path.join(projectRoot, 'data', AFRR_DATA_FILE_NAME),
-    homeDir ? path.join(homeDir, 'Desktop', AFRR_DATA_FILE_NAME) : null,
-    homeDir ? path.join(homeDir, 'Downloads', AFRR_DATA_FILE_NAME) : null,
+    homePath('Desktop', AFRR_DATA_FILE_NAME),
+    homePath('Downloads', AFRR_DATA_FILE_NAME),
     `/Users/sander/Desktop/${AFRR_DATA_FILE_NAME}`,
     `/Users/sander/Downloads/${AFRR_DATA_FILE_NAME}`,
   ].filter(Boolean));
@@ -470,74 +476,54 @@ function detectDominantIntervalMinutes(rows) {
   return dominantInterval;
 }
 
-async function clearPriceYear(year) {
+async function clearInBatches(functionName, args, label) {
   let totalDeleted = 0;
   while (true) {
-    const result = await convex.mutation('ingest:clearPriceYear', { year });
+    const result = await convex.mutation(functionName, args);
     totalDeleted += result.deleted;
     if (result.done) break;
   }
-  console.log(`Cleared fcrPrices year ${year}: ${totalDeleted} rows`);
+  console.log(`${label}: ${totalDeleted} rows`);
+}
+
+async function clearPriceYear(year) {
+  await clearInBatches('ingest:clearPriceYear', { year }, `Cleared fcrPrices year ${year}`);
 }
 
 async function clearSpotZone(biddingZone) {
-  let totalDeleted = 0;
-  while (true) {
-    const result = await convex.mutation('ingest:clearSpotZone', { biddingZone });
-    totalDeleted += result.deleted;
-    if (result.done) break;
-  }
-  console.log(`Cleared spotPrices zone ${biddingZone}: ${totalDeleted} rows`);
+  await clearInBatches('ingest:clearSpotZone', { biddingZone }, `Cleared spotPrices zone ${biddingZone}`);
 }
 
 async function clearAfrrYear(year) {
-  let totalDeleted = 0;
-  while (true) {
-    const result = await convex.mutation('ingest:clearAfrrYear', { year });
-    totalDeleted += result.deleted;
-    if (result.done) break;
-  }
-  console.log(`Cleared afrrMarket year ${year}: ${totalDeleted} rows`);
+  await clearInBatches('ingest:clearAfrrYear', { year }, `Cleared afrrMarket year ${year}`);
 }
 
 async function clearAfrrSeriesYear(year) {
-  let totalDeleted = 0;
-  while (true) {
-    const result = await convex.mutation('ingest:clearAfrrSeriesYear', { year });
-    totalDeleted += result.deleted;
-    if (result.done) break;
-  }
-  console.log(`Cleared afrrSeries year ${year}: ${totalDeleted} rows`);
+  await clearInBatches('ingest:clearAfrrSeriesYear', { year }, `Cleared afrrSeries year ${year}`);
 }
 
 async function clearSolarSeries(year, resolutionMinutes) {
-  let totalDeleted = 0;
-  while (true) {
-    const result = await convex.mutation('ingest:clearSolarSeries', { year, resolutionMinutes });
-    totalDeleted += result.deleted;
-    if (result.done) break;
-  }
-  console.log(`Cleared solarProduction year ${year} (${resolutionMinutes}m): ${totalDeleted} rows`);
+  await clearInBatches(
+    'ingest:clearSolarSeries',
+    { year, resolutionMinutes },
+    `Cleared solarProduction year ${year} (${resolutionMinutes}m)`,
+  );
 }
 
 async function clearSolarSeriesMeta(year, resolutionMinutes) {
-  let totalDeleted = 0;
-  while (true) {
-    const result = await convex.mutation('ingest:clearSolarSeriesMeta', { year, resolutionMinutes });
-    totalDeleted += result.deleted;
-    if (result.done) break;
-  }
-  console.log(`Cleared solarSeries meta year ${year} (${resolutionMinutes}m): ${totalDeleted} rows`);
+  await clearInBatches(
+    'ingest:clearSolarSeriesMeta',
+    { year, resolutionMinutes },
+    `Cleared solarSeries meta year ${year} (${resolutionMinutes}m)`,
+  );
 }
 
 async function clearNodeTenderDataset(dataset) {
-  let totalDeleted = 0;
-  while (true) {
-    const result = await convex.mutation('ingest:clearNodeTenderDataset', { dataset });
-    totalDeleted += result.deleted;
-    if (result.done) break;
-  }
-  console.log(`Cleared nodeTenders dataset ${dataset}: ${totalDeleted} rows`);
+  await clearInBatches(
+    'ingest:clearNodeTenderDataset',
+    { dataset },
+    `Cleared nodeTenders dataset ${dataset}`,
+  );
 }
 
 async function setSolarSeriesMeta(year, resolutionMinutes, sampleCount) {

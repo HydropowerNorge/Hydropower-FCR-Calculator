@@ -41,7 +41,7 @@ export function getProfile(profileName: string): FrequencyProfile {
 // Seeded random number generator (simple LCG)
 function createRng(seed: number): () => number {
   let s = seed;
-  return function() {
+  return function nextRandom(): number {
     s = (s * 1664525 + 1013904223) % 4294967296;
     return s / 4294967296;
   };
@@ -84,6 +84,30 @@ function poissonRandom(rng: () => number, lambda: number): number {
 function safePct(part: number, total: number): number {
   if (!Number.isFinite(total) || total <= 0) return 0;
   return (part / total) * 100;
+}
+
+function calculateRampFactor(posInEvent: number, eventLength: number, rampSamples: number): number {
+  if (rampSamples <= 0) {
+    return 1;
+  }
+
+  if (posInEvent < rampSamples) {
+    return posInEvent / rampSamples;
+  }
+
+  if (posInEvent > (eventLength - rampSamples)) {
+    return (eventLength - posInEvent) / rampSamples;
+  }
+
+  return 1;
+}
+
+function buildHistogramLabels(histMin: number, binWidth: number, binCount: number): string[] {
+  const labels: string[] = [];
+  for (let i = 0; i < binCount; i++) {
+    labels.push((histMin + i * binWidth + binWidth / 2).toFixed(3));
+  }
+  return labels;
 }
 
 // Simulate realistic Nordic grid frequency based on profile statistics
@@ -154,6 +178,7 @@ export function simulateFrequency(
     const durationSec = exponentialRandom(rng, 1 / avgEventDurationSec);
     const durationSamples = Math.max(1, Math.floor(durationSec / resolutionSeconds));
     const eventEnd = Math.min(eventStart + durationSamples, nSamples);
+    const eventLength = eventEnd - eventStart;
 
     // Determine if under or over frequency
     const isUnder = rng() < underRatio;
@@ -173,14 +198,7 @@ export function simulateFrequency(
     const rampSamples = Math.min(5, Math.floor(durationSamples / 3));
     for (let i = eventStart; i < eventEnd; i++) {
       const posInEvent = i - eventStart;
-      let factor: number;
-      if (rampSamples > 0 && posInEvent < rampSamples) {
-        factor = posInEvent / rampSamples;
-      } else if (rampSamples > 0 && posInEvent > (eventEnd - eventStart - rampSamples)) {
-        factor = (eventEnd - eventStart - posInEvent) / rampSamples;
-      } else {
-        factor = 1.0;
-      }
+      const factor = calculateRampFactor(posInEvent, eventLength, rampSamples);
       frequencies[i] = frequencies[i] * (1 - factor) + eventFreq * factor;
     }
   }
@@ -207,8 +225,13 @@ export function simulateFrequency(
     sum += f;
     if (f < minHz) minHz = f;
     if (f > maxHz) maxHz = f;
-    if (f < 49.9) { underBand++; outsideBand++; }
-    else if (f > 50.1) { overBand++; outsideBand++; }
+    if (f < 49.9) {
+      underBand++;
+      outsideBand++;
+    } else if (f > 50.1) {
+      overBand++;
+      outsideBand++;
+    }
 
     const binIndex = Math.max(0, Math.min(binCount - 1, Math.floor((f - histMin) / binWidth)));
     histogram[binIndex]++;
@@ -216,11 +239,7 @@ export function simulateFrequency(
 
   const meanHz = sum / nSamples;
 
-  // Build histogram labels
-  const histogramLabels: string[] = [];
-  for (let i = 0; i < binCount; i++) {
-    histogramLabels.push((histMin + i * binWidth + binWidth / 2).toFixed(3));
-  }
+  const histogramLabels = buildHistogramLabels(histMin, binWidth, binCount);
 
   const summary: FrequencySummary = {
     meanHz,
