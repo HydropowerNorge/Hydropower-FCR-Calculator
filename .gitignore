@@ -30,3 +30,7 @@ npm-debug.log*
 # Temporary files
 *.tmp
 *.temp
+
+# Large local datasets and analysis artifacts
+*.csv
+*.xlsx
