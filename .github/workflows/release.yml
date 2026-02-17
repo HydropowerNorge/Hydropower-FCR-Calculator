@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -35,6 +36,7 @@ jobs:
           cache: npm
 
       - name: Validate tag/version
+        if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
           node -e "const pkg=require('./package.json'); const tag=process.env.GITHUB_REF_NAME; const expected='v'+pkg.version; if(tag!==expected){console.error(`Tag ${tag} does not match package.json version ${pkg.version}`); process.exit(1);}"
