@@ -6,7 +6,9 @@ function getS4Config() {
     .replace(/\/+$/, '');
   const bucket = process.env.S4_BUCKET || 'app';
   const region = process.env.S4_REGION || 'eu-central-1';
-  const updatesPrefix = process.env.S4_UPDATES_PREFIX || 'updates';
+  const updatesPrefix = (process.env.S4_UPDATES_PREFIX || 'updates')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '');
   const omitAcl = process.env.S4_OMIT_ACL === '1';
 
   return { endpoint, bucket, region, updatesPrefix, omitAcl };
@@ -15,6 +17,17 @@ function getS4Config() {
 function updateArtifactsBaseUrl(platform, arch) {
   const s4 = getS4Config();
   return `${s4.endpoint}/${s4.bucket}/${s4.updatesPrefix}/${platform}/${arch}`;
+}
+
+function resolveWindowsRemoteReleases(arch) {
+  // First release has no remote RELEASES yet; make should not fail on sync.
+  if (process.env.S4_ENABLE_WINDOWS_REMOTE_RELEASES !== '1') {
+    return {};
+  }
+
+  return {
+    remoteReleases: updateArtifactsBaseUrl('win32', arch)
+  };
 }
 
 const s4 = getS4Config();
@@ -40,8 +53,8 @@ module.exports = {
       name: '@electron-forge/maker-squirrel',
       platforms: ['win32'],
       config: (arch) => ({
-        // Enables creation of proper Windows update metadata.
-        remoteReleases: updateArtifactsBaseUrl('win32', arch)
+        // Optional: enable only after an initial RELEASES file exists remotely.
+        ...resolveWindowsRemoteReleases(arch)
       })
     },
     {

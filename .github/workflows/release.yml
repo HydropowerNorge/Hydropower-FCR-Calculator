@@ -55,4 +55,5 @@ jobs:
           S4_REGION: ${{ secrets.S4_REGION }}
           S4_UPDATES_PREFIX: ${{ secrets.S4_UPDATES_PREFIX }}
           S4_OMIT_ACL: ${{ secrets.S4_OMIT_ACL }}
+          S4_ENABLE_WINDOWS_REMOTE_RELEASES: ${{ secrets.S4_ENABLE_WINDOWS_REMOTE_RELEASES }}
         run: npm run publish

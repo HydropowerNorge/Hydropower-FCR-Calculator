@@ -75,6 +75,7 @@ npm run convex:seed
 - `S4_REGION` (example: `eu-central-1`)
 - `S4_UPDATES_PREFIX` (example: `updates`)
 - Optional: `S4_OMIT_ACL=1` if your endpoint rejects ACL operations.
+- Optional: `S4_ENABLE_WINDOWS_REMOTE_RELEASES=1` after first Windows release exists remotely (enables delta package sync).
 
 ### Release steps
 1. Update version in `package.json` (example: `npm version patch`).

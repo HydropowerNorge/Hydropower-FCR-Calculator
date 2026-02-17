@@ -23,7 +23,9 @@ function resolveStaticUpdateBaseUrl() {
   const endpoint = (process.env.S4_ENDPOINT || 'https://s3.eu-central-1.s4.mega.io')
     .replace(/\/+$/, '');
   const bucket = process.env.S4_BUCKET || 'app';
-  const updatesPrefix = process.env.S4_UPDATES_PREFIX || 'updates';
+  const updatesPrefix = (process.env.S4_UPDATES_PREFIX || 'updates')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '');
   return `${endpoint}/${bucket}/${updatesPrefix}/${process.platform}/${process.arch}`;
 }
 
