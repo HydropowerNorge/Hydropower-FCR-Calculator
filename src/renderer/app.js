@@ -196,10 +196,14 @@ async function init() {
     elements.year.appendChild(option);
   });
 
-  // Select latest year
+  // Prefer 2025 as default year
   if (years.length > 0) {
-    elements.year.value = years[years.length - 1];
-    await loadPriceData(years[years.length - 1]);
+    const preferredYear = 2025;
+    const defaultYear = years.includes(preferredYear)
+      ? preferredYear
+      : years[years.length - 1];
+    elements.year.value = defaultYear;
+    await loadPriceData(defaultYear);
     setFcrVisualStates('empty', 'Trykk "Beregn inntekt" for å vise visualiseringer.');
   } else {
     elements.loadingState.style.display = 'none';
@@ -260,7 +264,7 @@ async function loadPriceData(year) {
   elements.loadingState.style.display = 'none';
   elements.resultsContainer.style.display = 'block';
 
-  showStatus(`Lastet ${priceData.length.toLocaleString()} timer med prisdata for ${year}`, 'success');
+  showStatus('Prisdata lastet', 'success');
   setFcrVisualStates('empty', 'Trykk "Beregn inntekt" for å vise visualiseringer.');
 }
 
@@ -291,10 +295,9 @@ async function calculate() {
     const hours = parseInt(elements.simHours.value);
     const seed = parseInt(elements.seed.value);
     const year = parseInt(elements.year.value);
-    const totalSamples = hours * 3600;
     setFcrVisualStates('loading', 'Beregner visualiseringer...');
 
-    showStatus(`Simulerer ${hours} timer med frekvensdata (${totalSamples.toLocaleString()} samples)...`, 'info');
+    showStatus('Simulerer frekvens', 'info');
     await new Promise(r => setTimeout(r, 10));
 
     let workerResult;
@@ -314,12 +317,12 @@ async function calculate() {
       console.warn('Worker simulation unavailable, falling back to main thread simulation:', err);
 
       const startTime = new Date(Date.UTC(year, 0, 1)); // Jan 1st
-      showStatus('Simulerer batteri-SOC...', 'info');
+      showStatus('Simulerer batteri', 'info');
       await new Promise(r => setTimeout(r, 10));
 
       const localFreqData = FrequencySimulator.simulateFrequency(startTime, hours, 1, seed, profileName);
 
-      showStatus('Beregner inntekt...', 'info');
+      showStatus('Beregner inntekt', 'info');
       await new Promise(r => setTimeout(r, 10));
 
       const socData = Calculator.simulateSocHourly(localFreqData, config);
@@ -336,11 +339,7 @@ async function calculate() {
     const summary = workerResult.summary;
     freqData = { summary };
 
-    showStatus(
-      `Simulert ${workerResult.totalSamples.toLocaleString()} samples | ` +
-      `${summary.pctOutsideBand.toFixed(2)}% utenfor båndet`,
-      'success'
-    );
+    showStatus('Simulering fullført', 'success');
 
     currentResult = result;
     currentResult.freqSummary = summary;

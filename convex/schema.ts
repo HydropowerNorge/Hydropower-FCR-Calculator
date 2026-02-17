@@ -19,4 +19,20 @@ export default defineSchema({
     timestamp: v.number(),
     spotPriceEurMwh: v.number(),
   }).index("by_zone_timestamp", ["biddingZone", "timestamp"]),
+
+  solarProduction: defineTable({
+    year: v.number(),
+    // Partition key to keep hourly and quarter-hourly series strictly separate.
+    resolutionMinutes: v.number(),
+    timestamp: v.number(),
+    production: v.number(),
+  })
+    .index("by_year_resolution_timestamp", ["year", "resolutionMinutes", "timestamp"])
+    .index("by_resolution_year_timestamp", ["resolutionMinutes", "year", "timestamp"]),
+
+  solarSeries: defineTable({
+    year: v.number(),
+    resolutionMinutes: v.number(),
+    sampleCount: v.number(),
+  }).index("by_resolution_year", ["resolutionMinutes", "year"]),
 });

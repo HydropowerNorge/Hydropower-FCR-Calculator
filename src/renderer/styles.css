@@ -244,6 +244,11 @@ body {
   transition: transform 0.12s ease, box-shadow 0.18s ease, background-color 0.18s ease;
 }
 
+#calculateBtn,
+#calculateArbitrageBtn {
+  margin-top: 6px;
+}
+
 .btn:hover {
   transform: translateY(-1px);
 }

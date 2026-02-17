@@ -128,16 +128,13 @@ window.ArbitrageUI = (function () {
       const socMin = parseInt(document.getElementById('socMin').value) / 100;
       const socMax = parseInt(document.getElementById('socMax').value) / 100;
 
-      showStatus('Beregner arbitrasje...', 'info');
+      showStatus('Simulerer arbitrasje', 'info');
       setAllVisualStates('loading', 'Beregner visualiseringer...');
 
       currentResult = Arbitrage.calculateArbitrage(spotData, powerMw, capacityMwh, efficiency, socMin, socMax);
 
       displayResults(currentResult);
-      showStatus(
-        `Beregnet arbitrasje for ${currentResult.totalDays} dager (siste ${months} mnd) | Varighet: ${currentResult.duration.toFixed(1)}h`,
-        'success'
-      );
+      showStatus('Arbitrasje beregnet', 'success');
     } catch (err) {
       console.error('Arbitrage calculation failed:', err);
       showStatus('Beregning feilet. Prøv igjen.', 'warning');

@@ -4,11 +4,61 @@ const fs = require('node:fs');
 const ExcelJS = require('exceljs');
 const dotenv = require('dotenv');
 const { ConvexHttpClient } = require('convex/browser');
+const packageJson = require('../package.json');
+
+if (require('electron-squirrel-startup')) {
+  app.quit();
+}
 
 dotenv.config({ path: path.join(__dirname, '..', '.env.local') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const SAFE_CODE_PATTERN = /^[A-Z0-9_-]{2,12}$/;
+
+function parseGitHubRepositorySlug(repositoryField) {
+  if (!repositoryField) return null;
+
+  if (typeof repositoryField === 'object' && repositoryField.url) {
+    return parseGitHubRepositorySlug(repositoryField.url);
+  }
+
+  if (typeof repositoryField !== 'string') return null;
+
+  const normalized = repositoryField.trim();
+  const match = normalized.match(/github\.com[:/]([^/]+)\/([^/.]+)(?:\.git)?$/i);
+  if (!match) return null;
+
+  return `${match[1]}/${match[2]}`;
+}
+
+function initializeAutoUpdates() {
+  if (!app.isPackaged) return;
+  if (process.env.ELECTRON_DISABLE_AUTO_UPDATE === '1') return;
+
+  const repository =
+    process.env.ELECTRON_AUTO_UPDATE_REPOSITORY
+    || parseGitHubRepositorySlug(packageJson.repository);
+
+  if (!repository) {
+    console.warn('Auto-update skipped: missing GitHub repository slug.');
+    return;
+  }
+
+  try {
+    // `update-electron-app` polls GitHub releases via update.electronjs.org.
+    // This keeps installed apps updated when a newer release is published.
+    const { updateElectronApp, UpdateSourceType } = require('update-electron-app');
+    updateElectronApp({
+      updateSource: {
+        type: UpdateSourceType.ElectronPublicUpdateService,
+        repo: repository
+      },
+      logger: console
+    });
+  } catch (error) {
+    console.error('Failed to initialize auto-update:', error);
+  }
+}
 
 function sanitizeAreaCode(value, fallback = 'NO1') {
   const normalized = typeof value === 'string' ? value.trim().toUpperCase() : '';
@@ -769,6 +819,7 @@ ipcMain.handle('data:loadSpotData', async (event, biddingZone = 'NO1') => {
 });
 
 app.whenReady().then(() => {
+  initializeAutoUpdates();
   createWindow();
 
   app.on('activate', () => {

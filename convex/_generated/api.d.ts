@@ -10,6 +10,7 @@
 
 import type * as ingest from "../ingest.js";
 import type * as prices from "../prices.js";
+import type * as solar from "../solar.js";
 import type * as spot from "../spot.js";
 
 import type {
@@ -21,6 +22,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   ingest: typeof ingest;
   prices: typeof prices;
+  solar: typeof solar;
   spot: typeof spot;
 }>;
 

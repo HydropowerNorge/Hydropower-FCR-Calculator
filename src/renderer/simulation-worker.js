@@ -40,16 +40,16 @@ self.addEventListener('message', (event) => {
 
     self.postMessage({
       type: 'progress',
-      message: `Simulerer ${hours} timer med frekvensdata (${(hours * 3600).toLocaleString()} samples)...`
+      message: 'Simulerer frekvens'
     });
 
     const startTime = new Date(Date.UTC(year, 0, 1));
     const freqData = FrequencySimulator.simulateFrequency(startTime, hours, 1, seed, profileName);
 
-    self.postMessage({ type: 'progress', message: 'Simulerer batteri-SOC...' });
+    self.postMessage({ type: 'progress', message: 'Simulerer batteri' });
     const socData = Calculator.simulateSocHourly(freqData, config);
 
-    self.postMessage({ type: 'progress', message: 'Beregner inntekt...' });
+    self.postMessage({ type: 'progress', message: 'Beregner inntekt' });
     const result = Calculator.calculateRevenue(priceData, socData, config);
 
     self.postMessage({
