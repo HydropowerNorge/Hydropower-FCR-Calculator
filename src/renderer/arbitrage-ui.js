@@ -1,5 +1,9 @@
 // Arbitrage UI orchestration module
-window.ArbitrageUI = (function () {
+import Chart from 'chart.js/auto';
+import Papa from 'papaparse';
+import * as Arbitrage from './arbitrage.js';
+
+export function createArbitrageUI() {
   let allSpotData = null; // Full parsed dataset
   let currentResult = null;
   let isCalculating = false;
@@ -549,4 +553,4 @@ window.ArbitrageUI = (function () {
   }
 
   return { init };
-})();
+}

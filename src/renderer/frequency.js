@@ -1,6 +1,6 @@
 // Frequency profiles based on real Nordic grid data (Oct 2025 - Jan 2026)
 // Analyzed from 6.4 million 1-second samples
-const FREQUENCY_PROFILES = {
+export const FREQUENCY_PROFILES = {
   high: {
     name: 'High (Volatile)',
     pctOutside: 0.86,
@@ -24,7 +24,7 @@ const FREQUENCY_PROFILES = {
   }
 };
 
-function getProfile(profileName) {
+export function getProfile(profileName) {
   return FREQUENCY_PROFILES[profileName] || FREQUENCY_PROFILES.medium;
 }
 
@@ -77,7 +77,7 @@ function safePct(part, total) {
 }
 
 // Simulate realistic Nordic grid frequency based on profile statistics
-function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed = 42, profileName = 'medium') {
+export function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed = 42, profileName = 'medium') {
   const rng = createRng(seed);
 
   const totalSeconds = hours * 3600;
@@ -220,7 +220,7 @@ function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed = 42, p
   return { frequencies, summary, startTime, hours };
 }
 
-(typeof window !== 'undefined' ? window : globalThis).FrequencySimulator = {
+export const FrequencySimulator = {
   FREQUENCY_PROFILES,
   getProfile,
   simulateFrequency

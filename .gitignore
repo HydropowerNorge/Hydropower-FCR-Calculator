@@ -8,6 +8,7 @@ build/
 
 # Electron
 .webpack/
+.vite/
 
 # OS files
 .DS_Store

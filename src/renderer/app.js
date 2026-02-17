@@ -1,7 +1,14 @@
+import Chart from 'chart.js/auto';
+import Papa from 'papaparse';
+import * as Calculator from './calculator.js';
+import * as FrequencySimulator from './frequency.js';
+import { createArbitrageUI } from './arbitrage-ui.js';
+
 // App state
 let priceData = [];
 let freqData = null;
 let currentResult = null;
+const arbitrageUI = createArbitrageUI();
 let charts = {
   monthly: null,
   price: null,
@@ -58,7 +65,7 @@ async function runFcrSimulationInWorker(payload) {
   }
 
   return new Promise((resolve, reject) => {
-    const worker = new Worker('simulation-worker.js');
+    const worker = new Worker(new URL('./simulation-worker.js', import.meta.url), { type: 'module' });
     activeSimulationWorker = worker;
 
     const cleanup = () => {
@@ -215,7 +222,7 @@ function setupTabs() {
 async function init() {
   // Set up tabs
   setupTabs();
-  ArbitrageUI.init();
+  await arbitrageUI.init();
   setFcrVisualStates('loading', 'Laster visualiseringer...');
 
   // Set up slider value displays

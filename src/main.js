@@ -9,8 +9,28 @@ if (require('electron-squirrel-startup')) {
   app.quit();
 }
 
-dotenv.config({ path: path.join(__dirname, '..', '.env.local') });
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+function loadDotEnvFiles() {
+  const candidateRoots = new Set([
+    app.getAppPath(),
+    path.join(__dirname, '..', '..'),
+    path.join(__dirname, '..')
+  ]);
+
+  for (const root of candidateRoots) {
+    const envLocalPath = path.join(root, '.env.local');
+    const envPath = path.join(root, '.env');
+
+    if (fs.existsSync(envLocalPath)) {
+      dotenv.config({ path: envLocalPath, quiet: true });
+    }
+
+    if (fs.existsSync(envPath)) {
+      dotenv.config({ path: envPath, quiet: true });
+    }
+  }
+}
+
+loadDotEnvFiles();
 
 const SAFE_CODE_PATTERN = /^[A-Z0-9_-]{2,12}$/;
 const UPDATE_MENU_ITEM_ID = 'check-for-updates';
@@ -361,7 +381,11 @@ function createWindow() {
     backgroundColor: '#1a1a2e'
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+  } else {
+    mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
+  }
 }
 
 // IPC handlers

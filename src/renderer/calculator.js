@@ -1,5 +1,5 @@
 // Battery configuration
-class BatteryConfig {
+export class BatteryConfig {
   constructor(powerMw, capacityMwh, efficiency = 0.90, socMin = 0.20, socMax = 0.80) {
     this.powerMw = powerMw;
     this.capacityMwh = capacityMwh;
@@ -14,7 +14,7 @@ class BatteryConfig {
 // - At 49.9 Hz: full discharge (+powerMw)
 // - At 50.0 Hz: zero activation
 // - At 50.1 Hz: full charge (-powerMw)
-function calculateFcrActivation(frequency, powerMw) {
+export function calculateFcrActivation(frequency, powerMw) {
   if (frequency <= 49.9) return powerMw;
   if (frequency >= 50.1) return -powerMw;
   return (50.0 - frequency) / 0.1 * powerMw;
@@ -23,7 +23,7 @@ function calculateFcrActivation(frequency, powerMw) {
 // Simulate battery SOC evolution using 1-second frequency data with NEM.
 // NEM (Normal State Energy Management) adds power offset to restore SOC
 // while still participating in FCR when frequency is in normal band.
-function simulateSocHourly(freqData, config, startSoc = 0.5) {
+export function simulateSocHourly(freqData, config, startSoc = 0.5) {
   const minEnergy = config.capacityMwh * config.socMin;
   const maxEnergy = config.capacityMwh * config.socMax;
 
@@ -151,7 +151,7 @@ function simulateSocHourly(freqData, config, startSoc = 0.5) {
 }
 
 // Calculate revenue by combining price data with availability from SOC simulation
-function calculateRevenue(priceData, socData, config) {
+export function calculateRevenue(priceData, socData, config) {
   // Create lookup map for SOC data by hour
   const socByHour = new Map();
   for (const row of socData) {
@@ -198,7 +198,7 @@ function calculateRevenue(priceData, socData, config) {
 }
 
 // Calculate revenue without SOC simulation (simple availability factor)
-function calculateSimpleRevenue(priceData, powerMw, availabilityPct = 100) {
+export function calculateSimpleRevenue(priceData, powerMw, availabilityPct = 100) {
   const factor = availabilityPct / 100;
 
   const hourlyResults = [];
@@ -231,8 +231,7 @@ function calculateSimpleRevenue(priceData, powerMw, availabilityPct = 100) {
   };
 }
 
-// Export for use in app.js and worker contexts.
-(typeof window !== 'undefined' ? window : globalThis).Calculator = {
+export const Calculator = {
   BatteryConfig,
   calculateFcrActivation,
   simulateSocHourly,

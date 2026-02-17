@@ -1,4 +1,5 @@
-importScripts('./frequency.js', './calculator.js');
+import { BatteryConfig, calculateRevenue, simulateSocHourly } from './calculator.js';
+import { simulateFrequency } from './frequency.js';
 
 function toFiniteNumber(value, fallback) {
   const n = Number(value);
@@ -30,7 +31,7 @@ self.addEventListener('message', (event) => {
     const priceData = normalizePriceData(payload.priceData);
 
     const configValues = payload.config || {};
-    const config = new Calculator.BatteryConfig(
+    const config = new BatteryConfig(
       toFiniteNumber(configValues.powerMw, 1),
       toFiniteNumber(configValues.capacityMwh, 2),
       toFiniteNumber(configValues.efficiency, 0.9),
@@ -44,13 +45,13 @@ self.addEventListener('message', (event) => {
     });
 
     const startTime = new Date(Date.UTC(year, 0, 1));
-    const freqData = FrequencySimulator.simulateFrequency(startTime, hours, 1, seed, profileName);
+    const freqData = simulateFrequency(startTime, hours, 1, seed, profileName);
 
     self.postMessage({ type: 'progress', message: 'Simulerer batteri' });
-    const socData = Calculator.simulateSocHourly(freqData, config);
+    const socData = simulateSocHourly(freqData, config);
 
     self.postMessage({ type: 'progress', message: 'Beregner inntekt' });
-    const result = Calculator.calculateRevenue(priceData, socData, config);
+    const result = calculateRevenue(priceData, socData, config);
 
     self.postMessage({
       type: 'result',

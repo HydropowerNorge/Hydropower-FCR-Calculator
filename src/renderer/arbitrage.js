@@ -1,9 +1,10 @@
 // Battery arbitrage calculation engine
 // Buy electricity when spot prices are low, sell when high
+import Papa from 'papaparse';
 
 // Parse ENTSO-E CSV format (15-min resolution) and aggregate to hourly
 // Columns: id,bidding_zone,timestamp,price_eur_mwh,created_at
-function parseSpotPrices(csvText) {
+export function parseSpotPrices(csvText) {
   const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
 
   // Parse all 15-min rows
@@ -37,7 +38,7 @@ function parseSpotPrices(csvText) {
 }
 
 // Filter spot data to the last N months from the most recent datapoint
-function filterByPeriod(spotData, months) {
+export function filterByPeriod(spotData, months) {
   if (spotData.length === 0) return spotData;
   const latest = spotData[spotData.length - 1].timestamp;
   const cutoff = new Date(latest);
@@ -45,7 +46,7 @@ function filterByPeriod(spotData, months) {
   return spotData.filter(row => row.timestamp >= cutoff);
 }
 
-function calculateDuration(powerMw, capacityMwh, socMin, socMax) {
+export function calculateDuration(powerMw, capacityMwh, socMin, socMax) {
   const usableEnergy = capacityMwh * (socMax - socMin);
   const duration = usableEnergy / powerMw;
   return Math.min(duration, 12); // Cap at 12 hours to prevent overlap
@@ -58,7 +59,7 @@ function localDayKey(date) {
   return `${year}-${month}-${day}`;
 }
 
-function simulateDay(hourlyPrices, powerMw, duration, efficiency) {
+export function simulateDay(hourlyPrices, powerMw, duration, efficiency) {
   const n = Math.floor(duration);
   if (n === 0 || hourlyPrices.length === 0) {
     return { revenue: 0, chargeCost: 0, dischargeRevenue: 0, chargeHours: [], dischargeHours: [] };
@@ -100,7 +101,7 @@ function dayHash(dateStr) {
   return (h >>> 0) / 4294967296;
 }
 
-function calculateArbitrage(spotData, powerMw, capacityMwh, efficiency, socMin, socMax) {
+export function calculateArbitrage(spotData, powerMw, capacityMwh, efficiency, socMin, socMax) {
   const duration = calculateDuration(powerMw, capacityMwh, socMin, socMax);
 
   // Group spot data by day
@@ -253,7 +254,7 @@ function calculateArbitrage(spotData, powerMw, capacityMwh, efficiency, socMin, 
 }
 
 // Full theoretical potential — no skips, no ramp, 100% capture
-function calculateFullPotential(spotData, powerMw, capacityMwh, efficiency, socMin, socMax) {
+export function calculateFullPotential(spotData, powerMw, capacityMwh, efficiency, socMin, socMax) {
   const duration = calculateDuration(powerMw, capacityMwh, socMin, socMax);
 
   const dayMap = new Map();
@@ -279,7 +280,7 @@ function calculateFullPotential(spotData, powerMw, capacityMwh, efficiency, socM
   return { totalRevenue, totalDays };
 }
 
-window.Arbitrage = {
+export const Arbitrage = {
   parseSpotPrices,
   filterByPeriod,
   calculateDuration,
