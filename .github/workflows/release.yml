@@ -49,10 +49,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Prepare Convex runtime configuration
+      - name: Prepare runtime configuration
         shell: bash
         env:
           CONVEX_URL: ${{ secrets.CONVEX_URL }}
+          ELECTRON_AUTO_UPDATE_REPO: ${{ vars.ELECTRON_AUTO_UPDATE_REPO }}
+          ELECTRON_AUTO_UPDATE_HOST: ${{ vars.ELECTRON_AUTO_UPDATE_HOST }}
         run: |
           set -euo pipefail
           if [ -z "${CONVEX_URL:-}" ]; then
@@ -60,7 +62,24 @@ jobs:
             exit 1
           fi
 
-          printf 'CONVEX_URL=%s\n' "$CONVEX_URL" > .env
+          AUTO_UPDATE_REPO="${ELECTRON_AUTO_UPDATE_REPO:-HydropowerNorge/Hydropower-FCR-Calculator}"
+          AUTO_UPDATE_HOST="${ELECTRON_AUTO_UPDATE_HOST:-https://update.electronjs.org}"
+
+          if [[ "$AUTO_UPDATE_REPO" != */* ]]; then
+            echo "::error::ELECTRON_AUTO_UPDATE_REPO must be in owner/repo format. Got: $AUTO_UPDATE_REPO"
+            exit 1
+          fi
+
+          if [[ "$AUTO_UPDATE_HOST" != https://* ]]; then
+            echo "::error::ELECTRON_AUTO_UPDATE_HOST must start with https://. Got: $AUTO_UPDATE_HOST"
+            exit 1
+          fi
+
+          {
+            printf 'CONVEX_URL=%s\n' "$CONVEX_URL"
+            printf 'ELECTRON_AUTO_UPDATE_REPO=%s\n' "$AUTO_UPDATE_REPO"
+            printf 'ELECTRON_AUTO_UPDATE_HOST=%s\n' "$AUTO_UPDATE_HOST"
+          } > .env
 
       - name: Prepare macOS signing and notarization
         if: runner.os == 'macOS'
