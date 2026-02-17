@@ -64,24 +64,33 @@ npm run convex:seed
   - macOS (`.dmg` + `.zip`)
   - Windows (Squirrel packages for auto-update)
   - Linux (`.zip`)
-- Publishing target: GitHub Releases via Electron Forge publisher
+- Publishing target: S3-compatible storage (MEGA S4 bucket), artifacts only.
+- No source-code tarballs are uploaded by this workflow.
+
+### Required GitHub secrets
+- `S4_ACCESS_KEY_ID`
+- `S4_SECRET_KEY`
+- `S4_ENDPOINT` (example: `https://s3.eu-central-1.s4.mega.io`)
+- `S4_BUCKET` (example: `app`)
+- `S4_REGION` (example: `eu-central-1`)
+- `S4_UPDATES_PREFIX` (example: `updates`)
+- Optional: `S4_OMIT_ACL=1` if your endpoint rejects ACL operations.
 
 ### Release steps
 1. Update version in `package.json` (example: `npm version patch`).
 2. Push commit and tag (`git push --follow-tags`).
-3. GitHub Actions builds and publishes all platform artifacts to the release tag.
+3. GitHub Actions builds and publishes all platform artifacts to S4.
 
 ### Auto-update behavior
 - App uses `update-electron-app` in `src/main.js` when packaged.
-- Update source: GitHub releases through `update.electronjs.org`.
+- Update source: static S3-compatible storage (`UpdateSourceType.StaticStorage`).
 - Requirements:
-  - Repository must be public for the default update service.
   - macOS app must be code-signed for production auto-updates.
   - macOS and Windows are supported by this updater path.
   - Linux auto-update is not provided by Electron's built-in updater flow.
 - Runtime overrides:
   - `ELECTRON_DISABLE_AUTO_UPDATE=1` to disable checks.
-  - `ELECTRON_AUTO_UPDATE_REPOSITORY=owner/repo` to force a repo slug.
+  - `ELECTRON_AUTO_UPDATE_BASE_URL=https://.../updates/<platform>/<arch>` to override feed URL.
 
 ## Solar Production Import
 - The seed script imports solar production into `solarProduction` as separate time series by `resolutionMinutes`.

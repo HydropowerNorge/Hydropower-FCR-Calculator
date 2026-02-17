@@ -4,7 +4,6 @@ const fs = require('node:fs');
 const ExcelJS = require('exceljs');
 const dotenv = require('dotenv');
 const { ConvexHttpClient } = require('convex/browser');
-const packageJson = require('../package.json');
 
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -15,43 +14,36 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const SAFE_CODE_PATTERN = /^[A-Z0-9_-]{2,12}$/;
 
-function parseGitHubRepositorySlug(repositoryField) {
-  if (!repositoryField) return null;
-
-  if (typeof repositoryField === 'object' && repositoryField.url) {
-    return parseGitHubRepositorySlug(repositoryField.url);
+function resolveStaticUpdateBaseUrl() {
+  const explicitBaseUrl = process.env.ELECTRON_AUTO_UPDATE_BASE_URL;
+  if (typeof explicitBaseUrl === 'string' && explicitBaseUrl.trim().length > 0) {
+    return explicitBaseUrl.trim().replace(/\/+$/, '');
   }
 
-  if (typeof repositoryField !== 'string') return null;
-
-  const normalized = repositoryField.trim();
-  const match = normalized.match(/github\.com[:/]([^/]+)\/([^/.]+)(?:\.git)?$/i);
-  if (!match) return null;
-
-  return `${match[1]}/${match[2]}`;
+  const endpoint = (process.env.S4_ENDPOINT || 'https://s3.eu-central-1.s4.mega.io')
+    .replace(/\/+$/, '');
+  const bucket = process.env.S4_BUCKET || 'app';
+  const updatesPrefix = process.env.S4_UPDATES_PREFIX || 'updates';
+  return `${endpoint}/${bucket}/${updatesPrefix}/${process.platform}/${process.arch}`;
 }
 
 function initializeAutoUpdates() {
   if (!app.isPackaged) return;
   if (process.env.ELECTRON_DISABLE_AUTO_UPDATE === '1') return;
 
-  const repository =
-    process.env.ELECTRON_AUTO_UPDATE_REPOSITORY
-    || parseGitHubRepositorySlug(packageJson.repository);
-
-  if (!repository) {
-    console.warn('Auto-update skipped: missing GitHub repository slug.');
-    return;
-  }
-
   try {
-    // `update-electron-app` polls GitHub releases via update.electronjs.org.
-    // This keeps installed apps updated when a newer release is published.
+    const baseUrl = resolveStaticUpdateBaseUrl();
+    if (!baseUrl.startsWith('https://')) {
+      console.warn(`Auto-update skipped: base URL must be HTTPS. Got: ${baseUrl}`);
+      return;
+    }
+
+    // Poll static S3-compatible storage for update artifacts.
     const { updateElectronApp, UpdateSourceType } = require('update-electron-app');
     updateElectronApp({
       updateSource: {
-        type: UpdateSourceType.ElectronPublicUpdateService,
-        repo: repository
+        type: UpdateSourceType.StaticStorage,
+        baseUrl
       },
       logger: console
     });

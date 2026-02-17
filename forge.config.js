@@ -1,28 +1,23 @@
 const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 
-function resolveGitHubRepository() {
-  const override = process.env.ELECTRON_RELEASE_REPOSITORY;
-  if (override) {
-    const [owner, name] = override.split('/');
-    if (owner && name) {
-      return { owner, name };
-    }
-  }
+function getS4Config() {
+  const endpoint = (process.env.S4_ENDPOINT || 'https://s3.eu-central-1.s4.mega.io')
+    .replace(/\/+$/, '');
+  const bucket = process.env.S4_BUCKET || 'app';
+  const region = process.env.S4_REGION || 'eu-central-1';
+  const updatesPrefix = process.env.S4_UPDATES_PREFIX || 'updates';
+  const omitAcl = process.env.S4_OMIT_ACL === '1';
 
-  const ciRepo = process.env.GITHUB_REPOSITORY;
-  if (ciRepo) {
-    const [owner, name] = ciRepo.split('/');
-    if (owner && name) {
-      return { owner, name };
-    }
-  }
-
-  return {
-    owner: 'HydropowerNorge',
-    name: 'Hydropower-FCR-Calculator'
-  };
+  return { endpoint, bucket, region, updatesPrefix, omitAcl };
 }
+
+function updateArtifactsBaseUrl(platform, arch) {
+  const s4 = getS4Config();
+  return `${s4.endpoint}/${s4.bucket}/${s4.updatesPrefix}/${platform}/${arch}`;
+}
+
+const s4 = getS4Config();
 
 module.exports = {
   packagerConfig: {
@@ -35,11 +30,19 @@ module.exports = {
   makers: [
     {
       name: '@electron-forge/maker-zip',
-      platforms: ['darwin', 'linux']
+      platforms: ['darwin', 'linux'],
+      config: (arch) => ({
+        // Generates RELEASES.json for Squirrel.Mac auto-updates.
+        macUpdateManifestBaseUrl: updateArtifactsBaseUrl('darwin', arch)
+      })
     },
     {
       name: '@electron-forge/maker-squirrel',
-      platforms: ['win32']
+      platforms: ['win32'],
+      config: (arch) => ({
+        // Enables creation of proper Windows update metadata.
+        remoteReleases: updateArtifactsBaseUrl('win32', arch)
+      })
     },
     {
       name: '@electron-forge/maker-dmg',
@@ -50,13 +53,16 @@ module.exports = {
   ],
   publishers: [
     {
-      name: '@electron-forge/publisher-github',
+      name: '@electron-forge/publisher-s3',
       config: {
-        repository: resolveGitHubRepository(),
-        prerelease: false,
-        draft: false,
-        force: true,
-        generateReleaseNotes: true
+        bucket: s4.bucket,
+        endpoint: s4.endpoint,
+        region: s4.region,
+        folder: s4.updatesPrefix,
+        s3ForcePathStyle: true,
+        omitAcl: s4.omitAcl,
+        public: !s4.omitAcl,
+        releaseFileCacheControlMaxAge: 300
       }
     }
   ],
