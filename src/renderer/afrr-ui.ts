@@ -19,8 +19,6 @@ interface AfrrElements {
   summaryTable: HTMLTableSectionElement | null;
   year: HTMLSelectElement | null;
   minBidMw: HTMLInputElement | null;
-  excludeZeroVolume: HTMLInputElement | null;
-  limitToMarketVolume: HTMLInputElement | null;
   calculateBtn: HTMLButtonElement | null;
   exportCsvBtn: HTMLButtonElement | null;
 }
@@ -47,8 +45,6 @@ export function createAfrrUI(): { init: () => Promise<void> } {
     summaryTable: null,
     year: null,
     minBidMw: null,
-    excludeZeroVolume: null,
-    limitToMarketVolume: null,
     calculateBtn: null,
     exportCsvBtn: null,
   };
@@ -253,8 +249,10 @@ export function createAfrrUI(): { init: () => Promise<void> } {
       }
 
       const minBidMw = Number(el.minBidMw?.value) || 1;
-      const excludeZeroVolume = el.excludeZeroVolume?.checked ?? true;
-      const limitToMarketVolume = el.limitToMarketVolume?.checked ?? true;
+      // 2022/2023 have market volume data; 2025 uses contracted data without volume info
+      const hasMarketVolume = selectedYear <= 2023;
+      const excludeZeroVolume = hasMarketVolume;
+      const limitToMarketVolume = hasMarketVolume;
 
       showStatus('Laster aFRR-, sol- og spotdata for valgt år...', 'info');
       setAllVisualStates('loading', 'Beregner aFRR-inntekt...');
@@ -339,8 +337,6 @@ export function createAfrrUI(): { init: () => Promise<void> } {
 
     el.year = document.getElementById('afrrYear') as HTMLSelectElement | null;
     el.minBidMw = document.getElementById('afrrMinBidMw') as HTMLInputElement | null;
-    el.excludeZeroVolume = document.getElementById('afrrExcludeZeroVolume') as HTMLInputElement | null;
-    el.limitToMarketVolume = document.getElementById('afrrLimitToMarketVolume') as HTMLInputElement | null;
     el.calculateBtn = document.getElementById('calculateAfrrBtn') as HTMLButtonElement | null;
     el.exportCsvBtn = document.getElementById('afrrExportCsvBtn') as HTMLButtonElement | null;
 
