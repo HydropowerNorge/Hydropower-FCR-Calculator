@@ -76,7 +76,7 @@ if (shouldPublishToGitHub()) {
 module.exports = {
   packagerConfig: {
     asar: true,
-    name: 'FCR Calculator',
+    name: 'Hydropower',
     icon: './icon',
     arch: ['x64', 'arm64']
   },

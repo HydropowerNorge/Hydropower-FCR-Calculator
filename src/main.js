@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, autoUpdater, ipcMain, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const ExcelJS = require('exceljs');
@@ -13,6 +13,239 @@ dotenv.config({ path: path.join(__dirname, '..', '.env.local') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const SAFE_CODE_PATTERN = /^[A-Z0-9_-]{2,12}$/;
+const UPDATE_MENU_ITEM_ID = 'check-for-updates';
+
+let autoUpdatesConfigured = false;
+let autoUpdateListenersAttached = false;
+let manualUpdateCheckInProgress = false;
+
+function isAutoUpdateSupportedPlatform() {
+  return process.platform === 'darwin' || process.platform === 'win32';
+}
+
+function getActiveWindow() {
+  return BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
+}
+
+function showMessageBoxWithWindow(options) {
+  const activeWindow = getActiveWindow();
+  if (activeWindow) {
+    return dialog.showMessageBox(activeWindow, options);
+  }
+
+  return dialog.showMessageBox(options);
+}
+
+function createCheckForUpdatesMenuItem() {
+  return {
+    id: UPDATE_MENU_ITEM_ID,
+    label: manualUpdateCheckInProgress ? 'Checking for updates...' : 'Check for updates...',
+    enabled: !manualUpdateCheckInProgress,
+    click: () => {
+      void checkForUpdatesFromMenu();
+    }
+  };
+}
+
+function buildApplicationMenuTemplate() {
+  const isMac = process.platform === 'darwin';
+
+  return [
+    ...(isMac ? [{
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    }] : []),
+    {
+      label: 'File',
+      submenu: [isMac ? { role: 'close' } : { role: 'quit' }]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        ...(isMac ? [
+          { role: 'pasteAndMatchStyle' },
+          { role: 'delete' },
+          { role: 'selectAll' }
+        ] : [
+          { role: 'delete' },
+          { type: 'separator' },
+          { role: 'selectAll' }
+        ])
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        ...(isMac ? [
+          { type: 'separator' },
+          { role: 'front' }
+        ] : [
+          { role: 'close' }
+        ])
+      ]
+    },
+    {
+      label: 'Help',
+      submenu: [createCheckForUpdatesMenuItem()]
+    }
+  ];
+}
+
+function installApplicationMenu() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate(buildApplicationMenuTemplate()));
+}
+
+function setManualUpdateCheckInProgress(inProgress) {
+  manualUpdateCheckInProgress = inProgress;
+  installApplicationMenu();
+}
+
+function attachAutoUpdateFeedbackHandlers() {
+  if (autoUpdateListenersAttached) {
+    return;
+  }
+
+  autoUpdater.on('update-available', () => {
+    if (!manualUpdateCheckInProgress) {
+      return;
+    }
+
+    setManualUpdateCheckInProgress(false);
+    void showMessageBoxWithWindow({
+      type: 'info',
+      title: 'Update available',
+      message: 'A new update is available.',
+      detail: 'Hydropower is downloading it in the background. You will be prompted to restart when it is ready.'
+    });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    if (!manualUpdateCheckInProgress) {
+      return;
+    }
+
+    setManualUpdateCheckInProgress(false);
+    void showMessageBoxWithWindow({
+      type: 'info',
+      title: 'Up to date',
+      message: 'You are already using the latest version of Hydropower.'
+    });
+  });
+
+  autoUpdater.on('error', (error) => {
+    if (!manualUpdateCheckInProgress) {
+      return;
+    }
+
+    setManualUpdateCheckInProgress(false);
+    void showMessageBoxWithWindow({
+      type: 'error',
+      title: 'Update check failed',
+      message: 'Could not check for updates.',
+      detail: error instanceof Error ? error.message : String(error ?? 'Unknown error')
+    });
+  });
+
+  autoUpdater.on('update-downloaded', () => {
+    if (manualUpdateCheckInProgress) {
+      setManualUpdateCheckInProgress(false);
+    }
+  });
+
+  autoUpdateListenersAttached = true;
+}
+
+async function checkForUpdatesFromMenu() {
+  if (manualUpdateCheckInProgress) {
+    await showMessageBoxWithWindow({
+      type: 'info',
+      title: 'Update check',
+      message: 'An update check is already in progress.'
+    });
+    return;
+  }
+
+  if (!app.isPackaged) {
+    await showMessageBoxWithWindow({
+      type: 'info',
+      title: 'Update check',
+      message: 'Update checks are only available in installed builds.'
+    });
+    return;
+  }
+
+  if (!isAutoUpdateSupportedPlatform()) {
+    await showMessageBoxWithWindow({
+      type: 'info',
+      title: 'Update check',
+      message: 'Auto-updates are only supported on macOS and Windows.'
+    });
+    return;
+  }
+
+  if (process.env.ELECTRON_DISABLE_AUTO_UPDATE === '1') {
+    await showMessageBoxWithWindow({
+      type: 'info',
+      title: 'Update check',
+      message: 'Auto-update is disabled for this build.'
+    });
+    return;
+  }
+
+  if (!autoUpdatesConfigured) {
+    await showMessageBoxWithWindow({
+      type: 'error',
+      title: 'Update check failed',
+      message: 'Auto-update is not configured correctly for this app.'
+    });
+    return;
+  }
+
+  try {
+    setManualUpdateCheckInProgress(true);
+    autoUpdater.checkForUpdates();
+  } catch (error) {
+    setManualUpdateCheckInProgress(false);
+    await showMessageBoxWithWindow({
+      type: 'error',
+      title: 'Update check failed',
+      message: 'Could not start checking for updates.',
+      detail: error instanceof Error ? error.message : String(error ?? 'Unknown error')
+    });
+  }
+}
 
 function resolveStaticUpdateBaseUrl() {
   const explicitBaseUrl = process.env.ELECTRON_AUTO_UPDATE_BASE_URL;
@@ -30,8 +263,10 @@ function resolveStaticUpdateBaseUrl() {
 }
 
 function initializeAutoUpdates() {
+  autoUpdatesConfigured = false;
   if (!app.isPackaged) return;
   if (process.env.ELECTRON_DISABLE_AUTO_UPDATE === '1') return;
+  if (!isAutoUpdateSupportedPlatform()) return;
 
   try {
     const baseUrl = resolveStaticUpdateBaseUrl();
@@ -49,6 +284,8 @@ function initializeAutoUpdates() {
       },
       logger: console
     });
+    attachAutoUpdateFeedbackHandlers();
+    autoUpdatesConfigured = true;
   } catch (error) {
     console.error('Failed to initialize auto-update:', error);
   }
@@ -814,6 +1051,7 @@ ipcMain.handle('data:loadSpotData', async (event, biddingZone = 'NO1') => {
 
 app.whenReady().then(() => {
   initializeAutoUpdates();
+  installApplicationMenu();
   createWindow();
 
   app.on('activate', () => {

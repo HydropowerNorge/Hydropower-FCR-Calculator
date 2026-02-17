@@ -1,4 +1,4 @@
-# FCR Calculator (Electron + Convex)
+# Hydropower (Electron + Convex)
 
 Electron desktop app for FCR/spot battery revenue analysis.
 
@@ -88,6 +88,7 @@ npm run convex:seed
 ### Auto-update behavior
 - App uses `update-electron-app` in `src/main.js` when packaged.
 - Update source: static S3-compatible storage (`UpdateSourceType.StaticStorage`).
+- Manual checks are available from menu bar: `Help -> Check for updates...`
 - Requirements:
   - macOS app must be code-signed for production auto-updates.
   - macOS and Windows are supported by this updater path.
