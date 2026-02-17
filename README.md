@@ -76,14 +76,37 @@ npm run convex:seed
 - `S4_BUCKET` (example: `app`)
 - `S4_REGION` (example: `eu-central-1`)
 - `S4_UPDATES_PREFIX` (example: `updates`)
+- `MACOS_SIGNING_CERT_P12` (base64-encoded `.p12` containing **Developer ID Application** certificate + private key)
+- `MACOS_SIGNING_CERT_PASSWORD` (password used when exporting the `.p12`)
+- `MACOS_CODESIGN_IDENTITY` (example: `Developer ID Application: DrivstoffAppen AS (3AC7D55KP8)`)
 - Optional: `S4_OMIT_ACL=1` if your endpoint rejects ACL operations.
 - Optional: `S4_ENABLE_WINDOWS_REMOTE_RELEASES=1` after first Windows release exists remotely (enables delta package sync).
+- Optional: `MACOS_APP_BUNDLE_ID` (default: `no.hydropower.desktop`)
+- Optional notarization with Apple ID:
+  - `APPLE_ID`
+  - `APPLE_APP_SPECIFIC_PASSWORD`
+  - `APPLE_TEAM_ID`
+- Optional notarization with App Store Connect API key:
+  - `APPLE_API_KEY_P8` (contents of `AuthKey_*.p8`)
+  - `APPLE_API_KEY_ID`
+  - `APPLE_API_ISSUER`
+- Optional notarization with keychain profile:
+  - `APPLE_NOTARY_KEYCHAIN_PROFILE`
 - No extra secret is required for GitHub uploads; workflow uses built-in `GITHUB_TOKEN`.
 
 ### Release steps
 1. Update version in `package.json` (example: `npm version patch`).
 2. Push commit and tag (`git push --follow-tags`).
 3. GitHub Actions builds and publishes all platform artifacts to S4.
+
+### macOS release verification
+After a macOS build, verify the artifact before sharing:
+
+```bash
+codesign --verify --deep --strict --verbose=2 "/path/to/Hydropower.app"
+spctl -a -vv "/path/to/Hydropower.app"
+xcrun stapler validate "/path/to/Hydropower.app"
+```
 
 ### Auto-update behavior
 - App uses `update-electron-app` in `src/main.js` when packaged.

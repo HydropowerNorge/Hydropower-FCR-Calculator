@@ -44,6 +44,58 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Prepare macOS signing and notarization
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_SIGNING_CERT_P12: ${{ secrets.MACOS_SIGNING_CERT_P12 }}
+          MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_NOTARY_KEYCHAIN_PROFILE: ${{ secrets.APPLE_NOTARY_KEYCHAIN_PROFILE }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${MACOS_SIGNING_CERT_P12:-}" ] || [ -z "${MACOS_SIGNING_CERT_PASSWORD:-}" ] || [ -z "${MACOS_CODESIGN_IDENTITY:-}" ]; then
+            echo "::error::Missing required macOS signing secrets: MACOS_SIGNING_CERT_P12, MACOS_SIGNING_CERT_PASSWORD, MACOS_CODESIGN_IDENTITY"
+            exit 1
+          fi
+
+          if [ -n "${APPLE_API_KEY_P8:-}" ] && { [ -z "${APPLE_API_KEY_ID:-}" ] || [ -z "${APPLE_API_ISSUER:-}" ]; }; then
+            echo "::error::APPLE_API_KEY_P8 requires APPLE_API_KEY_ID and APPLE_API_ISSUER"
+            exit 1
+          fi
+
+          CERT_PATH="$RUNNER_TEMP/macos-signing-cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/hydropower-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+
+          echo "$MACOS_SIGNING_CERT_P12" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$MACOS_SIGNING_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security list-keychains -d user -s "$KEYCHAIN_PATH" ~/Library/Keychains/login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          if [ -n "${APPLE_API_KEY_P8:-}" ] && [ -n "${APPLE_API_KEY_ID:-}" ]; then
+            API_KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+            printf '%s' "$APPLE_API_KEY_P8" > "$API_KEY_PATH"
+            chmod 600 "$API_KEY_PATH"
+            echo "APPLE_API_KEY_PATH=$API_KEY_PATH" >> "$GITHUB_ENV"
+          fi
+
+          if [ -z "${APPLE_NOTARY_KEYCHAIN_PROFILE:-}" ] && \
+             { [ -z "${APPLE_API_KEY_P8:-}" ] || [ -z "${APPLE_API_KEY_ID:-}" ] || [ -z "${APPLE_API_ISSUER:-}" ]; } && \
+             { [ -z "${APPLE_ID:-}" ] || [ -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] || [ -z "${APPLE_TEAM_ID:-}" ]; }; then
+            echo "::warning::No notarization credentials configured. macOS artifacts will be signed but not notarized."
+          fi
+
       - name: Publish artifacts to S4 and GitHub Releases
         shell: bash
         env:
@@ -58,6 +110,15 @@ jobs:
           S4_UPDATES_PREFIX: ${{ secrets.S4_UPDATES_PREFIX }}
           S4_OMIT_ACL: ${{ secrets.S4_OMIT_ACL }}
           S4_ENABLE_WINDOWS_REMOTE_RELEASES: ${{ secrets.S4_ENABLE_WINDOWS_REMOTE_RELEASES }}
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          MACOS_APP_BUNDLE_ID: ${{ secrets.MACOS_APP_BUNDLE_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_NOTARY_KEYCHAIN_PROFILE: ${{ secrets.APPLE_NOTARY_KEYCHAIN_PROFILE }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           set -euo pipefail
           max_attempts=3

@@ -1,5 +1,6 @@
 const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
+const path = require('node:path');
 
 function getS4Config() {
   const endpoint = (process.env.S4_ENDPOINT || 'https://s3.eu-central-1.s4.mega.io')
@@ -34,6 +35,64 @@ function shouldPublishToGitHub() {
   return Boolean(process.env.GITHUB_TOKEN || process.env.GH_TOKEN);
 }
 
+function hasNonEmptyValue(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function resolveMacCodeSignConfig() {
+  const identity = process.env.MACOS_CODESIGN_IDENTITY || process.env.CSC_NAME;
+  if (!hasNonEmptyValue(identity)) {
+    return undefined;
+  }
+
+  const entitlementsPath = path.join(__dirname, 'resources', 'entitlements.mac.plist');
+  return {
+    identity: identity.trim(),
+    hardenedRuntime: true,
+    gatekeeperAssess: false,
+    signatureFlags: 'library',
+    entitlements: entitlementsPath,
+    entitlementsInherit: entitlementsPath
+  };
+}
+
+function resolveMacNotarizeConfig() {
+  if (hasNonEmptyValue(process.env.APPLE_NOTARY_KEYCHAIN_PROFILE)) {
+    return {
+      tool: 'notarytool',
+      keychainProfile: process.env.APPLE_NOTARY_KEYCHAIN_PROFILE.trim()
+    };
+  }
+
+  if (
+    hasNonEmptyValue(process.env.APPLE_API_KEY_PATH) &&
+    hasNonEmptyValue(process.env.APPLE_API_KEY_ID) &&
+    hasNonEmptyValue(process.env.APPLE_API_ISSUER)
+  ) {
+    return {
+      tool: 'notarytool',
+      appleApiKey: process.env.APPLE_API_KEY_PATH.trim(),
+      appleApiKeyId: process.env.APPLE_API_KEY_ID.trim(),
+      appleApiIssuer: process.env.APPLE_API_ISSUER.trim()
+    };
+  }
+
+  if (
+    hasNonEmptyValue(process.env.APPLE_ID) &&
+    hasNonEmptyValue(process.env.APPLE_APP_SPECIFIC_PASSWORD) &&
+    hasNonEmptyValue(process.env.APPLE_TEAM_ID)
+  ) {
+    return {
+      tool: 'notarytool',
+      appleId: process.env.APPLE_ID.trim(),
+      appleIdPassword: process.env.APPLE_APP_SPECIFIC_PASSWORD.trim(),
+      teamId: process.env.APPLE_TEAM_ID.trim()
+    };
+  }
+
+  return undefined;
+}
+
 function resolveGitHubRepository() {
   const rawRepository = process.env.GITHUB_REPOSITORY || 'HydropowerNorge/Hydropower-FCR-Calculator';
   const [owner, name] = rawRepository.split('/');
@@ -45,6 +104,8 @@ function resolveGitHubRepository() {
 }
 
 const s4 = getS4Config();
+const macCodeSignConfig = resolveMacCodeSignConfig();
+const macNotarizeConfig = resolveMacNotarizeConfig();
 const publishers = [
   {
     name: '@electron-forge/publisher-s3',
@@ -78,7 +139,11 @@ module.exports = {
     asar: true,
     name: 'Hydropower',
     icon: './icon',
-    arch: ['x64', 'arm64']
+    arch: ['x64', 'arm64'],
+    appBundleId: process.env.MACOS_APP_BUNDLE_ID || 'no.hydropower.desktop',
+    appCategoryType: 'public.app-category.utilities',
+    osxSign: macCodeSignConfig,
+    ...(macCodeSignConfig && macNotarizeConfig ? { osxNotarize: macNotarizeConfig } : {})
   },
   rebuildConfig: {},
   makers: [
@@ -101,7 +166,17 @@ module.exports = {
     {
       name: '@electron-forge/maker-dmg',
       config: {
-        format: 'ULFO'
+        format: 'ULFO',
+        ...(macCodeSignConfig
+          ? {
+              additionalDMGOptions: {
+                'code-sign': {
+                  'signing-identity': macCodeSignConfig.identity,
+                  identifier: process.env.MACOS_APP_BUNDLE_ID || 'no.hydropower.desktop'
+                }
+              }
+            }
+          : {})
       }
     }
   ],
