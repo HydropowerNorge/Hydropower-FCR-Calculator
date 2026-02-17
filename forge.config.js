@@ -15,6 +15,10 @@ function getS4Config() {
   return { endpoint, bucket, region, updatesPrefix, omitAcl };
 }
 
+function shouldPublishToS4() {
+  return process.env.FORGE_ENABLE_S3_PUBLISHER === '1';
+}
+
 function resolvePublicUpdatesBaseUrl() {
   const explicitPublicBase = process.env.S4_PUBLIC_UPDATES_BASE_URL;
   if (typeof explicitPublicBase === 'string' && explicitPublicBase.trim().length > 0) {
@@ -116,8 +120,10 @@ function resolveGitHubRepository() {
 const s4 = getS4Config();
 const macCodeSignConfig = resolveMacCodeSignConfig();
 const macNotarizeConfig = resolveMacNotarizeConfig();
-const publishers = [
-  {
+const publishers = [];
+
+if (shouldPublishToS4()) {
+  publishers.push({
     name: '@electron-forge/publisher-s3',
     config: {
       bucket: s4.bucket,
@@ -129,8 +135,8 @@ const publishers = [
       public: !s4.omitAcl,
       releaseFileCacheControlMaxAge: 300
     }
-  }
-];
+  });
+}
 
 if (shouldPublishToGitHub()) {
   publishers.push({
