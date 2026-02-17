@@ -79,6 +79,7 @@ npm run convex:seed
 - `S4_BUCKET` (example: `app`)
 - `S4_REGION` (example: `eu-central-1`)
 - `S4_UPDATES_PREFIX` (example: `updates`)
+- `CONVEX_URL` (production Convex URL used by packaged desktop app runtime)
 - Optional: `S4_PUBLIC_UPDATES_BASE_URL` (public HTTPS base URL for updates, without platform/arch suffix).
 - `MACOS_SIGNING_CERT_P12` (base64-encoded `.p12` containing **Developer ID Application** certificate + private key)
 - `MACOS_SIGNING_CERT_PASSWORD` (password used when exporting the `.p12`)

@@ -49,6 +49,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Prepare Convex runtime configuration
+        shell: bash
+        env:
+          CONVEX_URL: ${{ secrets.CONVEX_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CONVEX_URL:-}" ]; then
+            echo "::error::Missing required secret CONVEX_URL (production Convex deployment URL)."
+            exit 1
+          fi
+
+          printf 'CONVEX_URL=%s\n' "$CONVEX_URL" > .env
+
       - name: Prepare macOS signing and notarization
         if: runner.os == 'macOS'
         shell: bash
