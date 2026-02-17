@@ -15,6 +15,9 @@ export interface AfrrMarketRow {
   marketPriceEurMw?: number;
   contractedPriceEurMw?: number;
   activationPriceEurMwh?: number;
+  marketVolumeMw?: number;
+  marketActivatedVolumeMw?: number;
+  marketGotActivated?: boolean;
 }
 
 export interface SolarProductionRow {

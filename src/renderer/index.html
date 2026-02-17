@@ -127,28 +127,22 @@
           </div>
 
           <div class="input-group">
-            <label for="afrrSolarYear">Solprofil år (60m)</label>
-            <select id="afrrSolarYear"></select>
-          </div>
-
-          <div class="input-group">
-            <label for="afrrEurToNok">EUR → NOK</label>
-            <input type="number" id="afrrEurToNok" value="11" min="1" max="30" step="0.1">
-          </div>
-
-          <div class="input-group">
             <label for="afrrMinBidMw">Min budstørrelse (MW)</label>
             <input type="number" id="afrrMinBidMw" value="1" min="1" max="50" step="1">
           </div>
 
           <div class="input-group">
-            <label for="afrrActivationMaxPct">Maks aktivering (%)</label>
-            <input type="number" id="afrrActivationMaxPct" value="100" min="1" max="100" step="1">
+            <label for="afrrExcludeZeroVolume">
+              <input type="checkbox" id="afrrExcludeZeroVolume" checked>
+              Ekskluder timer uten markedsvolum
+            </label>
           </div>
 
           <div class="input-group">
-            <label for="afrrSeed">Tilfeldig seed</label>
-            <input type="number" id="afrrSeed" value="42" min="1" max="999999" step="1">
+            <label for="afrrLimitToMarketVolume">
+              <input type="checkbox" id="afrrLimitToMarketVolume" checked>
+              Begrens bud til markedsvolum
+            </label>
           </div>
 
           <p id="afrrDataStatus" class="info-text"></p>

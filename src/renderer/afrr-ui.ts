@@ -3,9 +3,9 @@ import Papa from 'papaparse';
 import { calculateAfrrYearlyRevenue } from './afrr';
 import type { AfrrYearlyResult, AfrrHourlyRow, AfrrMonthlyRow } from './afrr';
 
-function formatNok(value: number, digits = 0): string {
-  if (!Number.isFinite(value)) return 'NOK 0';
-  return `NOK ${value.toLocaleString('nb-NO', {
+function formatEur(value: number, digits = 0): string {
+  if (!Number.isFinite(value)) return 'EUR 0';
+  return `EUR ${value.toLocaleString('nb-NO', {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   })}`;
@@ -19,11 +19,9 @@ interface AfrrElements {
   avgPrice: HTMLElement | null;
   summaryTable: HTMLTableSectionElement | null;
   year: HTMLSelectElement | null;
-  solarYear: HTMLSelectElement | null;
-  eurToNok: HTMLInputElement | null;
   minBidMw: HTMLInputElement | null;
-  activationMaxPct: HTMLInputElement | null;
-  seed: HTMLInputElement | null;
+  excludeZeroVolume: HTMLInputElement | null;
+  limitToMarketVolume: HTMLInputElement | null;
   dataStatus: HTMLElement | null;
   calculateBtn: HTMLButtonElement | null;
   exportCsvBtn: HTMLButtonElement | null;
@@ -34,12 +32,6 @@ function normalizeYearList(values: unknown): number[] {
     .map((year) => Number(year))
     .filter((year) => Number.isInteger(year))
     .sort((a, b) => a - b);
-}
-
-function readPowerMwInputValue(): number {
-  const powerInput = document.getElementById('powerMw') as HTMLInputElement | null;
-  const valueFromAttribute = powerInput?.getAttribute('value');
-  return Number(valueFromAttribute || powerInput?.value || 0);
 }
 
 export function createAfrrUI(): { init: () => Promise<void> } {
@@ -61,11 +53,9 @@ export function createAfrrUI(): { init: () => Promise<void> } {
     avgPrice: null,
     summaryTable: null,
     year: null,
-    solarYear: null,
-    eurToNok: null,
     minBidMw: null,
-    activationMaxPct: null,
-    seed: null,
+    excludeZeroVolume: null,
+    limitToMarketVolume: null,
     dataStatus: null,
     calculateBtn: null,
     exportCsvBtn: null,
@@ -73,6 +63,7 @@ export function createAfrrUI(): { init: () => Promise<void> } {
 
   let currentResult: AfrrYearlyResult | null = null;
   let isCalculating = false;
+  let resolvedSolarYear: number | null = null;
 
   function ensureVisualState(container: HTMLElement): HTMLElement | null {
     if (!container) return null;
@@ -163,17 +154,15 @@ export function createAfrrUI(): { init: () => Promise<void> } {
     console.log('[afrr-ui] aFRR years:', afrrYears, 'Solar years:', solarYears);
 
     populateSelect(el.year, afrrYears);
-    populateSelect(el.solarYear, solarYears);
 
     if (afrrYears.length > 0 && el.year) {
       el.year.value = String(afrrYears[afrrYears.length - 1]);
     }
-    if (solarYears.length > 0 && el.solarYear) {
-      el.solarYear.value = String(solarYears[solarYears.length - 1]);
-    }
+
+    resolvedSolarYear = solarYears.length > 0 ? solarYears[solarYears.length - 1] : null;
 
     if (el.dataStatus) {
-      el.dataStatus.textContent = `aFRR år: ${afrrYears.join(', ') || 'ingen'} | Solprofil: ${solarYears.join(', ') || 'ingen'} | Spot: hentes for valgt aFRR-år`;
+      el.dataStatus.textContent = `aFRR år: ${afrrYears.join(', ') || 'ingen'} | Solprofil: ${resolvedSolarYear ?? 'ingen'} | Spot: hentes for valgt aFRR-år`;
     }
   }
 
@@ -195,8 +184,8 @@ export function createAfrrUI(): { init: () => Promise<void> } {
       data: {
         labels: monthly.map((m) => m.month),
         datasets: [{
-          label: 'Total inntekt (NOK)',
-          data: monthly.map((m) => m.totalRevenueNok),
+          label: 'Total inntekt (EUR)',
+          data: monthly.map((m) => m.totalIncomeEur),
           backgroundColor: '#4fcb73',
           borderRadius: 4,
         }],
@@ -208,7 +197,7 @@ export function createAfrrUI(): { init: () => Promise<void> } {
         scales: {
           y: {
             ticks: {
-              callback: (value) => formatNok(Number(value)),
+              callback: (value) => formatEur(Number(value)),
             },
           },
         },
@@ -230,7 +219,9 @@ export function createAfrrUI(): { init: () => Promise<void> } {
 
     const bins = new Array<number>(10).fill(0);
     bidRows.forEach((row) => {
-      const pct = Number(row.activationPct) || 0;
+      const pct = row.afrrCapacityMw > 0
+        ? (row.activatedCapacityMw / row.afrrCapacityMw) * 100
+        : 0;
       const index = Math.min(9, Math.max(0, Math.floor(pct / 10)));
       bins[index] += 1;
     });
@@ -270,7 +261,7 @@ export function createAfrrUI(): { init: () => Promise<void> } {
 
     let cumulative = 0;
     const points = hourlyData.map((row) => {
-      cumulative += row.totalRevenueNok;
+      cumulative += row.totalIncomeEur;
       return cumulative;
     });
 
@@ -282,7 +273,7 @@ export function createAfrrUI(): { init: () => Promise<void> } {
       data: {
         labels: hourlyData.map((row) => new Date(row.timestamp).toISOString()),
         datasets: [{
-          label: 'Kumulativ inntekt (NOK)',
+          label: 'Kumulativ inntekt (EUR)',
           data: points,
           borderColor: '#60a5fa',
           backgroundColor: 'rgba(96, 165, 250, 0.1)',
@@ -299,7 +290,7 @@ export function createAfrrUI(): { init: () => Promise<void> } {
           x: { display: false },
           y: {
             ticks: {
-              callback: (value) => formatNok(Number(value)),
+              callback: (value) => formatEur(Number(value)),
             },
           },
         },
@@ -319,10 +310,10 @@ export function createAfrrUI(): { init: () => Promise<void> } {
       el.summaryTable.innerHTML = monthly.map((row) => `
         <tr>
           <td>${row.month}</td>
-          <td>${formatNok(Math.round(row.totalRevenueNok))}</td>
-          <td>${formatNok(Math.round(row.afrrRevenueNok))}</td>
+          <td>${formatEur(Math.round(row.totalIncomeEur))}</td>
+          <td>${formatEur(Math.round(row.afrrIncomeEur))}</td>
           <td>${row.bidHours.toLocaleString('nb-NO')}</td>
-          <td>${formatNok(Math.round(row.avgAfrrPriceNokMw))}</td>
+          <td>${formatEur(Math.round(row.avgAfrrPriceEurMw))}</td>
         </tr>
       `).join('');
     }
@@ -331,10 +322,10 @@ export function createAfrrUI(): { init: () => Promise<void> } {
   }
 
   function displayResults(result: AfrrYearlyResult): void {
-    if (el.totalRevenue) el.totalRevenue.textContent = formatNok(Math.round(result.totalRevenueNok));
-    if (el.afrrRevenue) el.afrrRevenue.textContent = formatNok(Math.round(result.totalAfrrRevenueNok));
+    if (el.totalRevenue) el.totalRevenue.textContent = formatEur(Math.round(result.totalIncomeEur));
+    if (el.afrrRevenue) el.afrrRevenue.textContent = formatEur(Math.round(result.totalAfrrIncomeEur));
     if (el.bidHours) el.bidHours.textContent = `${result.bidHours.toLocaleString('nb-NO')} / ${result.totalHours.toLocaleString('nb-NO')}`;
-    if (el.avgPrice) el.avgPrice.textContent = `${formatNok(Math.round(result.avgAfrrPriceNokMw))}/MW`;
+    if (el.avgPrice) el.avgPrice.textContent = `${formatEur(Math.round(result.avgAfrrPriceEurMw))}/MW`;
 
     updateMonthlyChart(result.monthly);
     updateActivationChart(result.hourlyData);
@@ -349,27 +340,24 @@ export function createAfrrUI(): { init: () => Promise<void> } {
 
     try {
       const selectedYear = Number(el.year?.value);
-      const selectedSolarYear = Number(el.solarYear?.value);
       if (!Number.isInteger(selectedYear)) {
         showStatus('Velg et gyldig aFRR-år.', 'warning');
         setAllVisualStates('empty', 'Manglende årsvalg.');
         return;
       }
-      if (!Number.isInteger(selectedSolarYear)) {
-        showStatus('Velg et gyldig år for solprofil.', 'warning');
+      if (resolvedSolarYear === null) {
+        showStatus('Ingen solprofil tilgjengelig.', 'warning');
         setAllVisualStates('empty', 'Manglende solprofil.');
         return;
       }
 
-      const powerMw = readPowerMwInputValue();
-      const eurToNok = Number(el.eurToNok?.value);
-      const minBidMw = Number(el.minBidMw?.value);
-      const activationMaxPct = Number(el.activationMaxPct?.value);
-      const seed = Number(el.seed?.value);
+      const minBidMw = Number(el.minBidMw?.value) || 1;
+      const excludeZeroVolume = el.excludeZeroVolume?.checked ?? true;
+      const limitToMarketVolume = el.limitToMarketVolume?.checked ?? true;
 
       showStatus('Laster aFRR-, sol- og spotdata for valgt år...', 'info');
       setAllVisualStates('loading', 'Beregner aFRR-inntekt...');
-      console.log(`[afrr-ui] Calculation started: aFRR year=${selectedYear}, solar year=${selectedSolarYear}, powerMw=${powerMw}, eurToNok=${eurToNok}, minBidMw=${minBidMw}`);
+      console.log(`[afrr-ui] Calculation started: aFRR year=${selectedYear}, solar year=${resolvedSolarYear}, minBidMw=${minBidMw}`);
 
       const [afrrRowsRaw, solarRowsRaw, spotRowsRaw] = await Promise.all([
         timedFetch(`aFRR ${selectedYear}`, () => window.electronAPI.loadAfrrData(selectedYear, {
@@ -378,7 +366,7 @@ export function createAfrrUI(): { init: () => Promise<void> } {
           reserveType: 'afrr',
           resolutionMin: 60,
         })),
-        timedFetch(`Solar ${selectedSolarYear}`, () => window.electronAPI.loadSolarData(selectedSolarYear, 60)),
+        timedFetch(`Solar ${resolvedSolarYear}`, () => window.electronAPI.loadSolarData(resolvedSolarYear!, 60)),
         timedFetch(`Spot NO1 ${selectedYear}`, () => window.electronAPI.loadSpotData('NO1', selectedYear)),
       ]);
 
@@ -391,12 +379,10 @@ export function createAfrrUI(): { init: () => Promise<void> } {
         afrrRows,
         spotRows: spotRowsForYear,
         solarRows,
-        powerMw,
-        eurToNok,
+        direction: 'down',
         minBidMw,
-        activationMinPct: 0,
-        activationMaxPct,
-        seed,
+        excludeZeroVolume,
+        limitToMarketVolume,
       });
 
       displayResults(currentResult);
@@ -418,13 +404,15 @@ export function createAfrrUI(): { init: () => Promise<void> } {
     const csvContent = Papa.unparse(currentResult.hourlyData.map((row) => ({
       timestamp_utc: new Date(row.timestamp).toISOString(),
       solar_production_mw: row.solarProductionMw.toFixed(4),
-      bid_volume_mw: row.bidVolumeMw.toFixed(0),
+      afrr_capacity_mw: row.afrrCapacityMw.toFixed(0),
       afrr_price_eur_mw: row.afrrPriceEurMw.toFixed(4),
       spot_price_eur_mwh: row.spotPriceEurMwh.toFixed(4),
-      activation_pct: row.activationPct.toFixed(2),
-      solar_revenue_nok: row.solarRevenueNok.toFixed(2),
-      afrr_revenue_nok: row.afrrRevenueNok.toFixed(2),
-      total_revenue_nok: row.totalRevenueNok.toFixed(2),
+      activated_capacity_mw: row.activatedCapacityMw.toFixed(4),
+      market_volume_mw: row.marketVolumeMw.toFixed(4),
+      spot_income_eur: row.spotIncomeEur.toFixed(2),
+      afrr_income_eur: row.afrrIncomeEur.toFixed(2),
+      activation_cost_eur: row.activationCostEur.toFixed(2),
+      total_income_eur: row.totalIncomeEur.toFixed(2),
     })));
 
     await window.electronAPI.saveFile(csvContent, `afrr_inntekt_${currentResult.year}.csv`);
@@ -440,11 +428,9 @@ export function createAfrrUI(): { init: () => Promise<void> } {
     el.summaryTable = document.getElementById('afrrSummaryTable')?.querySelector('tbody') ?? null;
 
     el.year = document.getElementById('afrrYear') as HTMLSelectElement | null;
-    el.solarYear = document.getElementById('afrrSolarYear') as HTMLSelectElement | null;
-    el.eurToNok = document.getElementById('afrrEurToNok') as HTMLInputElement | null;
     el.minBidMw = document.getElementById('afrrMinBidMw') as HTMLInputElement | null;
-    el.activationMaxPct = document.getElementById('afrrActivationMaxPct') as HTMLInputElement | null;
-    el.seed = document.getElementById('afrrSeed') as HTMLInputElement | null;
+    el.excludeZeroVolume = document.getElementById('afrrExcludeZeroVolume') as HTMLInputElement | null;
+    el.limitToMarketVolume = document.getElementById('afrrLimitToMarketVolume') as HTMLInputElement | null;
     el.dataStatus = document.getElementById('afrrDataStatus');
     el.calculateBtn = document.getElementById('calculateAfrrBtn') as HTMLButtonElement | null;
     el.exportCsvBtn = document.getElementById('afrrExportCsvBtn') as HTMLButtonElement | null;

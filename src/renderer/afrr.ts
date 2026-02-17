@@ -3,19 +3,18 @@ export interface AfrrCalculationParams {
   afrrRows: AfrrInputRow[];
   spotRows: SpotInputRow[];
   solarRows: SolarInputRow[];
-  powerMw: number;
-  eurToNok?: number;
+  direction?: 'up' | 'down';
   minBidMw?: number;
-  activationMinPct?: number;
-  activationMaxPct?: number;
-  seed?: number;
+  excludeZeroVolume?: boolean;
+  limitToMarketVolume?: boolean;
 }
 
 interface AfrrInputRow {
   timestamp?: number;
   marketPriceEurMw?: number;
   contractedPriceEurMw?: number;
-  activationPriceEurMwh?: number;
+  marketVolumeMw?: number;
+  marketActivatedVolumeMw?: number;
 }
 
 interface SpotInputRow {
@@ -31,47 +30,39 @@ interface SolarInputRow {
 export interface AfrrHourlyRow {
   timestamp: number;
   solarProductionMw: number;
-  bidVolumeMw: number;
+  afrrCapacityMw: number;
   afrrPriceEurMw: number;
-  afrrPriceNokMw: number;
   spotPriceEurMwh: number;
-  spotPriceNokMwh: number;
-  activationPct: number;
-  activatedEnergyMwh: number;
-  solarCurtailmentMwh: number;
-  solarRevenueNok: number;
-  capacityRevenueNok: number;
-  curtailmentCostNok: number;
-  afrrRevenueNok: number;
-  totalRevenueNok: number;
+  spotIncomeEur: number;
+  afrrIncomeEur: number;
+  activationCostEur: number;
+  totalIncomeEur: number;
+  activatedCapacityMw: number;
+  marketVolumeMw: number;
   hasBid: boolean;
 }
 
 export interface AfrrMonthlyRow {
   month: string;
-  totalRevenueNok: number;
-  solarRevenueNok: number;
-  afrrRevenueNok: number;
-  capacityRevenueNok: number;
-  curtailmentCostNok: number;
+  totalIncomeEur: number;
+  spotIncomeEur: number;
+  afrrIncomeEur: number;
+  activationCostEur: number;
   bidHours: number;
   hours: number;
-  afrrPriceSumNokMw: number;
-  avgAfrrPriceNokMw: number;
+  avgAfrrPriceEurMw: number;
 }
 
 export interface AfrrYearlyResult {
   year: number;
   totalHours: number;
   bidHours: number;
-  totalRevenueNok: number;
-  totalSolarRevenueNok: number;
-  totalAfrrRevenueNok: number;
-  totalCapacityRevenueNok: number;
-  totalCurtailmentCostNok: number;
-  avgBidVolumeMw: number;
-  avgActivationPct: number;
-  avgAfrrPriceNokMw: number;
+  totalIncomeEur: number;
+  totalSpotIncomeEur: number;
+  totalAfrrIncomeEur: number;
+  totalActivationCostEur: number;
+  avgBidCapacityMw: number;
+  avgAfrrPriceEurMw: number;
   hourlyData: AfrrHourlyRow[];
   monthly: AfrrMonthlyRow[];
 }
@@ -81,55 +72,28 @@ function toFiniteNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function createRng(seed: number): () => number {
-  let state = Number.isFinite(seed) ? Math.floor(seed) : 42;
-  return function nextRandom() {
-    state = (state * 1664525 + 1013904223) % 4294967296;
-    return state / 4294967296;
-  };
-}
-
-function getFirstPositiveNumber(values: Array<number | null | undefined>): number {
-  for (const value of values) {
-    if (Number.isFinite(value) && Number(value) > 0) {
-      return Number(value);
-    }
-  }
-  return 0;
-}
-
 function getHoursInYear(year: number): number {
   const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
   return isLeapYear ? 8784 : 8760;
 }
 
-function buildSolarCapacityFactors(solarRows: SolarInputRow[], totalHours: number): number[] {
-  if (!Array.isArray(solarRows) || solarRows.length === 0 || totalHours <= 0) {
+/** Sort solar rows by timestamp and extract production values positionally. */
+function buildSolarProfile(solarRows: SolarInputRow[], totalHours: number): number[] {
+  if (!Array.isArray(solarRows) || solarRows.length === 0) {
     return new Array(totalHours).fill(0);
   }
 
-  const production = solarRows
-    .map((row) => toFiniteNumber(row.production))
-    .filter((value): value is number => value !== null)
-    .sort((a, b) => a - b);
-
-  const maxProduction = production.length > 0 ? production[production.length - 1] : 0;
-  if (!Number.isFinite(maxProduction) || maxProduction <= 0) {
-    return new Array(totalHours).fill(0);
-  }
-
-  const normalizedProfile = solarRows
+  const sorted = solarRows
     .slice()
     .sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0))
     .map((row) => {
-      const productionValue = toFiniteNumber(row.production);
-      if (productionValue === null || productionValue <= 0) return 0;
-      return Math.min(1, productionValue / maxProduction);
+      const v = toFiniteNumber(row.production);
+      return v !== null && v > 0 ? v : 0;
     });
 
-  return Array.from({ length: totalHours }, (_, index) => {
-    const profileIndex = Math.floor((index * normalizedProfile.length) / totalHours);
-    return normalizedProfile[Math.min(profileIndex, normalizedProfile.length - 1)] || 0;
+  return Array.from({ length: totalHours }, (_, i) => {
+    const idx = Math.min(Math.floor((i * sorted.length) / totalHours), sorted.length - 1);
+    return sorted[idx];
   });
 }
 
@@ -138,87 +102,50 @@ function aggregateMonthly(hourlyData: AfrrHourlyRow[]): AfrrMonthlyRow[] {
 
   for (const row of hourlyData) {
     const month = new Date(row.timestamp).toISOString().slice(0, 7);
-    if (!byMonth.has(month)) {
-      byMonth.set(month, {
+    let item = byMonth.get(month);
+    if (!item) {
+      item = {
         month,
-        totalRevenueNok: 0,
-        solarRevenueNok: 0,
-        afrrRevenueNok: 0,
-        capacityRevenueNok: 0,
-        curtailmentCostNok: 0,
+        totalIncomeEur: 0,
+        spotIncomeEur: 0,
+        afrrIncomeEur: 0,
+        activationCostEur: 0,
         bidHours: 0,
         hours: 0,
-        afrrPriceSumNokMw: 0,
-        avgAfrrPriceNokMw: 0,
-      });
+        avgAfrrPriceEurMw: 0,
+      };
+      byMonth.set(month, item);
     }
 
-    const item = byMonth.get(month)!;
-    item.totalRevenueNok += row.totalRevenueNok;
-    item.solarRevenueNok += row.solarRevenueNok;
-    item.afrrRevenueNok += row.afrrRevenueNok;
-    item.capacityRevenueNok += row.capacityRevenueNok;
-    item.curtailmentCostNok += row.curtailmentCostNok;
+    item.totalIncomeEur += row.totalIncomeEur;
+    item.spotIncomeEur += row.spotIncomeEur;
+    item.afrrIncomeEur += row.afrrIncomeEur;
+    item.activationCostEur += row.activationCostEur;
     item.hours += 1;
 
-    if (row.bidVolumeMw > 0) {
+    if (row.hasBid) {
       item.bidHours += 1;
-      item.afrrPriceSumNokMw += row.afrrPriceNokMw;
+      item.avgAfrrPriceEurMw += row.afrrPriceEurMw;
     }
   }
 
-  return Array.from(byMonth.values()).map((month) => ({
-    ...month,
-    avgAfrrPriceNokMw: month.bidHours > 0 ? month.afrrPriceSumNokMw / month.bidHours : 0,
-  }));
+  for (const item of byMonth.values()) {
+    item.avgAfrrPriceEurMw = item.bidHours > 0 ? item.avgAfrrPriceEurMw / item.bidHours : 0;
+  }
+
+  return Array.from(byMonth.values());
 }
 
-function resolveAfrrPriceEurMw(row: AfrrInputRow | null): number {
-  return getFirstPositiveNumber([
-    toFiniteNumber(row?.marketPriceEurMw),
-    toFiniteNumber(row?.contractedPriceEurMw),
-  ]);
-}
-
-function resolveSpotPriceEurMwh(row: AfrrInputRow | null, explicitSpotPrice?: number): number {
-  return getFirstPositiveNumber([
-    Number.isFinite(explicitSpotPrice) ? explicitSpotPrice : null,
-    toFiniteNumber(row?.activationPriceEurMwh),
-  ]);
-}
-
-function buildAfrrLookup(rows: AfrrInputRow[]): Map<number, AfrrInputRow> {
-  const lookup = new Map<number, AfrrInputRow>();
+function buildTimestampLookup<T>(
+  rows: T[],
+  getTimestamp: (row: T) => number | null,
+): Map<number, T> {
+  const lookup = new Map<number, T>();
   for (const row of Array.isArray(rows) ? rows : []) {
-    const timestamp = toFiniteNumber(row.timestamp);
-    if (timestamp === null) continue;
-    lookup.set(timestamp, row);
+    const ts = getTimestamp(row);
+    if (ts !== null) lookup.set(ts, row);
   }
   return lookup;
-}
-
-function buildSpotLookup(rows: SpotInputRow[]): Map<number, number> {
-  const lookup = new Map<number, number>();
-  for (const row of Array.isArray(rows) ? rows : []) {
-    const timestamp = toFiniteNumber(row.timestamp);
-    const spotPriceEurMwh = toFiniteNumber(row.spotPriceEurMwh);
-    if (timestamp === null || spotPriceEurMwh === null) continue;
-    lookup.set(timestamp, spotPriceEurMwh);
-  }
-  return lookup;
-}
-
-function calculateActivationPct(
-  hasBid: boolean,
-  minPct: number,
-  maxPct: number,
-  rng: () => number,
-): number {
-  if (!hasBid) {
-    return 0;
-  }
-
-  return minPct + rng() * (maxPct - minPct);
 }
 
 export function calculateAfrrYearlyRevenue({
@@ -226,134 +153,136 @@ export function calculateAfrrYearlyRevenue({
   afrrRows,
   spotRows,
   solarRows,
-  powerMw,
-  eurToNok = 11,
+  direction = 'down',
   minBidMw = 1,
-  activationMinPct = 0,
-  activationMaxPct = 100,
-  seed = 42,
+  excludeZeroVolume = true,
+  limitToMarketVolume = true,
 }: AfrrCalculationParams): AfrrYearlyResult {
   const safeYear = Number(year);
-  const safePowerMw = Number(powerMw);
-  const safeEurToNok = Number(eurToNok);
-  const safeMinBidMw = Number(minBidMw);
+  const safeMinBidMw = Math.max(1, Number(minBidMw) || 1);
+  const isDown = direction !== 'up';
 
-  if (!Number.isInteger(safeYear)) {
-    throw new Error('Invalid simulation year');
-  }
-  if (!Number.isFinite(safePowerMw) || safePowerMw <= 0) {
-    throw new Error('Invalid power input');
-  }
-  if (!Number.isFinite(safeEurToNok) || safeEurToNok <= 0) {
-    throw new Error('Invalid EUR/NOK conversion rate');
-  }
-  if (!Number.isFinite(safeMinBidMw) || safeMinBidMw < 1) {
-    throw new Error('Minimum bid size must be at least 1 MW');
-  }
-
-  const safeActivationMinPct = Math.max(0, Math.min(100, Number(activationMinPct)));
-  const safeActivationMaxPct = Math.max(
-    safeActivationMinPct,
-    Math.min(100, Number(activationMaxPct)),
-  );
+  if (!Number.isInteger(safeYear)) throw new Error('Invalid simulation year');
 
   const totalHours = getHoursInYear(safeYear);
   const startTs = Date.UTC(safeYear, 0, 1, 0, 0, 0, 0);
-  const afrrByHour = buildAfrrLookup(afrrRows);
-  const spotByHour = buildSpotLookup(spotRows);
-  const rng = createRng(Number(seed) || 42);
 
-  const solarCapacityFactors = buildSolarCapacityFactors(solarRows, totalHours);
+  const afrrByHour = buildTimestampLookup(afrrRows, (r) => toFiniteNumber(r.timestamp));
+  const spotByHour = buildTimestampLookup(spotRows, (r) => toFiniteNumber(r.timestamp));
+  const solarProfile = buildSolarProfile(solarRows, totalHours);
+
   const hourlyData: AfrrHourlyRow[] = [];
-
-  let totalSolarRevenueNok = 0;
-  let totalAfrrRevenueNok = 0;
-  let totalCapacityRevenueNok = 0;
-  let totalCurtailmentCostNok = 0;
-  let totalBidVolumeMw = 0;
-  let totalActivationPct = 0;
+  let totalSpotIncomeEur = 0;
+  let totalAfrrIncomeEur = 0;
+  let totalActivationCostEur = 0;
+  let totalBidCapacityMw = 0;
   let bidHours = 0;
-  let afrrPriceSumNokMw = 0;
+  let afrrPriceSum = 0;
 
   for (let i = 0; i < totalHours; i += 1) {
-    const timestamp = startTs + i * 60 * 60 * 1000;
-    const afrrRow = afrrByHour.get(timestamp) || null;
-    const afrrPriceEurMw = resolveAfrrPriceEurMw(afrrRow);
-    const spotPriceEurMwh = resolveSpotPriceEurMwh(afrrRow, spotByHour.get(timestamp));
+    const timestamp = startTs + i * 3_600_000;
+    const afrr = afrrByHour.get(timestamp);
+    const spotPriceEurMwh = toFiniteNumber(spotByHour.get(timestamp)?.spotPriceEurMwh) ?? 0;
+    const solarMw = solarProfile[i];
 
-    const solarProductionMw = safePowerMw * (solarCapacityFactors[i] || 0);
-    const floorVolumeMw = Math.floor(solarProductionMw);
-    const bidVolumeMw = floorVolumeMw >= safeMinBidMw ? floorVolumeMw : 0;
-    const hasBid = bidVolumeMw > 0;
+    // aFRR capacity price (EUR/MW)
+    const mktPrice = toFiniteNumber(afrr?.marketPriceEurMw);
+    const ctrPrice = toFiniteNumber(afrr?.contractedPriceEurMw);
+    const afrrPriceEurMw = (mktPrice !== null && mktPrice > 0) ? mktPrice
+      : (ctrPrice !== null && ctrPrice > 0) ? ctrPrice : 0;
 
-    const activationPct = calculateActivationPct(
-      hasBid,
-      safeActivationMinPct,
-      safeActivationMaxPct,
-      rng,
-    );
+    const marketVolumeMw = toFiniteNumber(afrr?.marketVolumeMw) ?? 0;
+    const marketActivatedMw = toFiniteNumber(afrr?.marketActivatedVolumeMw) ?? 0;
 
-    const activatedEnergyMwh = hasBid ? bidVolumeMw * (activationPct / 100) : 0;
-    const solarCurtailmentMwh = Math.min(activatedEnergyMwh, solarProductionMw);
+    // Bid sizing
+    let capacityMw = 0;
+    if (!(excludeZeroVolume && marketVolumeMw <= 0)) {
+      const raw = Math.floor(solarMw / safeMinBidMw) * safeMinBidMw;
+      if (raw >= safeMinBidMw) capacityMw = raw;
+    }
+    if (limitToMarketVolume && capacityMw > 0 && marketVolumeMw > 0) {
+      capacityMw = Math.min(capacityMw, marketVolumeMw);
+    }
 
-    const afrrPriceNokMw = afrrPriceEurMw * safeEurToNok;
-    const spotPriceNokMwh = spotPriceEurMwh * safeEurToNok;
+    const hasBid = capacityMw > 0;
 
-    const solarRevenueNok = solarProductionMw * spotPriceNokMwh;
-    const capacityRevenueNok = hasBid ? bidVolumeMw * afrrPriceNokMw : 0;
-    const curtailmentCostNok = solarCurtailmentMwh * spotPriceNokMwh;
-    const afrrRevenueNok = capacityRevenueNok - curtailmentCostNok;
-    const totalRevenueNok = solarRevenueNok + afrrRevenueNok;
+    // Activation from real market data
+    let activatedMw = 0;
+    if (hasBid && marketVolumeMw > 0) {
+      activatedMw = capacityMw * (marketActivatedMw / marketVolumeMw);
+    }
 
-    totalSolarRevenueNok += solarRevenueNok;
-    totalAfrrRevenueNok += afrrRevenueNok;
-    totalCapacityRevenueNok += capacityRevenueNok;
-    totalCurtailmentCostNok += curtailmentCostNok;
+    // Income — activation settled at spot price
+    let spotIncomeEur: number;
+    let activationCostEur: number;
+
+    if (isDown) {
+      // DOWN: sell all production at spot, when activated pay back at spot
+      spotIncomeEur = solarMw * spotPriceEurMwh;
+      activationCostEur = activatedMw * spotPriceEurMwh;
+    } else {
+      // UP: reserve capacity (don't sell at spot), when activated earn spot
+      spotIncomeEur = (solarMw - Math.min(capacityMw, solarMw)) * spotPriceEurMwh;
+      activationCostEur = -(activatedMw * spotPriceEurMwh);
+    }
+
+    const afrrIncomeEur = hasBid ? capacityMw * afrrPriceEurMw : 0;
+    const totalIncomeEur = spotIncomeEur + afrrIncomeEur - activationCostEur;
+
+    // Log first bid hour for verification
+    if (hasBid && bidHours === 0) {
+      const ts = new Date(timestamp).toISOString();
+      console.info(
+        `[aFRR] First bid hour ${ts}:\n` +
+        `  Solar production: ${solarMw.toFixed(2)} MW\n` +
+        `  Spot price: ${spotPriceEurMwh.toFixed(2)} EUR/MWh\n` +
+        `  aFRR capacity price: ${afrrPriceEurMw.toFixed(2)} EUR/MW\n` +
+        `  Market volume: ${marketVolumeMw.toFixed(2)} MW | Activated: ${marketActivatedMw.toFixed(2)} MW\n` +
+        `  Bid capacity: ${capacityMw.toFixed(2)} MW\n` +
+        `  Activated capacity: ${activatedMw.toFixed(2)} MW (${marketVolumeMw > 0 ? ((marketActivatedMw / marketVolumeMw) * 100).toFixed(1) : 0}%)\n` +
+        `  Spot income: ${spotIncomeEur.toFixed(2)} EUR (${solarMw.toFixed(2)} MW × ${spotPriceEurMwh.toFixed(2)} EUR/MWh)\n` +
+        `  aFRR income: ${afrrIncomeEur.toFixed(2)} EUR (${capacityMw.toFixed(2)} MW × ${afrrPriceEurMw.toFixed(2)} EUR/MW)\n` +
+        `  Activation cost: ${activationCostEur.toFixed(2)} EUR (${activatedMw.toFixed(2)} MW × ${spotPriceEurMwh.toFixed(2)} EUR/MWh)\n` +
+        `  Total income: ${totalIncomeEur.toFixed(2)} EUR`,
+      );
+    }
+
+    totalSpotIncomeEur += spotIncomeEur;
+    totalAfrrIncomeEur += afrrIncomeEur;
+    totalActivationCostEur += activationCostEur;
 
     if (hasBid) {
       bidHours += 1;
-      totalBidVolumeMw += bidVolumeMw;
-      totalActivationPct += activationPct;
-      afrrPriceSumNokMw += afrrPriceNokMw;
+      totalBidCapacityMw += capacityMw;
+      afrrPriceSum += afrrPriceEurMw;
     }
 
     hourlyData.push({
       timestamp,
-      solarProductionMw,
-      bidVolumeMw,
+      solarProductionMw: solarMw,
+      afrrCapacityMw: capacityMw,
       afrrPriceEurMw,
-      afrrPriceNokMw,
       spotPriceEurMwh,
-      spotPriceNokMwh,
-      activationPct,
-      activatedEnergyMwh,
-      solarCurtailmentMwh,
-      solarRevenueNok,
-      capacityRevenueNok,
-      curtailmentCostNok,
-      afrrRevenueNok,
-      totalRevenueNok,
+      spotIncomeEur,
+      afrrIncomeEur,
+      activationCostEur,
+      totalIncomeEur,
+      activatedCapacityMw: activatedMw,
+      marketVolumeMw,
       hasBid,
     });
   }
-
-  const totalRevenueNok = totalSolarRevenueNok + totalAfrrRevenueNok;
-  const avgBidVolumeMw = bidHours > 0 ? totalBidVolumeMw / bidHours : 0;
-  const avgActivationPct = bidHours > 0 ? totalActivationPct / bidHours : 0;
-  const avgAfrrPriceNokMw = bidHours > 0 ? afrrPriceSumNokMw / bidHours : 0;
 
   return {
     year: safeYear,
     totalHours,
     bidHours,
-    totalRevenueNok,
-    totalSolarRevenueNok,
-    totalAfrrRevenueNok,
-    totalCapacityRevenueNok,
-    totalCurtailmentCostNok,
-    avgBidVolumeMw,
-    avgActivationPct,
-    avgAfrrPriceNokMw,
+    totalIncomeEur: totalSpotIncomeEur + totalAfrrIncomeEur - totalActivationCostEur,
+    totalSpotIncomeEur,
+    totalAfrrIncomeEur,
+    totalActivationCostEur,
+    avgBidCapacityMw: bidHours > 0 ? totalBidCapacityMw / bidHours : 0,
+    avgAfrrPriceEurMw: bidHours > 0 ? afrrPriceSum / bidHours : 0,
     hourlyData,
     monthly: aggregateMonthly(hourlyData),
   };
