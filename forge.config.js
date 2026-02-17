@@ -30,7 +30,48 @@ function resolveWindowsRemoteReleases(arch) {
   };
 }
 
+function shouldPublishToGitHub() {
+  return Boolean(process.env.GITHUB_TOKEN || process.env.GH_TOKEN);
+}
+
+function resolveGitHubRepository() {
+  const rawRepository = process.env.GITHUB_REPOSITORY || 'HydropowerNorge/Hydropower-FCR-Calculator';
+  const [owner, name] = rawRepository.split('/');
+  if (!owner || !name) {
+    throw new Error(`Invalid GitHub repository "${rawRepository}". Expected "owner/name".`);
+  }
+
+  return { owner, name };
+}
+
 const s4 = getS4Config();
+const publishers = [
+  {
+    name: '@electron-forge/publisher-s3',
+    config: {
+      bucket: s4.bucket,
+      endpoint: s4.endpoint,
+      region: s4.region,
+      folder: s4.updatesPrefix,
+      s3ForcePathStyle: true,
+      omitAcl: s4.omitAcl,
+      public: !s4.omitAcl,
+      releaseFileCacheControlMaxAge: 300
+    }
+  }
+];
+
+if (shouldPublishToGitHub()) {
+  publishers.push({
+    name: '@electron-forge/publisher-github',
+    config: {
+      repository: resolveGitHubRepository(),
+      draft: false,
+      prerelease: false,
+      force: true
+    }
+  });
+}
 
 module.exports = {
   packagerConfig: {
@@ -64,21 +105,7 @@ module.exports = {
       }
     }
   ],
-  publishers: [
-    {
-      name: '@electron-forge/publisher-s3',
-      config: {
-        bucket: s4.bucket,
-        endpoint: s4.endpoint,
-        region: s4.region,
-        folder: s4.updatesPrefix,
-        s3ForcePathStyle: true,
-        omitAcl: s4.omitAcl,
-        public: !s4.omitAcl,
-        releaseFileCacheControlMaxAge: 300
-      }
-    }
-  ],
+  publishers,
   plugins: [
     {
       name: '@electron-forge/plugin-auto-unpack-natives',

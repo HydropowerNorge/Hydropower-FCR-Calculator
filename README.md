@@ -64,8 +64,10 @@ npm run convex:seed
   - macOS (`.dmg` + `.zip`)
   - Windows (Squirrel packages for auto-update)
   - Linux (`.zip`)
-- Publishing target: S3-compatible storage (MEGA S4 bucket), artifacts only.
-- No source-code tarballs are uploaded by this workflow.
+- Publishing targets:
+  - S3-compatible storage (MEGA S4 bucket)
+  - GitHub Releases (same version tag)
+- Note: GitHub Releases includes auto-generated source-code archives in addition to uploaded binaries.
 
 ### Required GitHub secrets
 - `S4_ACCESS_KEY_ID`
@@ -76,6 +78,7 @@ npm run convex:seed
 - `S4_UPDATES_PREFIX` (example: `updates`)
 - Optional: `S4_OMIT_ACL=1` if your endpoint rejects ACL operations.
 - Optional: `S4_ENABLE_WINDOWS_REMOTE_RELEASES=1` after first Windows release exists remotely (enables delta package sync).
+- No extra secret is required for GitHub uploads; workflow uses built-in `GITHUB_TOKEN`.
 
 ### Release steps
 1. Update version in `package.json` (example: `npm version patch`).

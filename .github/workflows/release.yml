@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -44,8 +44,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Publish artifacts to S4
+      - name: Publish artifacts to S4 and GitHub Releases
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.S4_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S4_SECRET_KEY }}
           AWS_REGION: ${{ secrets.S4_REGION }}
