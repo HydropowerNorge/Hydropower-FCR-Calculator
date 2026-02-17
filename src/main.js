@@ -328,7 +328,6 @@ function initializeAutoUpdates() {
       return;
     }
 
-    // Poll GitHub Releases through update.electronjs.org.
     const { updateElectronApp, UpdateSourceType } = require('update-electron-app');
     updateElectronApp({
       updateSource: {
@@ -413,7 +412,6 @@ function createWindow() {
   }
 }
 
-// IPC handlers
 ipcMain.handle('file:save', async (event, data, defaultName) => {
   const safeDefaultName = sanitizeDefaultName(defaultName, 'export.csv');
   const { canceled, filePath } = await dialog.showSaveDialog({
@@ -541,9 +539,9 @@ ipcMain.handle('file:savePdf', async (event, pdfData, defaultName) => {
   let pdfWindow = null;
 
   try {
-    // Create hidden BrowserWindow to render HTML
     pdfWindow = new BrowserWindow({
-      width: 1123,  // A4 landscape at 96dpi
+      width: 1123,
+
       height: 794,
       show: false,
       webPreferences: {
@@ -554,7 +552,6 @@ ipcMain.handle('file:savePdf', async (event, pdfData, defaultName) => {
 
     await pdfWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
 
-    // Wait for images to load before rendering to PDF.
     await pdfWindow.webContents.executeJavaScript(`
       new Promise(resolve => {
         const imgs = document.querySelectorAll('img');
@@ -585,136 +582,6 @@ ipcMain.handle('file:savePdf', async (event, pdfData, defaultName) => {
     }
   }
 });
-
-function buildArbitragePage2(data, monthly, totalRevenue, totalHours, avgPrice, monthlyRows, now) {
-  const f = data.financials || {};
-  const config = data.config;
-
-  const arbMonthlyRows = monthly.map(m => `
-    <tr>
-      <td>${m.month}</td>
-      <td style="text-align:right">${euroFmt(m.revenue)}</td>
-      <td style="text-align:right">${euroFmt(m.chargeCost || 0)}</td>
-      <td style="text-align:right">${euroFmt(m.dischargeRevenue || 0)}</td>
-      <td style="text-align:right">${m.hours}</td>
-      <td style="text-align:right">${euroFmt(m.avgPrice)}</td>
-    </tr>
-  `).join('');
-
-  const totalCharge = monthly.reduce((s, m) => s + (m.chargeCost || 0), 0);
-  const totalDischarge = monthly.reduce((s, m) => s + (m.dischargeRevenue || 0), 0);
-  const pctPositive = f.totalDays > 0 ? ((f.positiveDays / f.totalDays) * 100).toFixed(0) : 0;
-
-  return `
-  <div class="table-section">
-    <div class="page2-header">
-      <h2>Finansiell oppsummering</h2>
-      <div class="meta">Prisområde: NO1 &middot; Periode: ${config.year} &middot; ${now}</div>
-    </div>
-
-    <div class="kpi-grid">
-      <div class="kpi-card">
-        <span class="kpi-value accent">${euroFmt(f.expectedMonthly)}</span>
-        <span class="kpi-label">Forventet månedsinntekt</span>
-        <span class="kpi-sub">Snitt siste hele måneder</span>
-      </div>
-      <div class="kpi-card">
-        <span class="kpi-value">${euroFmt(f.expectedYearly)}</span>
-        <span class="kpi-label">Forventet årsinntekt</span>
-        <span class="kpi-sub">${euroFmt(f.expectedYearlyPerMw)}/MW &middot; ${config.powerMw} MW</span>
-      </div>
-      <div class="kpi-card">
-        <span class="kpi-value green">${pctPositive}%</span>
-        <span class="kpi-label">Lønnsomme dager</span>
-        <span class="kpi-sub">${f.positiveDays} av ${f.totalDays} dager med positiv inntekt</span>
-      </div>
-    </div>
-
-    <div class="two-col">
-      <div class="summary-box">
-        <h3>Nøkkeltall</h3>
-        <div class="summary-row">
-          <span class="sr-label">Total nettoinntekt</span>
-          <span class="sr-value">${euroFmt(f.totalRevenue)}</span>
-        </div>
-        <div class="summary-row">
-          <span class="sr-label">Total ladekostnad</span>
-          <span class="sr-value">${euroFmt(f.totalChargeCost)}</span>
-        </div>
-        <div class="summary-row">
-          <span class="sr-label">Total utladeinntekt</span>
-          <span class="sr-value">${euroFmt(f.totalDischargeRevenue)}</span>
-        </div>
-        <div class="summary-row">
-          <span class="sr-label">Inntekt per MW (periode)</span>
-          <span class="sr-value">${euroFmt(f.revenuePerMw)}</span>
-        </div>
-        <div class="summary-row">
-          <span class="sr-label">Sykluser per MW per dag</span>
-          <span class="sr-value">${f.duration.toFixed(1)}h</span>
-        </div>
-      </div>
-      <div class="summary-box">
-        <h3>Daglig inntektsfordeling</h3>
-        <div class="summary-row">
-          <span class="sr-label">Gjennomsnitt per dag</span>
-          <span class="sr-value">${euroFmt(f.avgDailyRevenue)}</span>
-        </div>
-        <div class="summary-row">
-          <span class="sr-label">Median per dag</span>
-          <span class="sr-value">${euroFmt(f.medianDailyRevenue)}</span>
-        </div>
-        <div class="summary-row">
-          <span class="sr-label">Beste dag</span>
-          <span class="sr-value">${euroFmt(f.maxDailyRevenue)}</span>
-        </div>
-        <div class="summary-row">
-          <span class="sr-label">Svakeste dag</span>
-          <span class="sr-value">${euroFmt(f.minDailyRevenue)}</span>
-        </div>
-        <div class="summary-row">
-          <span class="sr-label">Beste måned</span>
-          <span class="sr-value">${f.bestMonth} (${euroFmt(f.bestMonthRevenue)})</span>
-        </div>
-      </div>
-    </div>
-
-    <h2 style="font-size:13px; margin-bottom:8px;">Månedlig oppsummering</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Måned</th>
-          <th>Nettoinntekt</th>
-          <th>Ladekostnad</th>
-          <th>Utladeinntekt</th>
-          <th>Dager</th>
-          <th>Snitt/dag</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${arbMonthlyRows}
-        <tr class="total-row">
-          <td>TOTAL</td>
-          <td style="text-align:right">${euroFmt(totalRevenue)}</td>
-          <td style="text-align:right">${euroFmt(totalCharge)}</td>
-          <td style="text-align:right">${euroFmt(totalDischarge)}</td>
-          <td style="text-align:right">${totalHours}</td>
-          <td style="text-align:right">${euroFmt(avgPrice)}</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div class="disclaimer">
-      Tallene er basert på faktiske driftsdata fra vår batteriinstallasjon i prisområde NO1 over de siste månedene.
-      Inntekten reflekterer reell handel mot spotmarkedet, inkludert dager uten drift grunnet testing og klargjøring i oppstartsperioden.
-      Virkningsgrad (${config.efficiency}%) er medregnet.
-    </div>
-  </div>
-
-  <div class="footer">
-    Konfidensielt &middot; Basert på driftsdata ${config.year} &middot; Prisområde NO1
-  </div>`;
-}
 
 function buildPdfHtml(data) {
   const { chartImages, monthly, config, metrics } = data;
@@ -862,89 +729,6 @@ function buildPdfHtml(data) {
     border-top: 2px solid #1a1a2e;
     background: #f0f0f0;
   }
-  .page2-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    border-bottom: 3px solid #e94560;
-    padding-bottom: 10px;
-    margin-bottom: 18px;
-  }
-  .page2-header h2 { font-size: 16px; color: #1a1a2e; }
-  .page2-header .meta { font-size: 10px; color: #666; }
-  .kpi-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 12px;
-    margin-bottom: 20px;
-  }
-  .kpi-card {
-    background: #f8f8f8;
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
-    padding: 14px 16px;
-  }
-  .kpi-card .kpi-value {
-    font-size: 20px;
-    font-weight: 700;
-    color: #1a1a2e;
-    display: block;
-    margin-bottom: 2px;
-  }
-  .kpi-card .kpi-value.accent { color: #e94560; }
-  .kpi-card .kpi-value.green { color: #16a34a; }
-  .kpi-card .kpi-label {
-    font-size: 9px;
-    color: #666;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-  .kpi-card .kpi-sub {
-    font-size: 9px;
-    color: #999;
-    margin-top: 4px;
-  }
-  .two-col {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 18px;
-    margin-bottom: 18px;
-  }
-  .summary-box {
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
-    overflow: hidden;
-  }
-  .summary-box h3 {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding: 8px 12px;
-    background: #f5f5f5;
-    color: #333;
-    border-bottom: 1px solid #e0e0e0;
-  }
-  .summary-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 6px 12px;
-    font-size: 10px;
-    border-bottom: 1px solid #f0f0f0;
-  }
-  .summary-row:last-child { border-bottom: none; }
-  .summary-row .sr-label { color: #666; }
-  .summary-row .sr-value { font-weight: 600; color: #1a1a2e; }
-  .disclaimer {
-    margin-top: 14px;
-    padding: 10px 14px;
-    background: #fffbeb;
-    border: 1px solid #fde68a;
-    border-radius: 6px;
-    font-size: 9px;
-    color: #92400e;
-    line-height: 1.5;
-  }
   .footer {
     margin-top: 16px;
     padding-top: 10px;
@@ -958,10 +742,10 @@ function buildPdfHtml(data) {
 <body>
 <div class="page">
   <div class="header">
-    <h1>${config.reportType === 'arbitrage' ? 'Arbitrasje Inntektsrapport' : 'FCR-N Inntektsrapport'}</h1>
+    <h1>FCR-N Inntektsrapport</h1>
     <div class="meta">
       Generert: ${now}<br>
-      ${config.reportType === 'arbitrage' ? 'Driftsperiode' : 'Prisdata'}: ${config.year}
+      Prisdata: ${config.year}
     </div>
   </div>
 
@@ -981,32 +765,25 @@ function buildPdfHtml(data) {
     </div>
     <div class="metric-box">
       <span class="value">${metrics.availableHours}</span>
-      <span class="label">${config.reportType === 'arbitrage' ? 'Antall dager' : 'Tilgjengelige timer'}</span>
+      <span class="label">Tilgjengelige timer</span>
     </div>
     <div class="metric-box">
       <span class="value">${metrics.availability}</span>
-      <span class="label">${config.reportType === 'arbitrage' ? 'Sykluser' : 'Tilgjengelighet'}</span>
+      <span class="label">Tilgjengelighet</span>
     </div>
     <div class="metric-box">
       <span class="value">${metrics.avgPrice}</span>
-      <span class="label">${config.reportType === 'arbitrage' ? 'Snitt per dag' : 'Snittpris'}</span>
+      <span class="label">Snittpris</span>
     </div>
   </div>
 
   <div class="charts-grid">
-    ${config.reportType === 'arbitrage'
-      ? `${chartSection('Månedlig inntekt', chartImages.monthly)}
-         ${chartSection('Daglig profitt', chartImages.price)}
-         ${chartSection('Typisk dagsprofil', chartImages.soc)}
-         ${chartSection('Kumulativ inntekt', chartImages.freq)}`
-      : `${chartSection('Månedlig inntekt', chartImages.monthly)}
-         ${chartSection('Prisfordeling', chartImages.price)}
-         ${chartSection('SOC-utvikling', chartImages.soc)}
-         ${chartSection('Frekvensfordeling', chartImages.freq)}`
-    }
+    ${chartSection('Månedlig inntekt', chartImages.monthly)}
+    ${chartSection('Prisfordeling', chartImages.price)}
+    ${chartSection('SOC-utvikling', chartImages.soc)}
+    ${chartSection('Frekvensfordeling', chartImages.freq)}
   </div>
 
-  ${config.reportType === 'arbitrage' ? buildArbitragePage2(data, monthly, totalRevenue, totalHours, avgPrice, monthlyRows, now) : `
   <div class="table-section">
     <h2>Månedlig oppsummering</h2>
     <table>
@@ -1033,7 +810,6 @@ function buildPdfHtml(data) {
   <div class="footer">
     Denne rapporten er generert basert på historiske FCR-N priser for ${config.year} (NO1).
   </div>
-  `}
 </div>
 </body>
 </html>`;
@@ -1067,29 +843,66 @@ async function runConvexQuery(functionName, args = {}) {
   return client.query(functionName, args);
 }
 
-async function runPaginatedConvexQuery(functionName, args = {}, pageSize = 1000) {
+async function runPaginatedConvexQuery(functionName, args = {}, pageSize = 1000, options = {}) {
+  const traceLabel = typeof options.traceLabel === 'string' && options.traceLabel.trim()
+    ? options.traceLabel.trim()
+    : null;
+  const logEveryPage = options.logEveryPage === true;
+  const startedAt = Date.now();
   const allRows = [];
   let cursor = null;
+  let pageCount = 0;
 
-  while (true) {
-    const pageResult = await runConvexQuery(functionName, {
-      ...args,
-      paginationOpts: {
-        numItems: pageSize,
-        cursor,
-      },
-    });
+  try {
+    while (true) {
+      const pageStartedAt = Date.now();
+      const pageResult = await runConvexQuery(functionName, {
+        ...args,
+        paginationOpts: {
+          numItems: pageSize,
+          cursor,
+        },
+      });
+      pageCount += 1;
 
-    allRows.push(...pageResult.page);
+      const pageRows = Array.isArray(pageResult?.page) ? pageResult.page.length : 0;
+      allRows.push(...(Array.isArray(pageResult?.page) ? pageResult.page : []));
 
-    if (pageResult.isDone) {
-      break;
+      if (
+        traceLabel
+        && (logEveryPage || pageCount === 1 || pageResult.isDone)
+      ) {
+        console.info(
+          `[${traceLabel}] page ${pageCount}: ${pageRows} rows `
+          + `(${allRows.length} total) in ${Date.now() - pageStartedAt}ms`,
+        );
+      }
+
+      if (pageResult.isDone) {
+        break;
+      }
+
+      cursor = pageResult.continueCursor;
     }
 
-    cursor = pageResult.continueCursor;
-  }
+    if (traceLabel) {
+      console.info(
+        `[${traceLabel}] complete: ${allRows.length} rows `
+        + `across ${pageCount} pages in ${Date.now() - startedAt}ms`,
+      );
+    }
 
-  return allRows;
+    return allRows;
+  } catch (error) {
+    if (traceLabel) {
+      console.error(
+        `[${traceLabel}] failed after ${Date.now() - startedAt}ms `
+        + `(${allRows.length} rows, ${pageCount} pages):`,
+        error,
+      );
+    }
+    throw error;
+  }
 }
 
 ipcMain.handle('data:loadPriceData', async (event, year, area = 'NO1') => {
@@ -1122,11 +935,13 @@ ipcMain.handle('data:getAvailableYears', async (event, area = 'NO1') => {
   }
 });
 
-ipcMain.handle('data:loadSpotData', async (event, biddingZone = 'NO1') => {
+ipcMain.handle('data:loadSpotData', async (event, biddingZone = 'NO1', year = null) => {
   const safeBiddingZone = sanitizeAreaCode(biddingZone, 'NO1');
+  const safeYear = sanitizeYear(year);
   try {
     return await runPaginatedConvexQuery('spot:getSpotDataPage', {
       biddingZone: safeBiddingZone,
+      ...(safeYear !== null ? { year: safeYear } : {}),
     });
   } catch (err) {
     console.error('Failed to load spot data from Convex:', err);
@@ -1144,17 +959,25 @@ ipcMain.handle('data:loadAfrrData', async (event, year, filters = {}) => {
   const safeDirection = sanitizeDirection(filters?.direction, 'down');
   const safeReserveType = sanitizeReserveType(filters?.reserveType, 'afrr');
   const safeResolutionMin = sanitizeResolutionMinutes(filters?.resolutionMin, 60);
+  const traceLabel = `aFRR fetch ${safeBiddingZone}/${safeDirection}/${safeReserveType}/${safeResolutionMin}m/${safeYear}`;
+  const startedAt = Date.now();
 
   try {
-    return await runPaginatedConvexQuery('afrr:getAfrrDataPage', {
+    console.info(`[${traceLabel}] start`);
+    const rows = await runPaginatedConvexQuery('afrr:getAfrrDataPage', {
       year: safeYear,
       biddingZone: safeBiddingZone,
       direction: safeDirection,
       reserveType: safeReserveType,
       resolutionMin: safeResolutionMin,
+    }, 1000, {
+      traceLabel,
+      logEveryPage: true,
     });
+    console.info(`[${traceLabel}] success in ${Date.now() - startedAt}ms`);
+    return rows;
   } catch (err) {
-    console.error('Failed to load aFRR data from Convex:', err);
+    console.error(`[${traceLabel}] failed in ${Date.now() - startedAt}ms:`, err);
     return [];
   }
 });
@@ -1164,16 +987,21 @@ ipcMain.handle('data:getAfrrAvailableYears', async (event, filters = {}) => {
   const safeDirection = sanitizeDirection(filters?.direction, 'down');
   const safeReserveType = sanitizeReserveType(filters?.reserveType, 'afrr');
   const safeResolutionMin = sanitizeResolutionMinutes(filters?.resolutionMin, 60);
+  const startedAt = Date.now();
+  const traceLabel = `aFRR years ${safeBiddingZone}/${safeDirection}/${safeReserveType}/${safeResolutionMin}m`;
 
   try {
-    return await runConvexQuery('afrr:getAvailableYears', {
+    console.info(`[${traceLabel}] start`);
+    const years = await runConvexQuery('afrr:getAvailableYears', {
       biddingZone: safeBiddingZone,
       direction: safeDirection,
       reserveType: safeReserveType,
       resolutionMin: safeResolutionMin,
     });
+    console.info(`[${traceLabel}] fetched ${years.length} years in ${Date.now() - startedAt}ms`);
+    return years;
   } catch (err) {
-    console.error('Failed to fetch aFRR years from Convex:', err);
+    console.error(`[${traceLabel}] failed in ${Date.now() - startedAt}ms:`, err);
     return [];
   }
 });

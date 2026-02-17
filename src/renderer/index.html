@@ -117,25 +117,6 @@
         <button id="calculateBtn" class="btn btn-primary">Beregn inntekt</button>
       </div>
 
-      <!-- Arbitrage data config -->
-      <div data-tab-config="arbitrage" style="display: none;">
-        <section class="config-section">
-          <h2>Spotprisdata</h2>
-
-          <div class="input-group">
-            <label for="spotPeriod">Periode</label>
-            <select id="spotPeriod">
-              <option value="3">Siste 3 måneder</option>
-              <option value="6">Siste 6 måneder</option>
-            </select>
-          </div>
-
-          <p id="spotFileStatus" class="info-text" style="margin-top: 4px;"></p>
-        </section>
-
-        <button id="calculateArbitrageBtn" class="btn btn-primary">Beregn arbitrasje</button>
-      </div>
-
       <div data-tab-config="afrr" style="display: none;">
         <section class="config-section">
           <h2>aFRR-parametere</h2>
@@ -318,85 +299,6 @@
         </section>
       </div>
       </div><!-- /fcrContent -->
-
-      <!-- Arbitrage Tab Content -->
-      <div id="arbitrageContent" class="tab-content" data-tab-panel="arbitrage" role="tabpanel">
-        <div id="arbStatusMessage" class="status-message"></div>
-
-        <!-- Metrics -->
-        <div class="metrics-row">
-          <div class="metric-card">
-            <span class="metric-value" id="arbTotalRevenue">-</span>
-            <span class="metric-label">Total inntekt</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-value" id="arbAvgDaily">-</span>
-            <span class="metric-label">Snitt per dag</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-value" id="arbCycles">-</span>
-            <span class="metric-label">Sykluser</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-value" id="arbDuration">-</span>
-            <span class="metric-label">Varighet (timer)</span>
-          </div>
-        </div>
-
-        <!-- Charts -->
-        <section class="chart-section">
-          <h2>Månedlig inntekt</h2>
-          <div class="chart-container">
-            <canvas id="arbMonthlyChart"></canvas>
-          </div>
-        </section>
-
-        <section class="chart-section">
-          <h2>Daglig profitt</h2>
-          <div class="chart-container">
-            <canvas id="arbDailyChart"></canvas>
-          </div>
-        </section>
-
-        <section class="chart-section">
-          <h2>Typisk dagsprofil</h2>
-          <div class="chart-container">
-            <canvas id="arbProfileChart"></canvas>
-          </div>
-        </section>
-
-        <section class="chart-section">
-          <h2>Kumulativ inntekt</h2>
-          <div class="chart-container">
-            <canvas id="arbCumulativeChart"></canvas>
-          </div>
-        </section>
-
-        <!-- Export -->
-        <section class="export-section">
-          <button id="arbExportPdfBtn" class="btn btn-accent">Eksporter PDF</button>
-          <button id="arbExportCsvBtn" class="btn btn-secondary">Eksporter CSV</button>
-          <button id="arbExportXlsxBtn" class="btn btn-secondary">Eksporter Excel</button>
-        </section>
-
-        <!-- Summary Table -->
-        <section class="summary-section">
-          <h2>Månedlig oppsummering</h2>
-          <div class="table-container">
-            <table id="arbSummaryTable">
-              <thead>
-                <tr>
-                  <th>Måned</th>
-                  <th>Inntekt (EUR)</th>
-                  <th>Dager</th>
-                  <th>Snitt/dag (EUR)</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </section>
-      </div><!-- /arbitrageContent -->
 
       <div id="afrrContent" class="tab-content" data-tab-panel="afrr" role="tabpanel" aria-labelledby="tab-afrr">
         <div id="afrrStatusMessage" class="status-message info">Laster aFRR-data...</div>

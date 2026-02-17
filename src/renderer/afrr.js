@@ -253,7 +253,3 @@ export function calculateAfrrYearlyRevenue({
     monthly: aggregateMonthly(hourlyData),
   };
 }
-
-export const AfrrCalculator = {
-  calculateAfrrYearlyRevenue,
-};

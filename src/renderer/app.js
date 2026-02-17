@@ -2,15 +2,11 @@ import Chart from 'chart.js/auto';
 import Papa from 'papaparse';
 import * as Calculator from './calculator.js';
 import * as FrequencySimulator from './frequency.js';
-import { createArbitrageUI } from './arbitrage-ui.js';
 import { createAfrrUI } from './afrr-ui.js';
 
-// App state
 let priceData = [];
-let freqData = null;
 let currentResult = null;
 let nodeTenderRows = [];
-const arbitrageUI = createArbitrageUI();
 const afrrUI = createAfrrUI();
 let charts = {
   monthly: null,
@@ -19,9 +15,7 @@ let charts = {
   freq: null
 };
 
-// DOM elements
 const elements = {
-  // Inputs
   powerMw: document.getElementById('powerMw'),
   capacityMwh: document.getElementById('capacityMwh'),
   efficiency: document.getElementById('efficiency'),
@@ -34,7 +28,6 @@ const elements = {
   simHours: document.getElementById('simHours'),
   seed: document.getElementById('seed'),
 
-  // Results
   loadingState: document.getElementById('loadingState'),
   resultsContainer: document.getElementById('resultsContainer'),
   statusMessage: document.getElementById('statusMessage'),
@@ -49,14 +42,12 @@ const elements = {
   freqSection: document.getElementById('freqSection'),
   summaryTable: document.getElementById('summaryTable').querySelector('tbody'),
 
-  // Nodes controls
   nodesDataset: document.getElementById('nodesDataset'),
   nodesGridNode: document.getElementById('nodesGridNode'),
   nodesMarket: document.getElementById('nodesMarket'),
   refreshNodesBtn: document.getElementById('refreshNodesBtn'),
   nodesFilterInfo: document.getElementById('nodesFilterInfo'),
 
-  // Nodes results
   nodesStatusMessage: document.getElementById('nodesStatusMessage'),
   nodesTenderCount: document.getElementById('nodesTenderCount'),
   nodesTotalMw: document.getElementById('nodesTotalMw'),
@@ -65,7 +56,6 @@ const elements = {
   nodesTableBody: document.getElementById('nodesTableBody')
 };
 
-// Chart.js default colors
 Chart.defaults.color = '#aaa';
 Chart.defaults.borderColor = '#2a2a4a';
 
@@ -314,8 +304,6 @@ function renderNodesTable(rows) {
 
 async function loadNodeFilterOptions(dataset, keepSelections = true) {
   if (!window.electronAPI?.loadNodeTenders) return;
-  const previousGridNode = keepSelections ? elements.nodesGridNode?.value || '' : '';
-  const previousMarket = keepSelections ? elements.nodesMarket?.value || '' : '';
 
   let result = {
     gridNodes: [],
@@ -332,23 +320,11 @@ async function loadNodeFilterOptions(dataset, keepSelections = true) {
     console.warn('Could not derive node filters from tenders:', error);
   }
 
-  const gridNodes = Array.isArray(result.gridNodes) ? result.gridNodes : [];
-  const markets = Array.isArray(result.markets) ? result.markets : [];
-
-  setSelectOptions(elements.nodesGridNode, gridNodes, 'Alle', keepSelections);
-  setSelectOptions(elements.nodesMarket, markets, 'Alle', keepSelections);
-
-  if (keepSelections) {
-    if (previousGridNode && gridNodes.includes(previousGridNode) && elements.nodesGridNode) {
-      elements.nodesGridNode.value = previousGridNode;
-    }
-    if (previousMarket && markets.includes(previousMarket) && elements.nodesMarket) {
-      elements.nodesMarket.value = previousMarket;
-    }
-  }
+  setSelectOptions(elements.nodesGridNode, result.gridNodes, 'Alle', keepSelections);
+  setSelectOptions(elements.nodesMarket, result.markets, 'Alle', keepSelections);
 
   if (elements.nodesFilterInfo) {
-    const total = Number(result?.total) || 0;
+    const total = result.total || 0;
     elements.nodesFilterInfo.textContent = `${total.toLocaleString('nb-NO')} tender(er) i datasettet`;
   }
 }
@@ -484,18 +460,12 @@ function setupTabs() {
   }
 }
 
-// Initialize app
 async function init() {
-  // Set up tabs
   setupTabs();
-  await arbitrageUI.init();
   await afrrUI.init();
   setFcrVisualStates('loading', 'Laster visualiseringer...');
-
-  // Set up slider value displays
   setupSliders();
 
-  // Load available years
   const years = (await window.electronAPI.getAvailableYears('NO1'))
     .map(y => Number(y))
     .filter(y => Number.isFinite(y))
@@ -509,7 +479,6 @@ async function init() {
     elements.year.appendChild(option);
   });
 
-  // Prefer 2025 as default year
   if (years.length > 0) {
     const preferredYear = 2025;
     const defaultYear = years.includes(preferredYear)
@@ -527,7 +496,6 @@ async function init() {
 
   await initializeNodesModule();
 
-  // Event listeners
   elements.year.addEventListener('change', async () => {
     await loadPriceData(parseInt(elements.year.value));
   });
@@ -667,7 +635,7 @@ async function calculate() {
     } catch (err) {
       console.warn('Worker simulation unavailable, falling back to main thread simulation:', err);
 
-      const startTime = new Date(Date.UTC(year, 0, 1)); // Jan 1st
+      const startTime = new Date(Date.UTC(year, 0, 1));
       showStatus('Simulerer batteri', 'info');
       await new Promise(r => setTimeout(r, 10));
 
@@ -687,13 +655,11 @@ async function calculate() {
     }
 
     const result = workerResult.result;
-    const summary = workerResult.summary;
-    freqData = { summary };
+    result.freqSummary = workerResult.summary;
 
     showStatus('Simulering fullført', 'success');
 
     currentResult = result;
-    currentResult.freqSummary = summary;
     displayResults(result, true, true);
   } catch (err) {
     console.error('Calculation failed:', err);
@@ -711,18 +677,14 @@ function displayResults(result, showSoc, showFreq) {
   elements.availability.textContent = `${result.availabilityPct.toFixed(1)}%`;
   elements.avgPrice.textContent = `€${result.avgPrice.toFixed(0)}/MW`;
 
-  // Hide annualized note - we always simulate full year now
   elements.annualizedNote.style.display = 'none';
 
-  // Monthly aggregation
   const monthly = aggregateMonthly(result.hourlyData);
   updateMonthlyChart(monthly);
   updateSummaryTable(monthly);
 
-  // Price histogram
   updatePriceChart(result.hourlyData);
 
-  // SOC chart
   elements.socSection.style.display = showSoc ? 'block' : 'none';
   if (showSoc) {
     updateSocChart(result.hourlyData);
@@ -735,7 +697,6 @@ function displayResults(result, showSoc, showFreq) {
     setChartState('socChart', 'empty', 'SOC-visualisering er ikke aktiv.');
   }
 
-  // Frequency chart
   elements.freqSection.style.display = showFreq ? 'block' : 'none';
   if (showFreq && result.freqSummary) {
     updateFreqChart(result.freqSummary);
@@ -813,7 +774,6 @@ function updateMonthlyChart(monthly) {
 }
 
 function updatePriceChart(hourlyData) {
-  // Create histogram bins
   const prices = hourlyData.map(h => h.price);
   if (prices.length === 0) {
     if (charts.price) {
@@ -960,7 +920,6 @@ function updateFreqChart(summary) {
   const labels = summary.histogramLabels;
   const bins = summary.histogram;
 
-  // Mark 49.9 and 50.1 Hz bins - green for normal band, red for outside
   const normalBandColors = labels.map(l => {
     const f = parseFloat(l);
     return (f >= 49.9 && f <= 50.1) ? '#4ade80' : '#e94560';
@@ -1067,7 +1026,6 @@ async function exportPdf() {
   const year = elements.year.value;
   const monthly = aggregateMonthly(currentResult.hourlyData);
 
-  // Capture chart images as base64 PNG
   const chartImages = {
     monthly: charts.monthly ? charts.monthly.toBase64Image() : null,
     price: charts.price ? charts.price.toBase64Image() : null,
@@ -1107,7 +1065,6 @@ function showStatus(message, type) {
   elements.statusMessage.className = `status-message ${type}`;
 }
 
-// Popover logic
 const popoverEl = document.getElementById('popover');
 let activePopoverBtn = null;
 
@@ -1122,7 +1079,6 @@ function showPopover(btn) {
   const btnRect = btn.getBoundingClientRect();
   const gap = 8;
 
-  // Temporarily show to measure
   popoverEl.style.left = '0px';
   popoverEl.style.top = '0px';
   const popRect = popoverEl.getBoundingClientRect();
@@ -1141,13 +1097,11 @@ function showPopover(btn) {
     popoverEl.classList.add('arrow-top');
   }
 
-  // Center horizontally on button, clamp to viewport
   const btnCenter = btnRect.left + btnRect.width / 2;
   let left = btnCenter - popRect.width / 2;
   const margin = 8;
   left = Math.max(margin, Math.min(left, window.innerWidth - popRect.width - margin));
 
-  // Arrow points at button center
   const arrowLeft = Math.max(12, Math.min(btnCenter - left, popRect.width - 12));
   popoverEl.style.setProperty('--arrow-left', arrowLeft + 'px');
 
@@ -1182,5 +1136,4 @@ document.addEventListener('click', (e) => {
 window.addEventListener('scroll', hidePopover, true);
 window.addEventListener('resize', hidePopover);
 
-// Start app
 init();

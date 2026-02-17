@@ -10,11 +10,6 @@ function formatNok(value, digits = 0) {
   })}`;
 }
 
-function isSameUtcYear(timestamp, year) {
-  const date = new Date(timestamp);
-  return date.getUTCFullYear() === year;
-}
-
 export function createAfrrUI() {
   const charts = {
     monthly: null,
@@ -24,7 +19,6 @@ export function createAfrrUI() {
 
   const el = {};
   let currentResult = null;
-  let allSpotRows = [];
   let isCalculating = false;
 
   function ensureVisualState(container) {
@@ -78,6 +72,15 @@ export function createAfrrUI() {
     el.statusMessage.className = `status-message ${type}`;
   }
 
+  async function timedFetch(label, fetcher) {
+    const startedAt = performance.now();
+    const result = await fetcher();
+    const durationMs = Math.round(performance.now() - startedAt);
+    const rowCount = Array.isArray(result) ? result.length : 0;
+    console.info(`[aFRR UI] ${label}: ${rowCount} rows fetched in ${durationMs}ms`);
+    return result;
+  }
+
   function populateSelect(selectEl, values) {
     if (!selectEl) return;
     selectEl.innerHTML = '';
@@ -90,7 +93,7 @@ export function createAfrrUI() {
   }
 
   async function loadStaticInputs() {
-    const [afrrYearsRaw, solarYearsRaw, spotRowsRaw] = await Promise.all([
+    const [afrrYearsRaw, solarYearsRaw] = await Promise.all([
       window.electronAPI.getAfrrAvailableYears({
         biddingZone: 'NO1',
         direction: 'down',
@@ -98,7 +101,6 @@ export function createAfrrUI() {
         resolutionMin: 60,
       }),
       window.electronAPI.getSolarAvailableYears(60),
-      window.electronAPI.loadSpotData('NO1'),
     ]);
 
     const afrrYears = (Array.isArray(afrrYearsRaw) ? afrrYearsRaw : [])
@@ -111,14 +113,6 @@ export function createAfrrUI() {
       .filter((year) => Number.isInteger(year))
       .sort((a, b) => a - b);
 
-    allSpotRows = (Array.isArray(spotRowsRaw) ? spotRowsRaw : [])
-      .map((row) => ({
-        timestamp: Number(row.timestamp),
-        spotPriceEurMwh: Number(row.spotPriceEurMwh),
-      }))
-      .filter((row) => Number.isFinite(row.timestamp))
-      .sort((a, b) => a.timestamp - b.timestamp);
-
     populateSelect(el.year, afrrYears);
     populateSelect(el.solarYear, solarYears);
 
@@ -130,10 +124,7 @@ export function createAfrrUI() {
     }
 
     if (el.dataStatus) {
-      const spotRange = allSpotRows.length > 0
-        ? `${new Date(allSpotRows[0].timestamp).toLocaleDateString('nb-NO')} – ${new Date(allSpotRows[allSpotRows.length - 1].timestamp).toLocaleDateString('nb-NO')}`
-        : 'ingen spotdata';
-      el.dataStatus.textContent = `aFRR år: ${afrrYears.join(', ') || 'ingen'} | Solprofil: ${solarYears.join(', ') || 'ingen'} | Spot: ${spotRange}`;
+      el.dataStatus.textContent = `aFRR år: ${afrrYears.join(', ') || 'ingen'} | Solprofil: ${solarYears.join(', ') || 'ingen'} | Spot: hentes for valgt aFRR-år`;
     }
   }
 
@@ -325,22 +316,24 @@ export function createAfrrUI() {
       const activationMaxPct = Number(el.activationMaxPct.value);
       const seed = Number(el.seed.value);
 
-      showStatus('Laster aFRR- og soldata...', 'info');
+      showStatus('Laster aFRR-, sol- og spotdata for valgt år...', 'info');
       setAllVisualStates('loading', 'Beregner aFRR-inntekt...');
+      console.info(`[aFRR UI] Calculation started for aFRR year ${selectedYear}, solar year ${selectedSolarYear}`);
 
-      const [afrrRowsRaw, solarRowsRaw] = await Promise.all([
-        window.electronAPI.loadAfrrData(selectedYear, {
+      const [afrrRowsRaw, solarRowsRaw, spotRowsRaw] = await Promise.all([
+        timedFetch(`aFRR ${selectedYear}`, () => window.electronAPI.loadAfrrData(selectedYear, {
           biddingZone: 'NO1',
           direction: 'down',
           reserveType: 'afrr',
           resolutionMin: 60,
-        }),
-        window.electronAPI.loadSolarData(selectedSolarYear, 60),
+        })),
+        timedFetch(`Solar ${selectedSolarYear}`, () => window.electronAPI.loadSolarData(selectedSolarYear, 60)),
+        timedFetch(`Spot NO1 ${selectedYear}`, () => window.electronAPI.loadSpotData('NO1', selectedYear)),
       ]);
 
       const afrrRows = Array.isArray(afrrRowsRaw) ? afrrRowsRaw : [];
       const solarRows = Array.isArray(solarRowsRaw) ? solarRowsRaw : [];
-      const spotRowsForYear = allSpotRows.filter((row) => isSameUtcYear(row.timestamp, selectedYear));
+      const spotRowsForYear = Array.isArray(spotRowsRaw) ? spotRowsRaw : [];
 
       currentResult = calculateAfrrYearlyRevenue({
         year: selectedYear,
@@ -356,6 +349,7 @@ export function createAfrrUI() {
       });
 
       displayResults(currentResult);
+      console.info(`[aFRR UI] Calculation completed for ${selectedYear}`);
       showStatus('aFRR-beregning fullført for hele året.', 'success');
     } catch (error) {
       console.error('aFRR calculation failed:', error);

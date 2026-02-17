@@ -219,9 +219,3 @@ export function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed 
 
   return { frequencies, summary, startTime, hours };
 }
-
-export const FrequencySimulator = {
-  FREQUENCY_PROFILES,
-  getProfile,
-  simulateFrequency
-};

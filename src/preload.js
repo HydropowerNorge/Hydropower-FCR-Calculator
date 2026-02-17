@@ -19,7 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   savePdf: (pdfData, defaultName) => ipcRenderer.invoke('file:savePdf', pdfData, defaultName),
   loadPriceData: (year, area = 'NO1') => ipcRenderer.invoke('data:loadPriceData', year, area),
   getAvailableYears: (area = 'NO1') => ipcRenderer.invoke('data:getAvailableYears', area),
-  loadSpotData: (biddingZone = 'NO1') => ipcRenderer.invoke('data:loadSpotData', biddingZone),
+  loadSpotData: (biddingZone = 'NO1', year = null) => ipcRenderer.invoke('data:loadSpotData', biddingZone, year),
   loadAfrrData: (year, filters = {}) => ipcRenderer.invoke('data:loadAfrrData', year, filters),
   getAfrrAvailableYears: (filters = {}) => ipcRenderer.invoke('data:getAfrrAvailableYears', filters),
   loadSolarData: (year, resolutionMinutes = 60) => ipcRenderer.invoke('data:loadSolarData', year, resolutionMinutes),

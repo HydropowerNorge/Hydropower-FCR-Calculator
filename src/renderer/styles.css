@@ -255,8 +255,7 @@ body {
   transition: transform 0.12s ease, box-shadow 0.18s ease, background-color 0.18s ease;
 }
 
-#calculateBtn,
-#calculateArbitrageBtn {
+#calculateBtn {
   margin-top: 6px;
 }
 

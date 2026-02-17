@@ -117,6 +117,17 @@ function resolveGitHubRepository() {
   return { owner, name };
 }
 
+function shouldIgnorePackagedFile(file) {
+  if (!file) return false;
+
+  // Keep Vite bundles, runtime dependencies, and package metadata in packaged builds.
+  if (file.startsWith('/.vite')) return false;
+  if (file.startsWith('/node_modules')) return false;
+  if (file === '/package.json') return false;
+
+  return true;
+}
+
 const s4 = getS4Config();
 const macCodeSignConfig = resolveMacCodeSignConfig();
 const macNotarizeConfig = resolveMacNotarizeConfig();
@@ -152,6 +163,7 @@ if (shouldPublishToGitHub()) {
 
 module.exports = {
   packagerConfig: {
+    ignore: shouldIgnorePackagedFile,
     asar: true,
     name: 'Hydropower',
     icon: './icon',

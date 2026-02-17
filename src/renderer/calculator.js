@@ -1,4 +1,3 @@
-// Battery configuration
 export class BatteryConfig {
   constructor(powerMw, capacityMwh, efficiency = 0.90, socMin = 0.20, socMax = 0.80) {
     this.powerMw = powerMw;
@@ -197,44 +196,3 @@ export function calculateRevenue(priceData, socData, config) {
   };
 }
 
-// Calculate revenue without SOC simulation (simple availability factor)
-export function calculateSimpleRevenue(priceData, powerMw, availabilityPct = 100) {
-  const factor = availabilityPct / 100;
-
-  const hourlyResults = [];
-  let totalRevenue = 0;
-
-  for (const row of priceData) {
-    const revenue = powerMw * row.price * factor;
-    totalRevenue += revenue;
-
-    hourlyResults.push({
-      timestamp: row.timestamp,
-      price: row.price,
-      available: true,
-      revenue
-    });
-  }
-
-  const totalHours = priceData.length;
-  const avgPrice = totalHours > 0
-    ? priceData.reduce((sum, r) => sum + r.price, 0) / totalHours
-    : 0;
-
-  return {
-    hourlyData: hourlyResults,
-    totalRevenue,
-    availableHours: Math.round(totalHours * factor),
-    totalHours,
-    availabilityPct,
-    avgPrice
-  };
-}
-
-export const Calculator = {
-  BatteryConfig,
-  calculateFcrActivation,
-  simulateSocHourly,
-  calculateRevenue,
-  calculateSimpleRevenue
-};

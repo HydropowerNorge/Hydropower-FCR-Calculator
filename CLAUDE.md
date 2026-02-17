@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Electron desktop app ("Hydropower") for analyzing battery revenue from FCR-N frequency response and spot arbitrage markets in the Nordic electricity grid. Uses Convex as the data backend.
+Electron desktop app ("Hydropower") for analyzing battery revenue from FCR-N frequency response and aFRR reserve markets in the Nordic electricity grid. Uses Convex as the data backend.
 
 ## Development Commands
 
@@ -35,14 +35,14 @@ Vanilla JS + HTML/CSS (no framework). Key modules:
 - **`app.js`** — UI orchestrator, tab management, state coordination
 - **`calculator.js`** — Battery config, FCR-N activation logic (linear response in 49.9–50.1 Hz band), SOC simulation with NEM restoration
 - **`frequency.js`** — Realistic Nordic grid frequency simulation using seeded RNG (LCG), 3 volatility profiles, Poisson/exponential distributions
-- **`arbitrage.js`** — Spot price buy-low/sell-high day-by-day simulation with efficiency losses
-- **`arbitrage-ui.js`** — UI for arbitrage module
+- **`afrr.js`** — aFRR yearly revenue calculation engine (solar curtailment, capacity bidding)
+- **`afrr-ui.js`** — UI for aFRR module (charts, CSV export, summary table)
 - **`simulation-worker.js`** — Web Worker for offloading heavy FCR computation
 
 Charts rendered with Chart.js; CSV parsing with PapaParse.
 
 ### Convex Backend (`convex/`)
-TypeScript. Tables: `fcrPrices`, `spotPrices`, `solarProduction`, `solarSeries`. All queries use pagination for full-year datasets. Schema in `convex/schema.ts`, queries in `convex/prices.ts`, `convex/spot.ts`, `convex/solar.ts`, ingestion in `convex/ingest.ts`.
+TypeScript. Tables: `fcrPrices`, `spotPrices`, `afrrMarket`, `afrrSeries`, `solarProduction`, `solarSeries`, `nodeTenders`. All queries use pagination for full-year datasets. Schema in `convex/schema.ts`, queries in `convex/prices.ts`, `convex/spot.ts`, `convex/solar.ts`, `convex/afrr.ts`, `convex/nodes.ts`, ingestion in `convex/ingest.ts`.
 
 Solar data has strict separation: 60-min and 15-min resolutions are independent series, never combined. Always pass `resolutionMinutes` when querying.
 
