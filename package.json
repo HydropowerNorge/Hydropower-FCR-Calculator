@@ -35,7 +35,7 @@
     "@electron-forge/publisher-s3": "^7.11.1",
     "@eslint/js": "^10.0.1",
     "@types/papaparse": "^5.5.2",
-    "electron": "^32.2.0",
+    "electron": "^40.0.0",
     "eslint": "^10.0.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.0",

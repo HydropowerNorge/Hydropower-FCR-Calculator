@@ -459,9 +459,8 @@ function createWindow() {
     console.log('[main] Window DOM ready');
   });
 
-  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    const levelName = ['verbose', 'info', 'warning', 'error'][level] || 'unknown';
-    console.log(`[renderer:${levelName}] ${message} (${sourceId}:${line})`);
+  mainWindow.webContents.on('console-message', (details) => {
+    console.log(`[renderer:${details.level}] ${details.message} (${details.sourceId}:${details.lineNumber})`);
   });
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
