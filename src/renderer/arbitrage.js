@@ -51,6 +51,13 @@ function calculateDuration(powerMw, capacityMwh, socMin, socMax) {
   return Math.min(duration, 12); // Cap at 12 hours to prevent overlap
 }
 
+function localDayKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function simulateDay(hourlyPrices, powerMw, duration, efficiency) {
   const n = Math.floor(duration);
   if (n === 0 || hourlyPrices.length === 0) {
@@ -99,7 +106,7 @@ function calculateArbitrage(spotData, powerMw, capacityMwh, efficiency, socMin, 
   // Group spot data by day
   const dayMap = new Map();
   for (const row of spotData) {
-    const dayKey = row.timestamp.toISOString().slice(0, 10);
+    const dayKey = localDayKey(row.timestamp);
     if (!dayMap.has(dayKey)) {
       dayMap.set(dayKey, []);
     }
@@ -251,7 +258,7 @@ function calculateFullPotential(spotData, powerMw, capacityMwh, efficiency, socM
 
   const dayMap = new Map();
   for (const row of spotData) {
-    const dayKey = row.timestamp.toISOString().slice(0, 10);
+    const dayKey = localDayKey(row.timestamp);
     if (!dayMap.has(dayKey)) dayMap.set(dayKey, []);
     dayMap.get(dayKey).push(row);
   }

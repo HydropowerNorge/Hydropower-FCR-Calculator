@@ -39,7 +39,7 @@ function createRng(seed) {
 
 // Box-Muller transform for normal distribution
 function normalRandom(rng, mean = 0, std = 1) {
-  const u1 = rng();
+  const u1 = Math.max(rng(), Number.EPSILON);
   const u2 = rng();
   const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   return mean + std * z;
@@ -52,14 +52,28 @@ function exponentialRandom(rng, lambda) {
 
 // Poisson distribution
 function poissonRandom(rng, lambda) {
-  const L = Math.exp(-lambda);
-  let k = 0;
-  let p = 1;
-  do {
-    k++;
-    p *= rng();
-  } while (p > L);
-  return k - 1;
+  if (!Number.isFinite(lambda) || lambda <= 0) return 0;
+
+  // Knuth's exact method is accurate for small lambdas.
+  if (lambda < 30) {
+    const L = Math.exp(-lambda);
+    let k = 0;
+    let p = 1;
+    do {
+      k++;
+      p *= rng();
+    } while (p > L);
+    return k - 1;
+  }
+
+  // Normal approximation keeps large-lambda draws numerically stable.
+  const draw = Math.round(normalRandom(rng, lambda, Math.sqrt(lambda)));
+  return Math.max(0, draw);
+}
+
+function safePct(part, total) {
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  return (part / total) * 100;
 }
 
 // Simulate realistic Nordic grid frequency based on profile statistics
@@ -68,6 +82,23 @@ function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed = 42, p
 
   const totalSeconds = hours * 3600;
   const nSamples = Math.floor(totalSeconds / resolutionSeconds);
+  if (nSamples <= 0) {
+    return {
+      frequencies: new Float64Array(0),
+      summary: {
+        meanHz: 50,
+        minHz: 50,
+        maxHz: 50,
+        pctOutsideBand: 0,
+        pctUnder: 0,
+        pctOver: 0,
+        histogram: [],
+        histogramLabels: []
+      },
+      startTime,
+      hours
+    };
+  }
 
   // Get profile stats
   const profile = getProfile(profileName);
@@ -87,13 +118,13 @@ function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed = 42, p
   for (let i = 0; i < nSamples; i++) {
     // Mean-revert toward 0, add random noise
     deviation = deviation * (1 - meanReversion) + normalRandom(rng, 0, volatility);
-    // Clamp to realistic range (±0.05 Hz)
+    // Clamp to realistic range (+/-0.05 Hz)
     deviation = Math.max(-0.05, Math.min(0.05, deviation));
     frequencies[i] += deviation;
   }
 
   // Add excursion events
-  const expectedEvents = Math.round(eventsPerHour * hours);
+  const expectedEvents = eventsPerHour * hours;
   const nEvents = poissonRandom(rng, expectedEvents);
 
   // Ratio of under vs over frequency events
@@ -127,9 +158,9 @@ function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed = 42, p
     for (let i = eventStart; i < eventEnd; i++) {
       const posInEvent = i - eventStart;
       let factor;
-      if (posInEvent < rampSamples) {
+      if (rampSamples > 0 && posInEvent < rampSamples) {
         factor = posInEvent / rampSamples;
-      } else if (posInEvent > (eventEnd - eventStart - rampSamples)) {
+      } else if (rampSamples > 0 && posInEvent > (eventEnd - eventStart - rampSamples)) {
         factor = (eventEnd - eventStart - posInEvent) / rampSamples;
       } else {
         factor = 1.0;
@@ -179,9 +210,9 @@ function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed = 42, p
     meanHz,
     minHz,
     maxHz,
-    pctOutsideBand: (outsideBand / nSamples) * 100,
-    pctUnder: (underBand / nSamples) * 100,
-    pctOver: (overBand / nSamples) * 100,
+    pctOutsideBand: safePct(outsideBand, nSamples),
+    pctUnder: safePct(underBand, nSamples),
+    pctOver: safePct(overBand, nSamples),
     histogram,
     histogramLabels
   };
@@ -189,8 +220,7 @@ function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed = 42, p
   return { frequencies, summary, startTime, hours };
 }
 
-// Export for use in app.js
-window.FrequencySimulator = {
+(typeof window !== 'undefined' ? window : globalThis).FrequencySimulator = {
   FREQUENCY_PROFILES,
   getProfile,
   simulateFrequency

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'">
   <title>Batterikalkulator</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -12,8 +12,14 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="sidebar-header">
-        <h1>Batterikalkulator</h1>
-        <p class="subtitle">Inntektsestimator for batteri</p>
+        <div class="brand-lockup">
+          <img class="brand-logo" src="assets/hydropower-logo.png" alt="Hydropower logo">
+          <div class="brand-copy">
+            <p class="brand-eyebrow">Hydropower Energy Platform</p>
+            <h1>Batterikalkulator</h1>
+            <p class="subtitle">Inntektsestimator for batteri</p>
+          </div>
+        </div>
       </div>
 
       <nav class="tab-nav">
@@ -96,6 +102,14 @@
 
     <!-- Main Content -->
     <main class="main-content">
+      <section class="hero-banner">
+        <div class="hero-content">
+          <p class="hero-kicker">Hydropower</p>
+          <h2>FCR-N og arbitrasjeanalyse</h2>
+          <p>Bruk historiske NO1-data til å estimere batteriinntekter med tydelige KPI-er og eksportklare rapporter.</p>
+        </div>
+      </section>
+
       <!-- FCR-N Tab Content -->
       <div id="fcrContent" class="tab-content active">
       <div id="loadingState" class="loading-state">

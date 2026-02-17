@@ -2,9 +2,57 @@
 window.ArbitrageUI = (function () {
   let allSpotData = null; // Full parsed dataset
   let currentResult = null;
+  let isCalculating = false;
   let charts = { monthly: null, daily: null, profile: null, cumulative: null };
 
   const el = {};
+
+  function ensureVisualState(container) {
+    if (!container) return null;
+    let stateEl = container.querySelector('.visual-state');
+    if (!stateEl) {
+      stateEl = document.createElement('div');
+      stateEl.className = 'visual-state';
+      container.appendChild(stateEl);
+    }
+    return stateEl;
+  }
+
+  function setContainerState(container, state, message) {
+    if (!container) return;
+    const nextState = state || 'ready';
+    container.dataset.state = nextState;
+    const stateEl = ensureVisualState(container);
+    if (stateEl) {
+      stateEl.textContent = message || '';
+    }
+  }
+
+  function setChartState(chartId, state, message) {
+    const canvas = document.getElementById(chartId);
+    if (!canvas) return;
+    const container = canvas.closest('.chart-container');
+    if (!container) return;
+    setContainerState(container, state, message);
+    canvas.style.opacity = state === 'ready' ? '1' : '0.18';
+  }
+
+  function setSummaryTableState(state, message) {
+    const table = document.getElementById('arbSummaryTable');
+    if (!table) return;
+    const container = table.closest('.table-container');
+    if (!container) return;
+    setContainerState(container, state, message);
+    table.style.opacity = state === 'ready' ? '1' : '0.35';
+  }
+
+  function setAllVisualStates(state, message) {
+    setChartState('arbMonthlyChart', state, message);
+    setChartState('arbDailyChart', state, message);
+    setChartState('arbProfileChart', state, message);
+    setChartState('arbCumulativeChart', state, message);
+    setSummaryTableState(state, message);
+  }
 
   async function init() {
     // Cache DOM elements
@@ -16,6 +64,7 @@ window.ArbitrageUI = (function () {
     el.summaryTable = document.getElementById('arbSummaryTable').querySelector('tbody');
     el.spotPeriod = document.getElementById('spotPeriod');
     el.spotFileStatus = document.getElementById('spotFileStatus');
+    setAllVisualStates('loading', 'Laster spotdata...');
 
     // Load spot data on init
     await loadSpotData();
@@ -31,6 +80,7 @@ window.ArbitrageUI = (function () {
     const rows = await window.electronAPI.loadSpotData('NO1');
     if (!rows || rows.length === 0) {
       el.spotFileStatus.textContent = 'Ingen spotprisdata funnet';
+      setAllVisualStates('empty', 'Ingen spotprisdata tilgjengelig.');
       return;
     }
 
@@ -46,38 +96,56 @@ window.ArbitrageUI = (function () {
       const first = allSpotData[0].timestamp.toLocaleDateString('nb-NO');
       const last = allSpotData[allSpotData.length - 1].timestamp.toLocaleDateString('nb-NO');
       el.spotFileStatus.textContent = `${allSpotData.length} timer (${first} – ${last})`;
+      setAllVisualStates('empty', 'Trykk "Beregn arbitrasje" for å vise visualiseringer.');
     }
   }
 
   function calculate() {
-    if (!allSpotData || allSpotData.length === 0) {
-      showStatus('Ingen spotprisdata tilgjengelig', 'warning');
-      return;
+    if (isCalculating) return;
+    isCalculating = true;
+    const calcButton = document.getElementById('calculateArbitrageBtn');
+    if (calcButton) calcButton.disabled = true;
+
+    try {
+      if (!allSpotData || allSpotData.length === 0) {
+        showStatus('Ingen spotprisdata tilgjengelig', 'warning');
+        setAllVisualStates('empty', 'Ingen spotprisdata tilgjengelig.');
+        return;
+      }
+
+      const months = parseInt(el.spotPeriod.value);
+      const spotData = Arbitrage.filterByPeriod(allSpotData, months);
+
+      if (spotData.length === 0) {
+        showStatus('Ingen data for valgt periode', 'warning');
+        setAllVisualStates('empty', 'Ingen data for valgt periode.');
+        return;
+      }
+
+      const powerMw = parseFloat(document.getElementById('powerMw').value);
+      const capacityMwh = parseFloat(document.getElementById('capacityMwh').value);
+      const efficiency = parseInt(document.getElementById('efficiency').value) / 100;
+      const socMin = parseInt(document.getElementById('socMin').value) / 100;
+      const socMax = parseInt(document.getElementById('socMax').value) / 100;
+
+      showStatus('Beregner arbitrasje...', 'info');
+      setAllVisualStates('loading', 'Beregner visualiseringer...');
+
+      currentResult = Arbitrage.calculateArbitrage(spotData, powerMw, capacityMwh, efficiency, socMin, socMax);
+
+      displayResults(currentResult);
+      showStatus(
+        `Beregnet arbitrasje for ${currentResult.totalDays} dager (siste ${months} mnd) | Varighet: ${currentResult.duration.toFixed(1)}h`,
+        'success'
+      );
+    } catch (err) {
+      console.error('Arbitrage calculation failed:', err);
+      showStatus('Beregning feilet. Prøv igjen.', 'warning');
+      setAllVisualStates('empty', 'Kunne ikke generere visualiseringer.');
+    } finally {
+      isCalculating = false;
+      if (calcButton) calcButton.disabled = false;
     }
-
-    const months = parseInt(el.spotPeriod.value);
-    const spotData = Arbitrage.filterByPeriod(allSpotData, months);
-
-    if (spotData.length === 0) {
-      showStatus('Ingen data for valgt periode', 'warning');
-      return;
-    }
-
-    const powerMw = parseFloat(document.getElementById('powerMw').value);
-    const capacityMwh = parseFloat(document.getElementById('capacityMwh').value);
-    const efficiency = parseInt(document.getElementById('efficiency').value) / 100;
-    const socMin = parseInt(document.getElementById('socMin').value) / 100;
-    const socMax = parseInt(document.getElementById('socMax').value) / 100;
-
-    showStatus('Beregner arbitrasje...', 'info');
-
-    currentResult = Arbitrage.calculateArbitrage(spotData, powerMw, capacityMwh, efficiency, socMin, socMax);
-
-    displayResults(currentResult);
-    showStatus(
-      `Beregnet arbitrasje for ${currentResult.totalDays} dager (siste ${months} mnd) | Varighet: ${currentResult.duration.toFixed(1)}h`,
-      'success'
-    );
   }
 
   function displayResults(result) {
@@ -94,6 +162,15 @@ window.ArbitrageUI = (function () {
   }
 
   function updateMonthlyChart(monthly) {
+    if (!Array.isArray(monthly) || monthly.length === 0) {
+      if (charts.monthly) {
+        charts.monthly.destroy();
+        charts.monthly = null;
+      }
+      setChartState('arbMonthlyChart', 'empty', 'Ingen månedlige data å vise.');
+      return;
+    }
+
     const ctx = document.getElementById('arbMonthlyChart').getContext('2d');
     if (charts.monthly) charts.monthly.destroy();
 
@@ -120,9 +197,19 @@ window.ArbitrageUI = (function () {
         }
       }
     });
+    setChartState('arbMonthlyChart', 'ready', '');
   }
 
   function updateDailyChart(dailyResults) {
+    if (!Array.isArray(dailyResults) || dailyResults.length === 0) {
+      if (charts.daily) {
+        charts.daily.destroy();
+        charts.daily = null;
+      }
+      setChartState('arbDailyChart', 'empty', 'Ingen daglige resultater å vise.');
+      return;
+    }
+
     const ctx = document.getElementById('arbDailyChart').getContext('2d');
     if (charts.daily) charts.daily.destroy();
 
@@ -152,9 +239,19 @@ window.ArbitrageUI = (function () {
         }
       }
     });
+    setChartState('arbDailyChart', 'ready', '');
   }
 
   function updateProfileChart(hourlyProfile) {
+    if (!Array.isArray(hourlyProfile) || hourlyProfile.length === 0) {
+      if (charts.profile) {
+        charts.profile.destroy();
+        charts.profile = null;
+      }
+      setChartState('arbProfileChart', 'empty', 'Ingen profil-data å vise.');
+      return;
+    }
+
     const ctx = document.getElementById('arbProfileChart').getContext('2d');
     if (charts.profile) charts.profile.destroy();
 
@@ -223,9 +320,19 @@ window.ArbitrageUI = (function () {
         }
       }
     });
+    setChartState('arbProfileChart', 'ready', '');
   }
 
   function updateCumulativeChart(dailyResults) {
+    if (!Array.isArray(dailyResults) || dailyResults.length === 0) {
+      if (charts.cumulative) {
+        charts.cumulative.destroy();
+        charts.cumulative = null;
+      }
+      setChartState('arbCumulativeChart', 'empty', 'Ingen kumulative data å vise.');
+      return;
+    }
+
     const ctx = document.getElementById('arbCumulativeChart').getContext('2d');
     if (charts.cumulative) charts.cumulative.destroy();
 
@@ -263,9 +370,16 @@ window.ArbitrageUI = (function () {
         }
       }
     });
+    setChartState('arbCumulativeChart', 'ready', '');
   }
 
   function updateSummaryTable(monthly) {
+    if (!Array.isArray(monthly) || monthly.length === 0) {
+      el.summaryTable.innerHTML = '';
+      setSummaryTableState('empty', 'Ingen rader å vise.');
+      return;
+    }
+
     el.summaryTable.innerHTML = monthly.map(m => `
       <tr>
         <td>${m.month}</td>
@@ -274,6 +388,7 @@ window.ArbitrageUI = (function () {
         <td>€${Math.round(m.avgDailyRevenue).toLocaleString('nb-NO')}</td>
       </tr>
     `).join('');
+    setSummaryTableState('ready', '');
   }
 
   async function exportCsv() {

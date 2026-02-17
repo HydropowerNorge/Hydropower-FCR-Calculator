@@ -8,6 +8,27 @@ const { ConvexHttpClient } = require('convex/browser');
 dotenv.config({ path: path.join(__dirname, '..', '.env.local') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
+const SAFE_CODE_PATTERN = /^[A-Z0-9_-]{2,12}$/;
+
+function sanitizeAreaCode(value, fallback = 'NO1') {
+  const normalized = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  return SAFE_CODE_PATTERN.test(normalized) ? normalized : fallback;
+}
+
+function sanitizeYear(value) {
+  const year = Number(value);
+  if (!Number.isInteger(year)) return null;
+  if (year < 2000 || year > 2100) return null;
+  return year;
+}
+
+function sanitizeDefaultName(defaultName, fallbackName) {
+  if (typeof defaultName !== 'string' || defaultName.trim().length === 0) {
+    return fallbackName;
+  }
+  return path.basename(defaultName.trim());
+}
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1400,
@@ -27,47 +48,36 @@ function createWindow() {
 }
 
 // IPC handlers
-ipcMain.handle('dialog:openFile', async () => {
-  const { canceled, filePaths } = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    filters: [{ name: 'CSV Files', extensions: ['csv'] }]
-  });
-  if (!canceled && filePaths.length > 0) {
-    return filePaths[0];
-  }
-  return null;
-});
-
-ipcMain.handle('file:read', async (event, filePath) => {
-  try {
-    return fs.readFileSync(filePath, 'utf-8');
-  } catch (err) {
-    console.error('Failed to read file:', err);
-    return null;
-  }
-});
-
 ipcMain.handle('file:save', async (event, data, defaultName) => {
+  const safeDefaultName = sanitizeDefaultName(defaultName, 'export.csv');
   const { canceled, filePath } = await dialog.showSaveDialog({
-    defaultPath: defaultName,
+    defaultPath: safeDefaultName,
     filters: [{ name: 'CSV Files', extensions: ['csv'] }]
   });
   if (!canceled && filePath) {
-    fs.writeFileSync(filePath, data, 'utf-8');
+    const csvContent = typeof data === 'string' ? data : String(data ?? '');
+    await fs.promises.writeFile(filePath, csvContent, 'utf-8');
     return filePath;
   }
   return null;
 });
 
 ipcMain.handle('file:saveXlsx', async (event, exportData, defaultName) => {
+  if (!exportData || typeof exportData !== 'object') {
+    return null;
+  }
+
+  const safeDefaultName = sanitizeDefaultName(defaultName, 'export.xlsx');
   const { canceled, filePath } = await dialog.showSaveDialog({
-    defaultPath: defaultName,
+    defaultPath: safeDefaultName,
     filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
   });
   if (canceled || !filePath) return null;
 
   const workbook = new ExcelJS.Workbook();
-  const { hourlyData, monthly, config } = exportData;
+  const hourlyData = Array.isArray(exportData.hourlyData) ? exportData.hourlyData : [];
+  const monthly = Array.isArray(exportData.monthly) ? exportData.monthly : [];
+  const config = exportData.config && typeof exportData.config === 'object' ? exportData.config : {};
 
   // Hourly Data sheet
   const hourlySheet = workbook.addWorksheet('Timedata');
@@ -150,50 +160,64 @@ ipcMain.handle('file:saveXlsx', async (event, exportData, defaultName) => {
 });
 
 ipcMain.handle('file:savePdf', async (event, pdfData, defaultName) => {
+  if (!pdfData || typeof pdfData !== 'object') {
+    return null;
+  }
+
+  const safeDefaultName = sanitizeDefaultName(defaultName, 'report.pdf');
   const { canceled, filePath } = await dialog.showSaveDialog({
-    defaultPath: defaultName,
+    defaultPath: safeDefaultName,
     filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
   });
   if (canceled || !filePath) return null;
 
   const html = buildPdfHtml(pdfData);
+  let pdfWindow = null;
 
-  // Create hidden BrowserWindow to render HTML
-  const pdfWindow = new BrowserWindow({
-    width: 1123,  // A4 landscape at 96dpi
-    height: 794,
-    show: false,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false
-    }
-  });
-
-  await pdfWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
-
-  // Wait for images to load
-  await pdfWindow.webContents.executeJavaScript(`
-    new Promise(resolve => {
-      const imgs = document.querySelectorAll('img');
-      if (imgs.length === 0) return resolve();
-      let loaded = 0;
-      imgs.forEach(img => {
-        if (img.complete) { loaded++; if (loaded === imgs.length) resolve(); }
-        else { img.onload = img.onerror = () => { loaded++; if (loaded === imgs.length) resolve(); }; }
-      });
+  try {
+    // Create hidden BrowserWindow to render HTML
+    pdfWindow = new BrowserWindow({
+      width: 1123,  // A4 landscape at 96dpi
+      height: 794,
+      show: false,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false
+      }
     });
-  `);
 
-  const pdfBuffer = await pdfWindow.webContents.printToPDF({
-    landscape: true,
-    pageSize: 'A4',
-    printBackground: true,
-    margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 }
-  });
+    await pdfWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
 
-  pdfWindow.destroy();
-  fs.writeFileSync(filePath, pdfBuffer);
-  return filePath;
+    // Wait for images to load before rendering to PDF.
+    await pdfWindow.webContents.executeJavaScript(`
+      new Promise(resolve => {
+        const imgs = document.querySelectorAll('img');
+        if (imgs.length === 0) return resolve();
+        let loaded = 0;
+        imgs.forEach(img => {
+          if (img.complete) { loaded++; if (loaded === imgs.length) resolve(); }
+          else { img.onload = img.onerror = () => { loaded++; if (loaded === imgs.length) resolve(); }; }
+        });
+      });
+    `);
+
+    const pdfBuffer = await pdfWindow.webContents.printToPDF({
+      landscape: true,
+      pageSize: 'A4',
+      printBackground: true,
+      margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 }
+    });
+
+    await fs.promises.writeFile(filePath, pdfBuffer);
+    return filePath;
+  } catch (err) {
+    console.error('Failed to save PDF:', err);
+    return null;
+  } finally {
+    if (pdfWindow && !pdfWindow.isDestroyed()) {
+      pdfWindow.destroy();
+    }
+  }
 });
 
 function buildArbitragePage2(data, monthly, totalRevenue, totalHours, avgPrice, monthlyRows, now) {
@@ -703,10 +727,16 @@ async function runPaginatedConvexQuery(functionName, args = {}, pageSize = 1000)
 }
 
 ipcMain.handle('data:loadPriceData', async (event, year, area = 'NO1') => {
+  const safeYear = sanitizeYear(year);
+  if (safeYear === null) {
+    return [];
+  }
+
+  const safeArea = sanitizeAreaCode(area, 'NO1');
   try {
     return await runPaginatedConvexQuery('prices:getPriceDataPage', {
-      year: Number(year),
-      area: String(area),
+      year: safeYear,
+      area: safeArea,
     });
   } catch (err) {
     console.error('Failed to load price data from Convex:', err);
@@ -715,9 +745,10 @@ ipcMain.handle('data:loadPriceData', async (event, year, area = 'NO1') => {
 });
 
 ipcMain.handle('data:getAvailableYears', async (event, area = 'NO1') => {
+  const safeArea = sanitizeAreaCode(area, 'NO1');
   try {
     return await runConvexQuery('prices:getAvailableYears', {
-      area: String(area),
+      area: safeArea,
     });
   } catch (err) {
     console.error('Failed to fetch available years from Convex:', err);
@@ -726,9 +757,10 @@ ipcMain.handle('data:getAvailableYears', async (event, area = 'NO1') => {
 });
 
 ipcMain.handle('data:loadSpotData', async (event, biddingZone = 'NO1') => {
+  const safeBiddingZone = sanitizeAreaCode(biddingZone, 'NO1');
   try {
     return await runPaginatedConvexQuery('spot:getSpotDataPage', {
-      biddingZone: String(biddingZone),
+      biddingZone: safeBiddingZone,
     });
   } catch (err) {
     console.error('Failed to load spot data from Convex:', err);

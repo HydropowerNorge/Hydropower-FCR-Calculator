@@ -42,6 +42,110 @@ const elements = {
 Chart.defaults.color = '#aaa';
 Chart.defaults.borderColor = '#2a2a4a';
 
+let activeSimulationWorker = null;
+let isCalculating = false;
+
+async function runFcrSimulationInWorker(payload) {
+  if (typeof Worker === 'undefined') {
+    throw new Error('Worker API is not available');
+  }
+
+  if (activeSimulationWorker) {
+    activeSimulationWorker.terminate();
+    activeSimulationWorker = null;
+  }
+
+  return new Promise((resolve, reject) => {
+    const worker = new Worker('simulation-worker.js');
+    activeSimulationWorker = worker;
+
+    const cleanup = () => {
+      if (activeSimulationWorker === worker) {
+        activeSimulationWorker = null;
+      }
+      worker.terminate();
+    };
+
+    worker.addEventListener('message', (event) => {
+      const message = event.data;
+      if (!message || typeof message !== 'object') return;
+
+      if (message.type === 'progress') {
+        showStatus(message.message, 'info');
+        return;
+      }
+
+      if (message.type === 'result') {
+        cleanup();
+        resolve(message.payload);
+        return;
+      }
+
+      if (message.type === 'error') {
+        cleanup();
+        reject(new Error(message.error || 'Simulation worker failed'));
+      }
+    });
+
+    worker.addEventListener('error', (event) => {
+      cleanup();
+      reject(new Error(event.message || 'Simulation worker crashed'));
+    });
+
+    worker.postMessage({
+      type: 'simulate-fcr',
+      payload
+    });
+  });
+}
+
+function ensureVisualState(container) {
+  if (!container) return null;
+  let stateEl = container.querySelector('.visual-state');
+  if (!stateEl) {
+    stateEl = document.createElement('div');
+    stateEl.className = 'visual-state';
+    container.appendChild(stateEl);
+  }
+  return stateEl;
+}
+
+function setContainerState(container, state, message) {
+  if (!container) return;
+  const nextState = state || 'ready';
+  container.dataset.state = nextState;
+  const stateEl = ensureVisualState(container);
+  if (stateEl) {
+    stateEl.textContent = message || '';
+  }
+}
+
+function setChartState(chartId, state, message) {
+  const canvas = document.getElementById(chartId);
+  if (!canvas) return;
+  const container = canvas.closest('.chart-container');
+  if (!container) return;
+  setContainerState(container, state, message);
+  canvas.style.opacity = state === 'ready' ? '1' : '0.18';
+}
+
+function setTableState(tableId, state, message) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const container = table.closest('.table-container');
+  if (!container) return;
+  setContainerState(container, state, message);
+  table.style.opacity = state === 'ready' ? '1' : '0.35';
+}
+
+function setFcrVisualStates(state, message) {
+  setChartState('monthlyChart', state, message);
+  setChartState('priceChart', state, message);
+  setChartState('socChart', state, message);
+  setChartState('freqChart', state, message);
+  setTableState('summaryTable', state, message);
+}
+
 function setupTabs() {
   const tabBtns = document.querySelectorAll('.tab-btn');
   const tabContents = document.querySelectorAll('.tab-content');
@@ -73,6 +177,7 @@ async function init() {
   // Set up tabs
   setupTabs();
   ArbitrageUI.init();
+  setFcrVisualStates('loading', 'Laster visualiseringer...');
 
   // Set up slider value displays
   setupSliders();
@@ -95,10 +200,12 @@ async function init() {
   if (years.length > 0) {
     elements.year.value = years[years.length - 1];
     await loadPriceData(years[years.length - 1]);
+    setFcrVisualStates('empty', 'Trykk "Beregn inntekt" for å vise visualiseringer.');
   } else {
     elements.loadingState.style.display = 'none';
     elements.resultsContainer.style.display = 'block';
     showStatus('Ingen prisdata funnet i Convex for NO1.', 'warning');
+    setFcrVisualStates('empty', 'Ingen data tilgjengelig for visualisering.');
   }
 
   // Event listeners
@@ -129,12 +236,14 @@ function setupSliders() {
 async function loadPriceData(year) {
   elements.loadingState.style.display = 'flex';
   elements.resultsContainer.style.display = 'none';
+  setFcrVisualStates('loading', 'Laster prisdata...');
 
   const rows = await window.electronAPI.loadPriceData(year, 'NO1');
   if (!rows || rows.length === 0) {
     elements.loadingState.style.display = 'none';
     elements.resultsContainer.style.display = 'block';
     showStatus(`Ingen Convex-prisdata funnet for ${year}`, 'warning');
+    setFcrVisualStates('empty', `Ingen prisdata for ${year}.`);
     return;
   }
 
@@ -152,51 +261,98 @@ async function loadPriceData(year) {
   elements.resultsContainer.style.display = 'block';
 
   showStatus(`Lastet ${priceData.length.toLocaleString()} timer med prisdata for ${year}`, 'success');
+  setFcrVisualStates('empty', 'Trykk "Beregn inntekt" for å vise visualiseringer.');
 }
 
 async function calculate() {
-  const config = new Calculator.BatteryConfig(
-    parseFloat(elements.powerMw.value),
-    parseFloat(elements.capacityMwh.value),
-    parseInt(elements.efficiency.value) / 100,
-    parseInt(elements.socMin.value) / 100,
-    parseInt(elements.socMax.value) / 100
-  );
+  if (isCalculating) return;
+  isCalculating = true;
+  const calculateBtn = document.getElementById('calculateBtn');
+  if (calculateBtn) calculateBtn.disabled = true;
 
-  const profileName = document.querySelector('input[name="profile"]').value;
-  const hours = parseInt(elements.simHours.value);
-  const seed = parseInt(elements.seed.value);
-  const year = parseInt(elements.year.value);
+  try {
+    const configValues = {
+      powerMw: parseFloat(elements.powerMw.value),
+      capacityMwh: parseFloat(elements.capacityMwh.value),
+      efficiency: parseInt(elements.efficiency.value) / 100,
+      socMin: parseInt(elements.socMin.value) / 100,
+      socMax: parseInt(elements.socMax.value) / 100
+    };
 
-  // Generate frequency data
-  const startTime = new Date(Date.UTC(year, 0, 1)); // Jan 1st
-  const totalSamples = hours * 3600;
+    const config = new Calculator.BatteryConfig(
+      configValues.powerMw,
+      configValues.capacityMwh,
+      configValues.efficiency,
+      configValues.socMin,
+      configValues.socMax
+    );
 
-  showStatus(`Simulerer ${hours} timer med frekvensdata (${totalSamples.toLocaleString()} samples)...`, 'info');
-  await new Promise(r => setTimeout(r, 10));
+    const profileName = document.querySelector('input[name="profile"]').value;
+    const hours = parseInt(elements.simHours.value);
+    const seed = parseInt(elements.seed.value);
+    const year = parseInt(elements.year.value);
+    const totalSamples = hours * 3600;
+    setFcrVisualStates('loading', 'Beregner visualiseringer...');
 
-  freqData = FrequencySimulator.simulateFrequency(startTime, hours, 1, seed, profileName);
+    showStatus(`Simulerer ${hours} timer med frekvensdata (${totalSamples.toLocaleString()} samples)...`, 'info');
+    await new Promise(r => setTimeout(r, 10));
 
-  showStatus('Simulerer batteri-SOC...', 'info');
-  await new Promise(r => setTimeout(r, 10));
+    let workerResult;
+    try {
+      workerResult = await runFcrSimulationInWorker({
+        year,
+        hours,
+        seed,
+        profileName,
+        config: configValues,
+        priceData: priceData.map((row) => ({
+          timestamp: new Date(row.timestamp).getTime(),
+          price: row.price
+        }))
+      });
+    } catch (err) {
+      console.warn('Worker simulation unavailable, falling back to main thread simulation:', err);
 
-  const socData = Calculator.simulateSocHourly(freqData, config);
+      const startTime = new Date(Date.UTC(year, 0, 1)); // Jan 1st
+      showStatus('Simulerer batteri-SOC...', 'info');
+      await new Promise(r => setTimeout(r, 10));
 
-  showStatus('Beregner inntekt...', 'info');
-  await new Promise(r => setTimeout(r, 10));
+      const localFreqData = FrequencySimulator.simulateFrequency(startTime, hours, 1, seed, profileName);
 
-  const result = Calculator.calculateRevenue(priceData, socData, config);
-  const summary = freqData.summary;
+      showStatus('Beregner inntekt...', 'info');
+      await new Promise(r => setTimeout(r, 10));
 
-  showStatus(
-    `Simulert ${freqData.frequencies.length.toLocaleString()} samples | ` +
-    `${summary.pctOutsideBand.toFixed(2)}% utenfor båndet`,
-    'success'
-  );
+      const socData = Calculator.simulateSocHourly(localFreqData, config);
+      const result = Calculator.calculateRevenue(priceData, socData, config);
 
-  currentResult = result;
-  currentResult.freqSummary = summary;
-  displayResults(result, true, true);
+      workerResult = {
+        result,
+        summary: localFreqData.summary,
+        totalSamples: localFreqData.frequencies.length
+      };
+    }
+
+    const result = workerResult.result;
+    const summary = workerResult.summary;
+    freqData = { summary };
+
+    showStatus(
+      `Simulert ${workerResult.totalSamples.toLocaleString()} samples | ` +
+      `${summary.pctOutsideBand.toFixed(2)}% utenfor båndet`,
+      'success'
+    );
+
+    currentResult = result;
+    currentResult.freqSummary = summary;
+    displayResults(result, true, true);
+  } catch (err) {
+    console.error('Calculation failed:', err);
+    showStatus('Beregning feilet. Prøv igjen.', 'warning');
+    setFcrVisualStates('empty', 'Kunne ikke generere visualiseringer.');
+  } finally {
+    isCalculating = false;
+    if (calculateBtn) calculateBtn.disabled = false;
+  }
 }
 
 function displayResults(result, showSoc, showFreq) {
@@ -223,14 +379,18 @@ function displayResults(result, showSoc, showFreq) {
 
     const unavailableHours = result.hourlyData.filter(h => !h.available).length;
     if (unavailableHours > 0) {
-      showStatus(`⚠️ ${unavailableHours} timer utilgjengelig pga. SOC-grenser`, 'warning');
+      showStatus(`${unavailableHours} timer utilgjengelig pga. SOC-grenser`, 'warning');
     }
+  } else {
+    setChartState('socChart', 'empty', 'SOC-visualisering er ikke aktiv.');
   }
 
   // Frequency chart
   elements.freqSection.style.display = showFreq ? 'block' : 'none';
   if (showFreq && result.freqSummary) {
     updateFreqChart(result.freqSummary);
+  } else {
+    setChartState('freqChart', 'empty', 'Frekvens-visualisering er ikke aktiv.');
   }
 }
 
@@ -260,8 +420,16 @@ function aggregateMonthly(hourlyData) {
 }
 
 function updateMonthlyChart(monthly) {
-  const ctx = document.getElementById('monthlyChart').getContext('2d');
+  if (!Array.isArray(monthly) || monthly.length === 0) {
+    if (charts.monthly) {
+      charts.monthly.destroy();
+      charts.monthly = null;
+    }
+    setChartState('monthlyChart', 'empty', 'Ingen månedlige data å vise.');
+    return;
+  }
 
+  const ctx = document.getElementById('monthlyChart').getContext('2d');
   if (charts.monthly) charts.monthly.destroy();
 
   charts.monthly = new Chart(ctx, {
@@ -291,25 +459,40 @@ function updateMonthlyChart(monthly) {
       }
     }
   });
+  setChartState('monthlyChart', 'ready', '');
 }
 
 function updatePriceChart(hourlyData) {
-  const ctx = document.getElementById('priceChart').getContext('2d');
-
   // Create histogram bins
   const prices = hourlyData.map(h => h.price);
+  if (prices.length === 0) {
+    if (charts.price) {
+      charts.price.destroy();
+      charts.price = null;
+    }
+    setChartState('priceChart', 'empty', 'Ingen prisdata å vise.');
+    return;
+  }
+
+  const ctx = document.getElementById('priceChart').getContext('2d');
   const min = Math.min(...prices);
   const max = Math.max(...prices);
   const binCount = 50;
-  const binWidth = (max - min) / binCount;
-
   const bins = new Array(binCount).fill(0);
-  for (const price of prices) {
-    const binIndex = Math.min(Math.floor((price - min) / binWidth), binCount - 1);
-    bins[binIndex]++;
-  }
+  let labels = [];
 
-  const labels = bins.map((_, i) => (min + i * binWidth + binWidth / 2).toFixed(0));
+  if (max === min) {
+    bins[0] = prices.length;
+    labels = bins.map((_, i) => (i === 0 ? min.toFixed(0) : ''));
+  } else {
+    const binWidth = (max - min) / binCount;
+    for (const price of prices) {
+      const rawIndex = Math.floor((price - min) / binWidth);
+      const binIndex = Math.max(0, Math.min(rawIndex, binCount - 1));
+      bins[binIndex]++;
+    }
+    labels = bins.map((_, i) => (min + i * binWidth + binWidth / 2).toFixed(0));
+  }
 
   if (charts.price) charts.price.destroy();
 
@@ -340,14 +523,21 @@ function updatePriceChart(hourlyData) {
       }
     }
   });
+  setChartState('priceChart', 'ready', '');
 }
 
 function updateSocChart(hourlyData) {
-  const ctx = document.getElementById('socChart').getContext('2d');
-
   const dataWithSoc = hourlyData.filter(h => h.socStart !== null);
-  if (dataWithSoc.length === 0) return;
+  if (dataWithSoc.length === 0) {
+    if (charts.soc) {
+      charts.soc.destroy();
+      charts.soc = null;
+    }
+    setChartState('socChart', 'empty', 'Ingen SOC-data å vise.');
+    return;
+  }
 
+  const ctx = document.getElementById('socChart').getContext('2d');
   if (charts.soc) charts.soc.destroy();
 
   const socMin = parseInt(elements.socMin.value);
@@ -357,39 +547,41 @@ function updateSocChart(hourlyData) {
     type: 'line',
     data: {
       labels: dataWithSoc.map(h => new Date(h.timestamp).toLocaleString()),
-      datasets: [{
-        label: 'SOC (%)',
-        data: dataWithSoc.map(h => h.socStart * 100),
-        borderColor: '#60a5fa',
-        backgroundColor: 'rgba(96, 165, 250, 0.1)',
-        fill: true,
-        tension: 0.2,
-        pointRadius: 0
-      }]
+      datasets: [
+        {
+          label: 'SOC (%)',
+          data: dataWithSoc.map(h => h.socStart * 100),
+          borderColor: '#60a5fa',
+          backgroundColor: 'rgba(96, 165, 250, 0.1)',
+          fill: true,
+          tension: 0.2,
+          pointRadius: 0
+        },
+        {
+          label: 'Min SOC',
+          data: dataWithSoc.map(() => socMin),
+          borderColor: '#e94560',
+          borderDash: [5, 5],
+          borderWidth: 1,
+          fill: false,
+          pointRadius: 0
+        },
+        {
+          label: 'Maks SOC',
+          data: dataWithSoc.map(() => socMax),
+          borderColor: '#e94560',
+          borderDash: [5, 5],
+          borderWidth: 1,
+          fill: false,
+          pointRadius: 0
+        }
+      ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
-        annotation: {
-          annotations: {
-            minLine: {
-              type: 'line',
-              yMin: socMin,
-              yMax: socMin,
-              borderColor: '#e94560',
-              borderDash: [5, 5]
-            },
-            maxLine: {
-              type: 'line',
-              yMin: socMax,
-              yMax: socMax,
-              borderColor: '#e94560',
-              borderDash: [5, 5]
-            }
-          }
-        }
+        legend: { display: false }
       },
       scales: {
         x: { display: false },
@@ -401,11 +593,20 @@ function updateSocChart(hourlyData) {
       }
     }
   });
+  setChartState('socChart', 'ready', '');
 }
 
 function updateFreqChart(summary) {
-  const ctx = document.getElementById('freqChart').getContext('2d');
+  if (!summary || !Array.isArray(summary.histogramLabels) || !Array.isArray(summary.histogram) || summary.histogram.length === 0) {
+    if (charts.freq) {
+      charts.freq.destroy();
+      charts.freq = null;
+    }
+    setChartState('freqChart', 'empty', 'Ingen frekvensdata å vise.');
+    return;
+  }
 
+  const ctx = document.getElementById('freqChart').getContext('2d');
   const labels = summary.histogramLabels;
   const bins = summary.histogram;
 
@@ -447,9 +648,16 @@ function updateFreqChart(summary) {
       }
     }
   });
+  setChartState('freqChart', 'ready', '');
 }
 
 function updateSummaryTable(monthly) {
+  if (!Array.isArray(monthly) || monthly.length === 0) {
+    elements.summaryTable.innerHTML = '';
+    setTableState('summaryTable', 'empty', 'Ingen rader å vise.');
+    return;
+  }
+
   elements.summaryTable.innerHTML = monthly.map(m => `
     <tr>
       <td>${m.month}</td>
@@ -458,6 +666,7 @@ function updateSummaryTable(monthly) {
       <td>€${m.avgPrice.toFixed(0)}</td>
     </tr>
   `).join('');
+  setTableState('summaryTable', 'ready', '');
 }
 
 async function exportCsv() {

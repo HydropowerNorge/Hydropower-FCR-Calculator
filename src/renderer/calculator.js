@@ -49,7 +49,10 @@ function simulateSocHourly(freqData, config, startSoc = 0.5) {
   const sqrtEfficiency = Math.sqrt(config.efficiency);
 
   // NEM state tracking
-  const nemAllowedHistory = [];
+  const nemAllowedHistory = new Float64Array(NEM_WINDOW_SECONDS);
+  let nemHistoryCount = 0;
+  let nemHistoryIndex = 0;
+  let nemAllowedSum = 0;
   let nemActiveLow = false;
   let nemActiveHigh = false;
 
@@ -91,15 +94,15 @@ function simulateSocHourly(freqData, config, startSoc = 0.5) {
       }
 
       // Rolling 2-min average for NEM_current
-      nemAllowedHistory.push(nemAllowed);
-      if (nemAllowedHistory.length > NEM_WINDOW_SECONDS) {
-        nemAllowedHistory.shift();
+      if (nemHistoryCount < NEM_WINDOW_SECONDS) {
+        nemHistoryCount++;
+      } else {
+        nemAllowedSum -= nemAllowedHistory[nemHistoryIndex];
       }
-      let nemSum = 0;
-      for (let j = 0; j < nemAllowedHistory.length; j++) {
-        nemSum += nemAllowedHistory[j];
-      }
-      const nemCurrent = nemSum / nemAllowedHistory.length;
+      nemAllowedHistory[nemHistoryIndex] = nemAllowed;
+      nemAllowedSum += nemAllowed;
+      nemHistoryIndex = (nemHistoryIndex + 1) % NEM_WINDOW_SECONDS;
+      const nemCurrent = nemAllowedSum / nemHistoryCount;
 
       // FCR power response
       const fcrPower = calculateFcrActivation(freq, config.powerMw);
@@ -180,7 +183,9 @@ function calculateRevenue(priceData, socData, config) {
   }
 
   const totalHours = priceData.length;
-  const avgPrice = priceData.reduce((sum, r) => sum + r.price, 0) / totalHours;
+  const avgPrice = totalHours > 0
+    ? priceData.reduce((sum, r) => sum + r.price, 0) / totalHours
+    : 0;
 
   return {
     hourlyData: hourlyResults,
@@ -212,7 +217,9 @@ function calculateSimpleRevenue(priceData, powerMw, availabilityPct = 100) {
   }
 
   const totalHours = priceData.length;
-  const avgPrice = priceData.reduce((sum, r) => sum + r.price, 0) / totalHours;
+  const avgPrice = totalHours > 0
+    ? priceData.reduce((sum, r) => sum + r.price, 0) / totalHours
+    : 0;
 
   return {
     hourlyData: hourlyResults,
@@ -224,8 +231,8 @@ function calculateSimpleRevenue(priceData, powerMw, availabilityPct = 100) {
   };
 }
 
-// Export for use in app.js
-window.Calculator = {
+// Export for use in app.js and worker contexts.
+(typeof window !== 'undefined' ? window : globalThis).Calculator = {
   BatteryConfig,
   calculateFcrActivation,
   simulateSocHourly,
