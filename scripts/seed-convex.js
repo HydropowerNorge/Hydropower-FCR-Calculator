@@ -23,6 +23,7 @@ const SOLAR_DATASET_CONFIGS = [
     fileName: 'solar_production_15min_2026.json',
   },
 ];
+const NODE_TENDERS_FILE_NAME = 'node_tenders_2026.json';
 
 dotenv.config({ path: path.join(projectRoot, '.env.local') });
 dotenv.config({ path: path.join(projectRoot, '.env') });
@@ -103,6 +104,15 @@ function parseNaiveIsoTimestamp(value) {
       0,
     );
   }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+}
+
+function parseIsoTimestamp(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
 
   const parsed = new Date(trimmed);
   return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
@@ -240,6 +250,108 @@ function findSolarProductionDatasets() {
   return datasets;
 }
 
+function findNodeTendersFile() {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+  return findFirstExisting([
+    process.env.NODE_TENDERS_JSON,
+    path.join(projectRoot, 'convex', 'seed', NODE_TENDERS_FILE_NAME),
+    path.join(projectRoot, 'data', 'nodes', NODE_TENDERS_FILE_NAME),
+    homeDir ? path.join(homeDir, 'Downloads', NODE_TENDERS_FILE_NAME) : null,
+    `/Users/sander/Downloads/${NODE_TENDERS_FILE_NAME}`,
+  ].filter(Boolean));
+}
+
+function sanitizeWindows(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((window) => {
+      if (!window || typeof window !== 'object') return null;
+      const start = typeof window.start === 'string' ? window.start.trim() : '';
+      const end = typeof window.end === 'string' ? window.end.trim() : '';
+      if (!start || !end) return null;
+      return { start, end };
+    })
+    .filter(Boolean);
+}
+
+function loadNodeTenderRows(filePath) {
+  const rows = readJson(filePath);
+  if (!Array.isArray(rows)) {
+    throw new Error(`Expected array in ${filePath}`);
+  }
+
+  const result = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+
+    const dataset = String(row.dataset || '').trim() || 'nodes_2026_pilot';
+    const tenderId = String(row.tenderId || '').trim();
+    const name = String(row.name || '').trim();
+    const status = String(row.status || '').trim() || 'Unknown';
+    const quantityType = String(row.quantityType || '').trim() || 'Power';
+    const quantityMw = Number(row.quantityMw);
+    const marketTimeZone = String(row.marketTimeZone || '').trim() || 'Europe/Oslo';
+    const gridNode = String(row.gridNode || '').trim();
+    const market = String(row.market || '').trim();
+    const periodStartTs = parseIsoTimestamp(row.periodFrom);
+    const periodEndTs = parseIsoTimestamp(row.periodTo);
+
+    if (!tenderId || !name || !gridNode || !market) continue;
+    if (!Number.isFinite(quantityMw)) continue;
+    if (periodStartTs === null || periodEndTs === null) continue;
+
+    const availabilityPriceNokMwH = Number(row.availabilityPriceNokMwH);
+    const reservationPriceNokMwH = Number(row.reservationPriceNokMwH);
+    const activationPriceNokMwH = Number(row.activationPriceNokMwH);
+    const peakReductionTargetMw = Number(row.peakReductionTargetMw);
+    const activationNoticeDays = Number(row.activationNoticeDays);
+
+    const parsed = {
+      dataset,
+      tenderId,
+      name,
+      status,
+      quantityType,
+      quantityMw,
+      regulationType: row.regulationType ? String(row.regulationType).trim() : undefined,
+      activationType: row.activationType ? String(row.activationType).trim() : undefined,
+      peakReductionTargetMw: Number.isFinite(peakReductionTargetMw) ? peakReductionTargetMw : undefined,
+      availabilityPriceNokMwH: Number.isFinite(availabilityPriceNokMwH) ? availabilityPriceNokMwH : undefined,
+      reservationPriceNokMwH: Number.isFinite(reservationPriceNokMwH)
+        ? reservationPriceNokMwH
+        : (Number.isFinite(availabilityPriceNokMwH) ? availabilityPriceNokMwH : undefined),
+      activationPriceNokMwH: Number.isFinite(activationPriceNokMwH) ? activationPriceNokMwH : undefined,
+      marketTimeZone,
+      activationDeadlineLocal: row.activationDeadlineLocal
+        ? String(row.activationDeadlineLocal).trim()
+        : undefined,
+      activationNoticeDays: Number.isFinite(activationNoticeDays) ? activationNoticeDays : undefined,
+      gridNode,
+      gridNodeId: row.gridNodeId ? String(row.gridNodeId).trim() : undefined,
+      market,
+      marketId: row.marketId ? String(row.marketId).trim() : undefined,
+      organization: row.organization ? String(row.organization).trim() : undefined,
+      organizationId: row.organizationId ? String(row.organizationId).trim() : undefined,
+      periodStartTs,
+      periodEndTs,
+      openFromTs: parseIsoTimestamp(row.openFrom) ?? undefined,
+      toFromTs: parseIsoTimestamp(row.toFrom) ?? undefined,
+      activeDays: Array.isArray(row.activeDays)
+        ? row.activeDays.map((item) => String(item).trim()).filter(Boolean)
+        : [],
+      activeWindows: sanitizeWindows(row.activeWindows),
+      exceptions: row.exceptions ? String(row.exceptions).trim() : undefined,
+      comments: row.comments ? String(row.comments).trim() : undefined,
+      source: row.source ? String(row.source).trim() : 'manual',
+      createdAtTs: parseIsoTimestamp(row.createdDate) ?? Date.now(),
+    };
+
+    result.push(parsed);
+  }
+
+  return result.sort((a, b) => a.periodStartTs - b.periodStartTs);
+}
+
 function loadSolarRows(filePath, resolutionMinutes) {
   const rows = readJson(filePath);
   if (!Array.isArray(rows)) {
@@ -330,6 +442,16 @@ async function clearSolarSeriesMeta(year, resolutionMinutes) {
     if (result.done) break;
   }
   console.log(`Cleared solarSeries meta year ${year} (${resolutionMinutes}m): ${totalDeleted} rows`);
+}
+
+async function clearNodeTenderDataset(dataset) {
+  let totalDeleted = 0;
+  while (true) {
+    const result = await convex.mutation('ingest:clearNodeTenderDataset', { dataset });
+    totalDeleted += result.deleted;
+    if (result.done) break;
+  }
+  console.log(`Cleared nodeTenders dataset ${dataset}: ${totalDeleted} rows`);
 }
 
 async function setSolarSeriesMeta(year, resolutionMinutes, sampleCount) {
@@ -468,6 +590,36 @@ async function seedSolarProduction() {
   }
 }
 
+async function seedNodeTenders() {
+  const nodeTendersFile = findNodeTendersFile();
+  if (!nodeTendersFile) {
+    console.warn('No node tender JSON found. Skipping nodeTenders import.');
+    return;
+  }
+
+  console.log(`Reading ${nodeTendersFile}`);
+  const rows = loadNodeTenderRows(nodeTendersFile);
+  if (rows.length === 0) {
+    console.warn('No valid node tender rows found. Skipping nodeTenders import.');
+    return;
+  }
+
+  const byDataset = new Map();
+  for (const row of rows) {
+    if (!byDataset.has(row.dataset)) {
+      byDataset.set(row.dataset, []);
+    }
+    byDataset.get(row.dataset).push(row);
+  }
+
+  for (const dataset of Array.from(byDataset.keys()).sort()) {
+    const datasetRows = byDataset.get(dataset);
+    await clearNodeTenderDataset(dataset);
+    const inserted = await insertInChunks('ingest:insertNodeTenderRows', datasetRows);
+    console.log(`Imported nodeTenders dataset ${dataset}: ${inserted} rows`);
+  }
+}
+
 async function countPaginatedRows(functionName, args) {
   let total = 0;
   let cursor = null;
@@ -523,6 +675,18 @@ async function sanityCheck() {
       console.log(`Solar rows for ${latestSolarYear} (${resolutionMinutes}m): ${solarRowCount}`);
     }
   }
+
+  const nodeFilters = await convex.query('nodes:getNodeFilterOptions', {
+    dataset: 'nodes_2026_pilot',
+  });
+  console.log(
+    `Node tender filters (${nodeFilters.total} rows): gridNodes=${nodeFilters.gridNodes.join(', ') || '(none)'}, markets=${nodeFilters.markets.join(', ') || '(none)'}`,
+  );
+
+  const nodeRowCount = await countPaginatedRows('nodes:getNodeTendersPage', {
+    dataset: 'nodes_2026_pilot',
+  });
+  console.log(`Node tenders rows for nodes_2026_pilot: ${nodeRowCount}`);
 }
 
 (async function main() {
@@ -531,6 +695,7 @@ async function sanityCheck() {
   await seedPrices();
   await seedSpot();
   await seedSolarProduction();
+  await seedNodeTenders();
   await sanityCheck();
 
   console.log('Done.');

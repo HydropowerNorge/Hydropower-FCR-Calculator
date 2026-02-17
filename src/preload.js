@@ -6,5 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   savePdf: (pdfData, defaultName) => ipcRenderer.invoke('file:savePdf', pdfData, defaultName),
   loadPriceData: (year, area = 'NO1') => ipcRenderer.invoke('data:loadPriceData', year, area),
   getAvailableYears: (area = 'NO1') => ipcRenderer.invoke('data:getAvailableYears', area),
-  loadSpotData: (biddingZone = 'NO1') => ipcRenderer.invoke('data:loadSpotData', biddingZone)
+  loadSpotData: (biddingZone = 'NO1') => ipcRenderer.invoke('data:loadSpotData', biddingZone),
+  loadNodeTenders: (filters = {}) => ipcRenderer.invoke('data:loadNodeTenders', filters),
+  getNodeTenderFilters: (dataset = 'nodes_2026_pilot') => ipcRenderer.invoke('data:getNodeTenderFilters', dataset)
 });

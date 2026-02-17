@@ -352,6 +352,13 @@ function sanitizeAreaCode(value, fallback = 'NO1') {
   return SAFE_CODE_PATTERN.test(normalized) ? normalized : fallback;
 }
 
+function sanitizeLookupValue(value, maxLength = 120) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  if (normalized.length === 0) return null;
+  return normalized.slice(0, maxLength);
+}
+
 function sanitizeYear(value) {
   const year = Number(value);
   if (!Number.isInteger(year)) return null;
@@ -1106,6 +1113,40 @@ ipcMain.handle('data:loadSpotData', async (event, biddingZone = 'NO1') => {
   } catch (err) {
     console.error('Failed to load spot data from Convex:', err);
     return [];
+  }
+});
+
+ipcMain.handle('data:loadNodeTenders', async (event, filters = {}) => {
+  const dataset = sanitizeLookupValue(filters?.dataset, 80) || 'nodes_2026_pilot';
+  const gridNode = sanitizeLookupValue(filters?.gridNode, 120);
+  const market = sanitizeLookupValue(filters?.market, 120);
+
+  try {
+    return await runPaginatedConvexQuery('nodes:getNodeTendersPage', {
+      dataset,
+      ...(gridNode ? { gridNode } : {}),
+      ...(market ? { market } : {}),
+    });
+  } catch (err) {
+    console.error('Failed to load node tender data from Convex:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('data:getNodeTenderFilters', async (event, dataset = 'nodes_2026_pilot') => {
+  const safeDataset = sanitizeLookupValue(dataset, 80) || 'nodes_2026_pilot';
+  try {
+    return await runConvexQuery('nodes:getNodeFilterOptions', {
+      dataset: safeDataset,
+    });
+  } catch (err) {
+    console.error('Failed to load node tender filter options from Convex:', err);
+    return {
+      gridNodes: [],
+      markets: [],
+      statuses: [],
+      total: 0,
+    };
   }
 });
 

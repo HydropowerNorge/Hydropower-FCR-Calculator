@@ -8,6 +8,7 @@ import { createArbitrageUI } from './arbitrage-ui.js';
 let priceData = [];
 let freqData = null;
 let currentResult = null;
+let nodeTenderRows = [];
 const arbitrageUI = createArbitrageUI();
 let charts = {
   monthly: null,
@@ -44,7 +45,22 @@ const elements = {
   heroDescription: document.getElementById('heroDescription'),
   socSection: document.getElementById('socSection'),
   freqSection: document.getElementById('freqSection'),
-  summaryTable: document.getElementById('summaryTable').querySelector('tbody')
+  summaryTable: document.getElementById('summaryTable').querySelector('tbody'),
+
+  // Nodes controls
+  nodesDataset: document.getElementById('nodesDataset'),
+  nodesGridNode: document.getElementById('nodesGridNode'),
+  nodesMarket: document.getElementById('nodesMarket'),
+  refreshNodesBtn: document.getElementById('refreshNodesBtn'),
+  nodesFilterInfo: document.getElementById('nodesFilterInfo'),
+
+  // Nodes results
+  nodesStatusMessage: document.getElementById('nodesStatusMessage'),
+  nodesTenderCount: document.getElementById('nodesTenderCount'),
+  nodesTotalMw: document.getElementById('nodesTotalMw'),
+  nodesAvgReservation: document.getElementById('nodesAvgReservation'),
+  nodesAvgActivation: document.getElementById('nodesAvgActivation'),
+  nodesTableBody: document.getElementById('nodesTableBody')
 };
 
 // Chart.js default colors
@@ -155,6 +171,254 @@ function setFcrVisualStates(state, message) {
   setTableState('summaryTable', state, message);
 }
 
+function showNodesStatus(message, type = 'info') {
+  if (!elements.nodesStatusMessage) return;
+  elements.nodesStatusMessage.textContent = message;
+  elements.nodesStatusMessage.className = `status-message ${type}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatDateRange(startTs, endTs) {
+  if (!Number.isFinite(startTs) || !Number.isFinite(endTs)) return '-';
+  const start = new Date(startTs).toLocaleDateString('nb-NO');
+  const end = new Date(endTs).toLocaleDateString('nb-NO');
+  return `${start} - ${end}`;
+}
+
+function formatNokValue(value) {
+  if (!Number.isFinite(value)) return '-';
+  return `NOK ${Math.round(value).toLocaleString('nb-NO')}`;
+}
+
+function formatSchedule(activeDays, activeWindows) {
+  const days = Array.isArray(activeDays) && activeDays.length > 0
+    ? activeDays.join(', ')
+    : 'Ingen dager';
+  const windows = Array.isArray(activeWindows) && activeWindows.length > 0
+    ? activeWindows
+      .map((window) => `${window.start}-${window.end}`)
+      .join(', ')
+    : 'Ingen vindu';
+  return `${days} | ${windows}`;
+}
+
+function setSelectOptions(selectElement, values, placeholderLabel = 'Alle', preserveSelection = true) {
+  if (!selectElement) return;
+  const previousValue = selectElement.value;
+  selectElement.innerHTML = '';
+
+  const allOption = document.createElement('option');
+  allOption.value = '';
+  allOption.textContent = placeholderLabel;
+  selectElement.appendChild(allOption);
+
+  values.forEach((value) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    selectElement.appendChild(option);
+  });
+
+  if (preserveSelection && previousValue && values.includes(previousValue)) {
+    selectElement.value = previousValue;
+  }
+}
+
+function buildNodeFilterOptionsFromRows(rows) {
+  const gridNodes = new Set();
+  const markets = new Set();
+  const statuses = new Set();
+
+  rows.forEach((row) => {
+    if (row?.gridNode) gridNodes.add(String(row.gridNode));
+    if (row?.market) markets.add(String(row.market));
+    if (row?.status) statuses.add(String(row.status));
+  });
+
+  return {
+    gridNodes: Array.from(gridNodes).sort((a, b) => a.localeCompare(b)),
+    markets: Array.from(markets).sort((a, b) => a.localeCompare(b)),
+    statuses: Array.from(statuses).sort((a, b) => a.localeCompare(b)),
+    total: rows.length,
+  };
+}
+
+function updateNodesMetrics(rows) {
+  const totalTenders = rows.length;
+  const totalMw = rows.reduce((sum, row) => sum + (Number(row.quantityMw) || 0), 0);
+
+  const reservationRows = rows.filter((row) => Number.isFinite(row.reservationPriceNokMwH));
+  const activationRows = rows.filter((row) => Number.isFinite(row.activationPriceNokMwH));
+  const avgReservation = reservationRows.length > 0
+    ? reservationRows.reduce((sum, row) => sum + row.reservationPriceNokMwH, 0) / reservationRows.length
+    : null;
+  const avgActivation = activationRows.length > 0
+    ? activationRows.reduce((sum, row) => sum + row.activationPriceNokMwH, 0) / activationRows.length
+    : null;
+
+  if (elements.nodesTenderCount) {
+    elements.nodesTenderCount.textContent = totalTenders.toLocaleString('nb-NO');
+  }
+  if (elements.nodesTotalMw) {
+    elements.nodesTotalMw.textContent = `${totalMw.toLocaleString('nb-NO', { maximumFractionDigits: 2 })} MW`;
+  }
+  if (elements.nodesAvgReservation) {
+    elements.nodesAvgReservation.textContent = formatNokValue(avgReservation);
+  }
+  if (elements.nodesAvgActivation) {
+    elements.nodesAvgActivation.textContent = formatNokValue(avgActivation);
+  }
+}
+
+function renderNodesTable(rows) {
+  if (!elements.nodesTableBody) return;
+  if (!Array.isArray(rows) || rows.length === 0) {
+    elements.nodesTableBody.innerHTML = '';
+    setTableState('nodesTable', 'empty', 'Ingen nodetenderer for valgt filter.');
+    return;
+  }
+
+  const sortedRows = [...rows].sort((a, b) => (a.periodStartTs || 0) - (b.periodStartTs || 0));
+  elements.nodesTableBody.innerHTML = sortedRows.map((row) => {
+    const priceSummary = [
+      `Res: ${formatNokValue(row.reservationPriceNokMwH)}`,
+      `Akt: ${formatNokValue(row.activationPriceNokMwH)}`,
+    ].join('<br>');
+
+    return `
+      <tr>
+        <td>${escapeHtml(row.name)}</td>
+        <td>${escapeHtml(row.status || '-')}</td>
+        <td>${escapeHtml(row.gridNode || '-')}</td>
+        <td>${escapeHtml(row.market || '-')}</td>
+        <td>${escapeHtml(formatDateRange(row.periodStartTs, row.periodEndTs))}</td>
+        <td>${escapeHtml(formatSchedule(row.activeDays, row.activeWindows))}</td>
+        <td class="nodes-price-cell">${priceSummary}</td>
+        <td>${escapeHtml((Number(row.quantityMw) || 0).toLocaleString('nb-NO', { maximumFractionDigits: 2 }))}</td>
+      </tr>
+    `;
+  }).join('');
+
+  setTableState('nodesTable', 'ready', '');
+}
+
+async function loadNodeFilterOptions(dataset, keepSelections = true) {
+  if (!window.electronAPI?.loadNodeTenders) return;
+  const previousGridNode = keepSelections ? elements.nodesGridNode?.value || '' : '';
+  const previousMarket = keepSelections ? elements.nodesMarket?.value || '' : '';
+
+  let result = {
+    gridNodes: [],
+    markets: [],
+    statuses: [],
+    total: 0,
+  };
+
+  try {
+    const rows = await window.electronAPI.loadNodeTenders({ dataset });
+    const normalizedRows = (Array.isArray(rows) ? rows : []).map(normalizeNodeTenderRow);
+    result = buildNodeFilterOptionsFromRows(normalizedRows);
+  } catch (error) {
+    console.warn('Could not derive node filters from tenders:', error);
+  }
+
+  const gridNodes = Array.isArray(result.gridNodes) ? result.gridNodes : [];
+  const markets = Array.isArray(result.markets) ? result.markets : [];
+
+  setSelectOptions(elements.nodesGridNode, gridNodes, 'Alle', keepSelections);
+  setSelectOptions(elements.nodesMarket, markets, 'Alle', keepSelections);
+
+  if (keepSelections) {
+    if (previousGridNode && gridNodes.includes(previousGridNode) && elements.nodesGridNode) {
+      elements.nodesGridNode.value = previousGridNode;
+    }
+    if (previousMarket && markets.includes(previousMarket) && elements.nodesMarket) {
+      elements.nodesMarket.value = previousMarket;
+    }
+  }
+
+  if (elements.nodesFilterInfo) {
+    const total = Number(result?.total) || 0;
+    elements.nodesFilterInfo.textContent = `${total.toLocaleString('nb-NO')} tender(er) i datasettet`;
+  }
+}
+
+function normalizeNodeTenderRow(row) {
+  const quantityMw = Number(row?.quantityMw);
+  const reservationPriceNokMwH = Number(row?.reservationPriceNokMwH);
+  const activationPriceNokMwH = Number(row?.activationPriceNokMwH);
+  const periodStartTs = Number(row?.periodStartTs);
+  const periodEndTs = Number(row?.periodEndTs);
+
+  return {
+    ...row,
+    quantityMw: Number.isFinite(quantityMw) ? quantityMw : 0,
+    reservationPriceNokMwH: Number.isFinite(reservationPriceNokMwH) ? reservationPriceNokMwH : null,
+    activationPriceNokMwH: Number.isFinite(activationPriceNokMwH) ? activationPriceNokMwH : null,
+    periodStartTs: Number.isFinite(periodStartTs) ? periodStartTs : null,
+    periodEndTs: Number.isFinite(periodEndTs) ? periodEndTs : null,
+    activeDays: Array.isArray(row?.activeDays) ? row.activeDays : [],
+    activeWindows: Array.isArray(row?.activeWindows) ? row.activeWindows : [],
+  };
+}
+
+async function loadNodeTenderData() {
+  if (!window.electronAPI?.loadNodeTenders) return;
+
+  const dataset = elements.nodesDataset?.value || 'nodes_2026_pilot';
+  const gridNode = elements.nodesGridNode?.value || '';
+  const market = elements.nodesMarket?.value || '';
+
+  showNodesStatus('Laster nodetenderer...', 'info');
+  setTableState('nodesTable', 'loading', 'Laster nodetenderer...');
+
+  try {
+    const rows = await window.electronAPI.loadNodeTenders({
+      dataset,
+      ...(gridNode ? { gridNode } : {}),
+      ...(market ? { market } : {}),
+    });
+
+    nodeTenderRows = (Array.isArray(rows) ? rows : []).map(normalizeNodeTenderRow);
+    updateNodesMetrics(nodeTenderRows);
+    renderNodesTable(nodeTenderRows);
+
+    if (nodeTenderRows.length === 0) {
+      showNodesStatus('Ingen nodetenderer funnet for valgt filter.', 'warning');
+    } else {
+      showNodesStatus(`Viser ${nodeTenderRows.length.toLocaleString('nb-NO')} nodetender(er).`, 'success');
+    }
+  } catch (error) {
+    console.error('Failed to load node tenders:', error);
+    nodeTenderRows = [];
+    updateNodesMetrics(nodeTenderRows);
+    renderNodesTable(nodeTenderRows);
+    showNodesStatus('Kunne ikke laste nodetenderer fra Convex.', 'warning');
+  }
+}
+
+async function initializeNodesModule() {
+  if (!elements.nodesDataset) return;
+
+  try {
+    await loadNodeFilterOptions(elements.nodesDataset.value, false);
+    await loadNodeTenderData();
+  } catch (error) {
+    console.error('Failed to initialize nodes module:', error);
+    showNodesStatus('Kunne ikke laste nodetenderer fra Convex.', 'warning');
+    setTableState('nodesTable', 'empty', 'Kunne ikke laste data.');
+    updateNodesMetrics([]);
+  }
+}
+
 function setupTabs() {
   const tabBtns = Array.from(document.querySelectorAll('.tab-btn'));
   const tabContents = Array.from(document.querySelectorAll('.tab-content'));
@@ -258,6 +522,8 @@ async function init() {
     setFcrVisualStates('empty', 'Ingen data tilgjengelig for visualisering.');
   }
 
+  await initializeNodesModule();
+
   // Event listeners
   elements.year.addEventListener('change', async () => {
     await loadPriceData(parseInt(elements.year.value));
@@ -267,6 +533,42 @@ async function init() {
   document.getElementById('exportBtn').addEventListener('click', exportCsv);
   document.getElementById('exportXlsxBtn').addEventListener('click', exportXlsx);
   document.getElementById('exportPdfBtn').addEventListener('click', exportPdf);
+
+  if (elements.nodesDataset) {
+    elements.nodesDataset.addEventListener('change', async () => {
+      try {
+        await loadNodeFilterOptions(elements.nodesDataset.value, false);
+        await loadNodeTenderData();
+      } catch (error) {
+        console.error('Failed to refresh nodes dataset selection:', error);
+        showNodesStatus('Kunne ikke laste nodetenderer for valgt datasett.', 'warning');
+      }
+    });
+  }
+
+  if (elements.nodesGridNode) {
+    elements.nodesGridNode.addEventListener('change', async () => {
+      await loadNodeTenderData();
+    });
+  }
+
+  if (elements.nodesMarket) {
+    elements.nodesMarket.addEventListener('change', async () => {
+      await loadNodeTenderData();
+    });
+  }
+
+  if (elements.refreshNodesBtn) {
+    elements.refreshNodesBtn.addEventListener('click', async () => {
+      try {
+        await loadNodeFilterOptions(elements.nodesDataset?.value || 'nodes_2026_pilot', true);
+        await loadNodeTenderData();
+      } catch (error) {
+        console.error('Failed to refresh node tender data:', error);
+        showNodesStatus('Kunne ikke oppdatere nodetenderer.', 'warning');
+      }
+    });
+  }
 }
 
 function setupSliders() {

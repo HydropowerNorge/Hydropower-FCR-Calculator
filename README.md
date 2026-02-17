@@ -141,6 +141,12 @@ xcrun stapler validate "/path/to/Hydropower.app"
 - Legacy fallback env var `SOLAR_PRODUCTION_JSON` is treated as hourly (`60m`).
 - When querying solar data, always pass `resolutionMinutes` explicitly.
 
+## Node Tender Import (Pilot)
+- The seed script now imports node tender rows into `nodeTenders`.
+- Data is explicitly partitioned by `dataset` (default: `nodes_2026_pilot`) to avoid mixing tender sets later.
+- Default lookup path: `convex/seed/node_tenders_2026.json`
+- Override with: `NODE_TENDERS_JSON=/path/to/node_tenders.json npm run convex:seed`
+
 ## Notes
 - The packaged app no longer bundles `data/` CSV files.
 - Convex queries are paginated in main process to support full-year datasets.

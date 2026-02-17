@@ -513,6 +513,28 @@ tr:hover td {
   background: rgba(79, 203, 115, 0.06);
 }
 
+#nodesFilterInfo {
+  margin-top: 4px;
+}
+
+#nodesTableContainer {
+  overflow-x: auto;
+}
+
+#nodesTable td {
+  vertical-align: top;
+}
+
+#nodesTable td:nth-child(6) {
+  min-width: 220px;
+}
+
+#nodesTable td:nth-child(7),
+#nodesTable td:nth-child(8),
+#nodesTable .nodes-price-cell {
+  white-space: nowrap;
+}
+
 .visual-state {
   position: absolute;
   inset: 0;

@@ -146,10 +146,31 @@
 
       <div data-tab-config="nodes" style="display: none;">
         <section class="config-section config-section-compact">
-          <h2>Nodes</h2>
-          <p class="info-text">Denne modulen er under utvikling. Her kommer nodevalg, nettflyt og begrensningsanalyse.</p>
+          <h2>Nodedata</h2>
+          <div class="input-group">
+            <label for="nodesDataset">Datasett</label>
+            <select id="nodesDataset">
+              <option value="nodes_2026_pilot">Pilot 2026</option>
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label for="nodesGridNode">Grid node</label>
+            <select id="nodesGridNode">
+              <option value="">Alle</option>
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label for="nodesMarket">Marked</label>
+            <select id="nodesMarket">
+              <option value="">Alle</option>
+            </select>
+          </div>
+
+          <p id="nodesFilterInfo" class="info-text">Laster nodedata...</p>
         </section>
-        <button class="btn btn-secondary" type="button" disabled>Kommer snart</button>
+        <button id="refreshNodesBtn" class="btn btn-secondary" type="button">Oppdater nodedata</button>
       </div>
 
       <div data-tab-config="combined" style="display: none;">
@@ -369,23 +390,46 @@
       </div>
 
       <div id="nodesContent" class="tab-content" data-tab-panel="nodes" role="tabpanel" aria-labelledby="tab-nodes">
-        <section class="module-panel">
-          <p class="module-pill">Planlagt modul</p>
-          <h3>Nodes</h3>
-          <p class="module-intro">Her kommer en nodebasert visning for lokasjon, kapasitet og nettbegrensninger i samme arbeidsflate.</p>
-          <div class="module-grid">
-            <article class="module-card">
-              <h4>Nodeliste</h4>
-              <p>Rask filtrering på geografi, kapasitet og tekniske begrensninger.</p>
-            </article>
-            <article class="module-card">
-              <h4>Driftsvindu</h4>
-              <p>Oversikt over når anlegget er optimalt for frekvens og spot.</p>
-            </article>
-            <article class="module-card">
-              <h4>Sammenligning</h4>
-              <p>Lik visning for flere noder så du kan prioritere investeringer.</p>
-            </article>
+        <div id="nodesStatusMessage" class="status-message info">Laster nodedata...</div>
+
+        <div class="metrics-row">
+          <div class="metric-card">
+            <span class="metric-value" id="nodesTenderCount">-</span>
+            <span class="metric-label">Tenderer</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value" id="nodesTotalMw">-</span>
+            <span class="metric-label">Samlet MW</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value" id="nodesAvgReservation">-</span>
+            <span class="metric-label">Reservasjon</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value" id="nodesAvgActivation">-</span>
+            <span class="metric-label">Aktivering</span>
+          </div>
+        </div>
+
+        <section class="summary-section">
+          <h2>Nodetenderer</h2>
+          <div class="table-container" id="nodesTableContainer" data-state="loading">
+            <table id="nodesTable">
+              <thead>
+                <tr>
+                  <th>Navn</th>
+                  <th>Status</th>
+                  <th>Node</th>
+                  <th>Marked</th>
+                  <th>Periode</th>
+                  <th>Vindu</th>
+                  <th>Pris</th>
+                  <th>MW</th>
+                </tr>
+              </thead>
+              <tbody id="nodesTableBody"></tbody>
+            </table>
+            <div class="visual-state">Laster nodedata...</div>
           </div>
         </section>
       </div>

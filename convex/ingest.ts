@@ -32,6 +32,45 @@ const solarSeriesValidator = v.object({
   sampleCount: v.number(),
 });
 
+const nodeTenderValidator = v.object({
+  dataset: v.string(),
+  tenderId: v.string(),
+  name: v.string(),
+  status: v.string(),
+  quantityType: v.string(),
+  quantityMw: v.number(),
+  regulationType: v.optional(v.string()),
+  activationType: v.optional(v.string()),
+  peakReductionTargetMw: v.optional(v.number()),
+  availabilityPriceNokMwH: v.optional(v.number()),
+  reservationPriceNokMwH: v.optional(v.number()),
+  activationPriceNokMwH: v.optional(v.number()),
+  marketTimeZone: v.string(),
+  activationDeadlineLocal: v.optional(v.string()),
+  activationNoticeDays: v.optional(v.number()),
+  gridNode: v.string(),
+  gridNodeId: v.optional(v.string()),
+  market: v.string(),
+  marketId: v.optional(v.string()),
+  organization: v.optional(v.string()),
+  organizationId: v.optional(v.string()),
+  periodStartTs: v.number(),
+  periodEndTs: v.number(),
+  openFromTs: v.optional(v.number()),
+  toFromTs: v.optional(v.number()),
+  activeDays: v.array(v.string()),
+  activeWindows: v.array(
+    v.object({
+      start: v.string(),
+      end: v.string(),
+    }),
+  ),
+  exceptions: v.optional(v.string()),
+  comments: v.optional(v.string()),
+  source: v.string(),
+  createdAtTs: v.number(),
+});
+
 export const clearPriceYear = mutation({
   args: {
     year: v.number(),
@@ -179,6 +218,46 @@ export const setSolarSeriesMeta = mutation({
 
     await ctx.db.insert("solarSeries", args.series);
     return { inserted: 1 };
+  },
+});
+
+export const clearNodeTenderDataset = mutation({
+  args: {
+    dataset: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const docs = await ctx.db
+      .query("nodeTenders")
+      .withIndex("by_dataset_period", (q) => q.eq("dataset", args.dataset))
+      .take(DELETE_BATCH_SIZE);
+
+    await Promise.all(docs.map((doc) => ctx.db.delete(doc._id)));
+
+    return {
+      deleted: docs.length,
+      done: docs.length < DELETE_BATCH_SIZE,
+    };
+  },
+});
+
+export const insertNodeTenderRows = mutation({
+  args: {
+    rows: v.array(nodeTenderValidator),
+  },
+  handler: async (ctx, args) => {
+    if (args.rows.length > MAX_ROWS_PER_MUTATION) {
+      throw new Error(
+        `insertNodeTenderRows accepts up to ${MAX_ROWS_PER_MUTATION} rows per call`,
+      );
+    }
+
+    for (const row of args.rows) {
+      await ctx.db.insert("nodeTenders", row);
+    }
+
+    return {
+      inserted: args.rows.length,
+    };
   },
 });
 

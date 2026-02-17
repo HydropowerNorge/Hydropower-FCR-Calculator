@@ -1,0 +1,71 @@
+[
+  {
+    "dataset": "nodes_2026_pilot",
+    "source": "excel_export_2026-02-17",
+    "tenderId": "76447b37-7c42-4070-a27a-b3e200eeda67",
+    "name": "LongFlex Armering Vikersund",
+    "status": "Active",
+    "quantityType": "Power",
+    "quantityMw": 2,
+    "regulationType": "Up",
+    "availabilityPriceNokMwH": 200,
+    "reservationPriceNokMwH": 200,
+    "activationPriceNokMwH": 5000,
+    "marketTimeZone": "Europe/Oslo",
+    "gridNode": "Vikersund",
+    "gridNodeId": "268ea907-aa0e-4832-b922-b3a000de0af0",
+    "market": "Glitre Nett Ost Market",
+    "marketId": "399a1879-4760-46be-975f-95d93acc0c7f",
+    "organization": "Glitre Nett Ost",
+    "organizationId": "28ec3db4-0196-4403-af9f-fde11bf2e38a",
+    "openFrom": "2026-01-29T23:00:00+00:00",
+    "toFrom": "2026-03-31T21:59:59+00:00",
+    "periodFrom": "2026-01-29T23:00:00+00:00",
+    "periodTo": "2026-03-31T21:59:59+00:00",
+    "createdDate": "2026-01-30T14:29:38+00:00",
+    "exceptions": "No exceptions",
+    "activeDays": [],
+    "activeWindows": []
+  },
+  {
+    "dataset": "nodes_2026_pilot",
+    "source": "manual_tender_details_2026-02-17",
+    "tenderId": "manual-max-usage-vikersund-2026-q1",
+    "name": "Max Usage Vikersund",
+    "status": "Active",
+    "quantityType": "Power",
+    "quantityMw": 2,
+    "regulationType": "Up",
+    "activationType": "DefaultNotActivated",
+    "peakReductionTargetMw": 2,
+    "availabilityPriceNokMwH": 100,
+    "reservationPriceNokMwH": 100,
+    "activationPriceNokMwH": 5000,
+    "marketTimeZone": "Europe/Oslo",
+    "activationDeadlineLocal": "13:00",
+    "activationNoticeDays": 2,
+    "gridNode": "Vikersund",
+    "market": "Glitre Nett Ost Market",
+    "periodFrom": "2026-01-30T00:00:00+01:00",
+    "periodTo": "2026-03-31T23:59:59+02:00",
+    "createdDate": "2026-02-17T19:04:00+01:00",
+    "exceptions": "No exceptions",
+    "activeDays": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ],
+    "activeWindows": [
+      {
+        "start": "06:00",
+        "end": "10:00"
+      },
+      {
+        "start": "16:00",
+        "end": "20:00"
+      }
+    ]
+  }
+]
