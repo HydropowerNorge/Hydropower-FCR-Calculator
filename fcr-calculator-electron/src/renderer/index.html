@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
-  <title>FCR-N Batterikalkulator</title>
+  <title>Batterikalkulator</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -12,57 +12,92 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="sidebar-header">
-        <h1>FCR-N Kalkulator</h1>
+        <h1>Batterikalkulator</h1>
         <p class="subtitle">Inntektsestimator for batteri</p>
       </div>
+
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="fcr">FCR-N</button>
+        <button class="tab-btn" data-tab="arbitrage">Arbitrasje</button>
+      </nav>
 
       <section class="config-section">
         <h2>Batterikonfigurasjon</h2>
 
         <div class="input-group">
-          <label for="powerMw">Effektkapasitet (MW)</label>
+          <label for="powerMw">Effektkapasitet (MW) <button class="info-btn" data-help="powerMw">?</button></label>
           <input type="number" id="powerMw" value="1.0" min="0.1" max="100" step="0.1">
+          <div class="help-text" id="help-powerMw">Hvor mye strøm batteriet kan levere på én gang. Eksempel: 1 MW = nok strøm til 500-1000 boliger samtidig.</div>
         </div>
 
         <div class="input-group">
-          <label for="capacityMwh">Energikapasitet (MWh)</label>
+          <label for="capacityMwh">Energikapasitet (MWh) <button class="info-btn" data-help="capacityMwh">?</button></label>
           <input type="number" id="capacityMwh" value="2.0" min="0.1" max="500" step="0.1">
+          <div class="help-text" id="help-capacityMwh">Hvor mye strøm batteriet kan lagre totalt. Eksempel: 2 MWh = nok til å drive 1 MW i 2 timer.</div>
         </div>
 
         <div class="input-group">
-          <label for="efficiency">Virkningsgrad: <span id="efficiencyValue">90</span>%</label>
+          <label for="efficiency">Virkningsgrad: <span id="efficiencyValue">90</span>% <button class="info-btn" data-help="efficiency">?</button></label>
           <input type="range" id="efficiency" value="90" min="70" max="99">
+          <div class="help-text" id="help-efficiency">Hvor mye strøm du får tilbake når du lader og bruker batteriet. 90% betyr at 10% går tapt som varme.</div>
         </div>
 
         <div class="input-group">
-          <label for="socMin">Minimum SOC: <span id="socMinValue">20</span>%</label>
+          <label for="socMin">Minimum SOC: <span id="socMinValue">20</span>% <button class="info-btn" data-help="socMin">?</button></label>
           <input type="range" id="socMin" value="20" min="0" max="50">
+          <div class="help-text" id="help-socMin">Laveste tillatte ladenivå. 20% betyr at batteriet aldri tømmes helt - det forlenger levetiden.</div>
         </div>
 
         <div class="input-group">
-          <label for="socMax">Maksimum SOC: <span id="socMaxValue">80</span>%</label>
+          <label for="socMax">Maksimum SOC: <span id="socMaxValue">80</span>% <button class="info-btn" data-help="socMax">?</button></label>
           <input type="range" id="socMax" value="80" min="50" max="100">
+          <div class="help-text" id="help-socMax">Høyeste tillatte ladenivå. 80% betyr at batteriet aldri lades helt fullt - det forlenger levetiden.</div>
         </div>
       </section>
 
-      <section class="config-section">
-        <h2>Datavalg</h2>
+      <!-- FCR-N data config -->
+      <div data-tab-config="fcr">
+        <section class="config-section">
+          <h2>Datavalg</h2>
 
-        <div class="input-group">
-          <label for="year">År</label>
-          <select id="year"></select>
-        </div>
-      </section>
+          <div class="input-group">
+            <label for="year">År <button class="info-btn" data-help="year">?</button></label>
+            <select id="year"></select>
+            <div class="help-text" id="help-year">Hvilket år prisdata skal hentes fra. Prisene varierer fra år til år.</div>
+          </div>
+        </section>
 
-      <input type="hidden" id="simHours" value="8760">
-      <input type="hidden" name="profile" value="medium">
-      <input type="hidden" id="seed" value="42">
+        <input type="hidden" id="simHours" value="8760">
+        <input type="hidden" name="profile" value="medium">
+        <input type="hidden" id="seed" value="42">
 
-      <button id="calculateBtn" class="btn btn-primary">Beregn inntekt</button>
+        <button id="calculateBtn" class="btn btn-primary">Beregn inntekt</button>
+      </div>
+
+      <!-- Arbitrage data config -->
+      <div data-tab-config="arbitrage" style="display: none;">
+        <section class="config-section">
+          <h2>Spotprisdata</h2>
+
+          <div class="input-group">
+            <label for="spotPeriod">Periode</label>
+            <select id="spotPeriod">
+              <option value="3">Siste 3 måneder</option>
+              <option value="6">Siste 6 måneder</option>
+            </select>
+          </div>
+
+          <p id="spotFileStatus" class="info-text" style="margin-top: 4px;"></p>
+        </section>
+
+        <button id="calculateArbitrageBtn" class="btn btn-primary">Beregn arbitrasje</button>
+      </div>
     </aside>
 
     <!-- Main Content -->
     <main class="main-content">
+      <!-- FCR-N Tab Content -->
+      <div id="fcrContent" class="tab-content active">
       <div id="loadingState" class="loading-state">
         <p>Laster prisdata...</p>
       </div>
@@ -75,19 +110,23 @@
         <div class="metrics-row">
           <div class="metric-card">
             <span class="metric-value" id="totalRevenue">-</span>
-            <span class="metric-label">Total inntekt</span>
+            <span class="metric-label">Total inntekt <button class="info-btn" data-help="totalRevenue">?</button></span>
+            <div class="help-text" id="help-totalRevenue">Summen batteriet tjener på et helt år ved å delta i frekvensmarkedet (FCR-N).</div>
           </div>
           <div class="metric-card">
             <span class="metric-value" id="availableHours">-</span>
-            <span class="metric-label">Tilgjengelige timer</span>
+            <span class="metric-label">Tilgjengelige timer <button class="info-btn" data-help="availableHours">?</button></span>
+            <div class="help-text" id="help-availableHours">Antall timer batteriet kan levere tjenesten. Noen timer er utilgjengelige fordi batteriet er for fullt eller for tomt.</div>
           </div>
           <div class="metric-card">
             <span class="metric-value" id="availability">-</span>
-            <span class="metric-label">Tilgjengelighet</span>
+            <span class="metric-label">Tilgjengelighet <button class="info-btn" data-help="availability">?</button></span>
+            <div class="help-text" id="help-availability">Prosent av tiden batteriet kan delta i markedet. 95% betyr at det fungerer 95% av tiden.</div>
           </div>
           <div class="metric-card">
             <span class="metric-value" id="avgPrice">-</span>
-            <span class="metric-label">Snittpris</span>
+            <span class="metric-label">Snittpris <button class="info-btn" data-help="avgPrice">?</button></span>
+            <div class="help-text" id="help-avgPrice">Gjennomsnittlig pris per MW per time i markedet dette året.</div>
           </div>
         </div>
 
@@ -95,28 +134,32 @@
 
         <!-- Charts -->
         <section class="chart-section">
-          <h2>Månedlig inntekt</h2>
+          <h2>Månedlig inntekt <button class="info-btn" data-help="monthlyChart">?</button></h2>
+          <div class="help-text" id="help-monthlyChart">Viser hvor mye batteriet tjener hver måned. Prisene er ofte høyere om vinteren.</div>
           <div class="chart-container">
             <canvas id="monthlyChart"></canvas>
           </div>
         </section>
 
         <section class="chart-section">
-          <h2>Prisfordeling</h2>
+          <h2>Prisfordeling <button class="info-btn" data-help="priceChart">?</button></h2>
+          <div class="help-text" id="help-priceChart">Viser hvor ofte ulike prisnivåer forekommer. Høye søyler = vanlige priser.</div>
           <div class="chart-container">
             <canvas id="priceChart"></canvas>
           </div>
         </section>
 
         <section id="socSection" class="chart-section" style="display: none;">
-          <h2>SOC-utvikling</h2>
+          <h2>SOC-utvikling <button class="info-btn" data-help="socChart">?</button></h2>
+          <div class="help-text" id="help-socChart">Viser hvordan batteriets ladenivå endrer seg gjennom året. De røde stiplede linjene viser grensene dine.</div>
           <div class="chart-container chart-container-wide">
             <canvas id="socChart"></canvas>
           </div>
         </section>
 
         <section id="freqSection" class="chart-section" style="display: none;">
-          <h2>Frekvensfordeling</h2>
+          <h2>Frekvensfordeling <button class="info-btn" data-help="freqChart">?</button></h2>
+          <div class="help-text" id="help-freqChart">Viser hvor ofte strømnettet har ulike frekvenser. Grønne søyler = normalt (49.9-50.1 Hz), røde = unormalt.</div>
           <div class="chart-container">
             <canvas id="freqChart"></canvas>
           </div>
@@ -124,7 +167,9 @@
 
         <!-- Export -->
         <section class="export-section">
-          <button id="exportBtn" class="btn btn-secondary">Eksporter timedata (CSV)</button>
+          <button id="exportPdfBtn" class="btn btn-accent">Eksporter PDF</button>
+          <button id="exportBtn" class="btn btn-secondary">Eksporter CSV</button>
+          <button id="exportXlsxBtn" class="btn btn-secondary">Eksporter Excel</button>
         </section>
 
         <!-- Summary Table -->
@@ -145,6 +190,86 @@
           </div>
         </section>
       </div>
+      </div><!-- /fcrContent -->
+
+      <!-- Arbitrage Tab Content -->
+      <div id="arbitrageContent" class="tab-content">
+        <div id="arbStatusMessage" class="status-message"></div>
+
+        <!-- Metrics -->
+        <div class="metrics-row">
+          <div class="metric-card">
+            <span class="metric-value" id="arbTotalRevenue">-</span>
+            <span class="metric-label">Total inntekt</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value" id="arbAvgDaily">-</span>
+            <span class="metric-label">Snitt per dag</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value" id="arbCycles">-</span>
+            <span class="metric-label">Sykluser</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value" id="arbDuration">-</span>
+            <span class="metric-label">Varighet (timer)</span>
+          </div>
+        </div>
+
+        <!-- Charts -->
+        <section class="chart-section">
+          <h2>Månedlig inntekt</h2>
+          <div class="chart-container">
+            <canvas id="arbMonthlyChart"></canvas>
+          </div>
+        </section>
+
+        <section class="chart-section">
+          <h2>Daglig profitt</h2>
+          <div class="chart-container">
+            <canvas id="arbDailyChart"></canvas>
+          </div>
+        </section>
+
+        <section class="chart-section">
+          <h2>Typisk dagsprofil</h2>
+          <div class="chart-container">
+            <canvas id="arbProfileChart"></canvas>
+          </div>
+        </section>
+
+        <section class="chart-section">
+          <h2>Kumulativ inntekt</h2>
+          <div class="chart-container">
+            <canvas id="arbCumulativeChart"></canvas>
+          </div>
+        </section>
+
+        <!-- Export -->
+        <section class="export-section">
+          <button id="arbExportPdfBtn" class="btn btn-accent">Eksporter PDF</button>
+          <button id="arbExportCsvBtn" class="btn btn-secondary">Eksporter CSV</button>
+          <button id="arbExportXlsxBtn" class="btn btn-secondary">Eksporter Excel</button>
+        </section>
+
+        <!-- Summary Table -->
+        <section class="summary-section">
+          <h2>Månedlig oppsummering</h2>
+          <div class="table-container">
+            <table id="arbSummaryTable">
+              <thead>
+                <tr>
+                  <th>Måned</th>
+                  <th>Inntekt (EUR)</th>
+                  <th>Dager</th>
+                  <th>Snitt/dag (EUR)</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div><!-- /arbitrageContent -->
     </main>
   </div>
 
@@ -152,6 +277,8 @@
   <script src="../../node_modules/papaparse/papaparse.min.js"></script>
   <script src="calculator.js"></script>
   <script src="frequency.js"></script>
+  <script src="arbitrage.js"></script>
+  <script src="arbitrage-ui.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

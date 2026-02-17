@@ -42,8 +42,38 @@ const elements = {
 Chart.defaults.color = '#aaa';
 Chart.defaults.borderColor = '#2a2a4a';
 
+function setupTabs() {
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+  const tabConfigs = document.querySelectorAll('[data-tab-config]');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.tab;
+
+      // Update active button
+      tabBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      // Toggle main content
+      tabContents.forEach(c => c.classList.remove('active'));
+      const targetContent = document.getElementById(tab === 'fcr' ? 'fcrContent' : 'arbitrageContent');
+      if (targetContent) targetContent.classList.add('active');
+
+      // Toggle sidebar config sections
+      tabConfigs.forEach(c => {
+        c.style.display = c.dataset.tabConfig === tab ? '' : 'none';
+      });
+    });
+  });
+}
+
 // Initialize app
 async function init() {
+  // Set up tabs
+  setupTabs();
+  ArbitrageUI.init();
+
   // Set up slider value displays
   setupSliders();
 
@@ -68,7 +98,9 @@ async function init() {
   });
 
   document.getElementById('calculateBtn').addEventListener('click', calculate);
-  document.getElementById('exportBtn').addEventListener('click', exportData);
+  document.getElementById('exportBtn').addEventListener('click', exportCsv);
+  document.getElementById('exportXlsxBtn').addEventListener('click', exportXlsx);
+  document.getElementById('exportPdfBtn').addEventListener('click', exportPdf);
 }
 
 function setupSliders() {
@@ -120,7 +152,7 @@ function parseTimestamp(str) {
   if (!parts) return new Date(str);
 
   const [, day, month, year, hour, min, sec, tzHour, tzMin] = parts;
-  const date = new Date(Date.UTC(
+  return new Date(Date.UTC(
     parseInt(year),
     parseInt(month) - 1,
     parseInt(day),
@@ -128,7 +160,6 @@ function parseTimestamp(str) {
     parseInt(min) - parseInt(tzMin),
     parseInt(sec)
   ));
-  return date;
 }
 
 async function calculate() {
@@ -149,47 +180,22 @@ async function calculate() {
   const startTime = new Date(Date.UTC(year, 0, 1)); // Jan 1st
   const totalSamples = hours * 3600;
 
-  console.log('[Calc] ═══════════════════════════════════════');
-  console.log(`[Calc] Battery: ${config.powerMw} MW / ${config.capacityMwh} MWh (${config.capacityMwh/config.powerMw}h duration)`);
-  console.log(`[Calc] Efficiency: ${(config.efficiency * 100).toFixed(0)}%, SOC limits: ${(config.socMin * 100).toFixed(0)}%-${(config.socMax * 100).toFixed(0)}%`);
-  console.log(`[Calc] Simulation: ${hours} hours, seed=${seed}, profile=${profileName}`);
-  console.log('[Calc] ═══════════════════════════════════════');
   showStatus(`Simulerer ${hours} timer med frekvensdata (${totalSamples.toLocaleString()} samples)...`, 'info');
-  await new Promise(r => setTimeout(r, 10)); // Allow UI to update
+  await new Promise(r => setTimeout(r, 10));
 
-  console.time('frequencySimulation');
   freqData = FrequencySimulator.simulateFrequency(startTime, hours, 1, seed, profileName);
-  console.timeEnd('frequencySimulation');
-  console.log(`[Calc] Generated ${freqData.frequencies.length} frequency samples`);
 
   showStatus('Simulerer batteri-SOC...', 'info');
   await new Promise(r => setTimeout(r, 10));
 
-  // Simulate SOC
-  console.log('[Calc] Starting SOC simulation...');
-  console.time('socSimulation');
   const socData = Calculator.simulateSocHourly(freqData, config);
-  console.timeEnd('socSimulation');
-  console.log(`[Calc] SOC simulation done, ${socData.length} hours`);
 
   showStatus('Beregner inntekt...', 'info');
   await new Promise(r => setTimeout(r, 10));
 
-  console.log('[Calc] Calculating revenue...');
-  console.time('revenueCalc');
   const result = Calculator.calculateRevenue(priceData, socData, config);
-  console.timeEnd('revenueCalc');
-
-  // Summary is now computed during frequency generation (memory efficient)
   const summary = freqData.summary;
 
-  // Log results
-  console.log('[Results] ═══════════════════════════════════════');
-  console.log(`[Results] Total Revenue: €${result.totalRevenue.toLocaleString(undefined, {maximumFractionDigits: 0})}`);
-  console.log(`[Results] Available Hours: ${result.availableHours} / ${result.totalHours} (${result.availabilityPct.toFixed(1)}%)`);
-  console.log(`[Results] Avg Price: €${result.avgPrice.toFixed(2)}/MW`);
-  console.log(`[Results] Frequency: ${summary.pctOutsideBand.toFixed(2)}% outside band (${summary.pctUnder.toFixed(2)}% under, ${summary.pctOver.toFixed(2)}% over)`);
-  console.log('[Results] ═══════════════════════════════════════');
   showStatus(
     `Simulert ${freqData.frequencies.length.toLocaleString()} samples | ` +
     `${summary.pctOutsideBand.toFixed(2)}% utenfor båndet`,
@@ -202,8 +208,6 @@ async function calculate() {
 }
 
 function displayResults(result, showSoc, showFreq) {
-  console.log('[Display] Updating UI...');
-  // Update metrics
   elements.totalRevenue.textContent = `€${result.totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   elements.availableHours.textContent = `${result.availableHours.toLocaleString()} / ${result.totalHours.toLocaleString()}`;
   elements.availability.textContent = `${result.availabilityPct.toFixed(1)}%`;
@@ -464,7 +468,7 @@ function updateSummaryTable(monthly) {
   `).join('');
 }
 
-async function exportData() {
+async function exportCsv() {
   if (!currentResult) return;
 
   const csvContent = Papa.unparse(currentResult.hourlyData.map(row => ({
@@ -480,10 +484,89 @@ async function exportData() {
   await window.electronAPI.saveFile(csvContent, `fcr_inntekt_${year}.csv`);
 }
 
+async function exportXlsx() {
+  if (!currentResult) return;
+
+  const year = elements.year.value;
+  const monthly = aggregateMonthly(currentResult.hourlyData);
+
+  const exportData = {
+    hourlyData: currentResult.hourlyData,
+    monthly,
+    config: {
+      powerMw: parseFloat(elements.powerMw.value),
+      capacityMwh: parseFloat(elements.capacityMwh.value),
+      efficiency: parseInt(elements.efficiency.value),
+      socMin: parseInt(elements.socMin.value),
+      socMax: parseInt(elements.socMax.value),
+      year: parseInt(year),
+      totalHours: currentResult.totalHours,
+      availableHours: currentResult.availableHours
+    }
+  };
+
+  await window.electronAPI.saveXlsx(exportData, `fcr_inntekt_${year}.xlsx`);
+}
+
+async function exportPdf() {
+  if (!currentResult) return;
+
+  showStatus('Genererer PDF...', 'info');
+
+  const year = elements.year.value;
+  const monthly = aggregateMonthly(currentResult.hourlyData);
+
+  // Capture chart images as base64 PNG
+  const chartImages = {
+    monthly: charts.monthly ? charts.monthly.toBase64Image() : null,
+    price: charts.price ? charts.price.toBase64Image() : null,
+    soc: charts.soc ? charts.soc.toBase64Image() : null,
+    freq: charts.freq ? charts.freq.toBase64Image() : null
+  };
+
+  const pdfData = {
+    chartImages,
+    monthly,
+    config: {
+      powerMw: parseFloat(elements.powerMw.value),
+      capacityMwh: parseFloat(elements.capacityMwh.value),
+      efficiency: parseInt(elements.efficiency.value),
+      socMin: parseInt(elements.socMin.value),
+      socMax: parseInt(elements.socMax.value),
+      year: parseInt(year)
+    },
+    metrics: {
+      totalRevenue: elements.totalRevenue.textContent,
+      availableHours: elements.availableHours.textContent,
+      availability: elements.availability.textContent,
+      avgPrice: elements.avgPrice.textContent
+    }
+  };
+
+  const result = await window.electronAPI.savePdf(pdfData, `FCR-N_Rapport_${year}.pdf`);
+  if (result) {
+    showStatus('PDF eksportert!', 'success');
+  } else {
+    showStatus('PDF-eksport avbrutt', 'warning');
+  }
+}
+
 function showStatus(message, type) {
   elements.statusMessage.textContent = message;
   elements.statusMessage.className = `status-message ${type}`;
 }
+
+// Info button toggle
+document.querySelectorAll('.info-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    const helpId = 'help-' + btn.dataset.help;
+    const helpEl = document.getElementById(helpId);
+    if (helpEl) {
+      helpEl.classList.toggle('visible');
+    }
+  });
+});
 
 // Start app
 init();

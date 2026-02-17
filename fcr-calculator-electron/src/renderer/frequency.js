@@ -64,12 +64,10 @@ function poissonRandom(rng, lambda) {
 
 // Simulate realistic Nordic grid frequency based on profile statistics
 function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed = 42, profileName = 'medium') {
-  console.log(`[FreqSim] Starting: ${hours}h, ${resolutionSeconds}s resolution, seed=${seed}, profile=${profileName}`);
   const rng = createRng(seed);
 
   const totalSeconds = hours * 3600;
   const nSamples = Math.floor(totalSeconds / resolutionSeconds);
-  console.log(`[FreqSim] Will generate ${nSamples} samples`);
 
   // Get profile stats
   const profile = getProfile(profileName);
@@ -94,12 +92,9 @@ function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed = 42, p
     frequencies[i] += deviation;
   }
 
-  console.log('[FreqSim] Base noise done');
-
   // Add excursion events
   const expectedEvents = Math.round(eventsPerHour * hours);
   const nEvents = poissonRandom(rng, expectedEvents);
-  console.log(`[FreqSim] Adding ${nEvents} excursion events`);
 
   // Ratio of under vs over frequency events
   const underRatio = profile.underRatio;
@@ -142,8 +137,6 @@ function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed = 42, p
       frequencies[i] = frequencies[i] * (1 - factor) + eventFreq * factor;
     }
   }
-
-  console.log('[FreqSim] Events done, adding HF noise & computing stats');
 
   // Add HF noise and compute summary stats in single pass
   const histMin = 49.5;
@@ -193,82 +186,12 @@ function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed = 42, p
     histogramLabels
   };
 
-  console.log('[FreqSim] Done');
-
-  // Return Float64Array directly (no object wrapper per sample to save memory)
   return { frequencies, summary, startTime, hours };
-}
-
-// Calculate summary statistics and histogram for frequency data
-function getFrequencySummary(freqData) {
-  const n = freqData.length;
-
-  // Fixed histogram range: 49.5 to 50.5 Hz with 100 bins
-  const histMin = 49.5;
-  const histMax = 50.5;
-  const binCount = 100;
-  const binWidth = (histMax - histMin) / binCount;
-  const histogram = new Array(binCount).fill(0);
-
-  let sum = 0;
-  let min = Infinity;
-  let max = -Infinity;
-  let outsideBand = 0;
-  let underBand = 0;
-  let overBand = 0;
-
-  // Single pass for stats + histogram
-  for (let i = 0; i < n; i++) {
-    const f = freqData[i].gridFrequency;
-    sum += f;
-    if (f < min) min = f;
-    if (f > max) max = f;
-    if (f < 49.9) {
-      underBand++;
-      outsideBand++;
-    } else if (f > 50.1) {
-      overBand++;
-      outsideBand++;
-    }
-
-    // Add to histogram
-    const binIndex = Math.max(0, Math.min(binCount - 1, Math.floor((f - histMin) / binWidth)));
-    histogram[binIndex]++;
-  }
-
-  const mean = sum / n;
-
-  // Second pass for variance
-  let varianceSum = 0;
-  for (let i = 0; i < n; i++) {
-    const diff = freqData[i].gridFrequency - mean;
-    varianceSum += diff * diff;
-  }
-  const std = Math.sqrt(varianceSum / n);
-
-  // Build histogram labels
-  const histogramLabels = [];
-  for (let i = 0; i < binCount; i++) {
-    histogramLabels.push((histMin + i * binWidth + binWidth / 2).toFixed(3));
-  }
-
-  return {
-    meanHz: mean,
-    stdHz: std,
-    minHz: min,
-    maxHz: max,
-    pctOutsideBand: (outsideBand / n) * 100,
-    pctUnder: (underBand / n) * 100,
-    pctOver: (overBand / n) * 100,
-    histogram,
-    histogramLabels
-  };
 }
 
 // Export for use in app.js
 window.FrequencySimulator = {
   FREQUENCY_PROFILES,
   getProfile,
-  simulateFrequency,
-  getFrequencySummary
+  simulateFrequency
 };

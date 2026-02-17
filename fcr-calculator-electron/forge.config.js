@@ -5,13 +5,15 @@ module.exports = {
   packagerConfig: {
     asar: true,
     name: 'FCR Calculator',
-    icon: './icon'
+    icon: './icon',
+    extraResource: ['./data'],
+    arch: ['x64', 'arm64']
   },
   rebuildConfig: {},
   makers: [
     {
       name: '@electron-forge/maker-zip',
-      platforms: ['darwin']
+      platforms: ['darwin', 'win32']
     },
     {
       name: '@electron-forge/maker-dmg',

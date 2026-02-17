@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const ExcelJS = require('exceljs');
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -53,8 +54,610 @@ ipcMain.handle('file:save', async (event, data, defaultName) => {
   return null;
 });
 
+ipcMain.handle('file:saveXlsx', async (event, exportData, defaultName) => {
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    defaultPath: defaultName,
+    filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+  });
+  if (canceled || !filePath) return null;
+
+  const workbook = new ExcelJS.Workbook();
+  const { hourlyData, monthly, config } = exportData;
+
+  // Hourly Data sheet
+  const hourlySheet = workbook.addWorksheet('Timedata');
+  hourlySheet.getCell('A1').value = `FCR-N Inntektsanalyse - ${config.year} - ${config.powerMw} MW Batteri`;
+  hourlySheet.getCell('A1').font = { bold: true, size: 14 };
+
+  hourlySheet.getRow(2).values = ['Tidspunkt', 'FCR-N Pris (EUR/MW)', 'Tilgjengelig', 'Inntekt (EUR)', 'SOC Start (%)', 'SOC Slutt (%)'];
+  hourlySheet.getRow(2).font = { bold: true };
+
+  hourlyData.forEach((row, i) => {
+    hourlySheet.getRow(i + 3).values = [
+      new Date(row.timestamp),
+      row.price,
+      row.available ? 'Ja' : 'Nei',
+      row.revenue,
+      row.socStart !== null ? row.socStart * 100 : null,
+      row.socEnd !== null ? row.socEnd * 100 : null
+    ];
+  });
+
+  hourlySheet.getColumn(1).width = 20;
+  hourlySheet.getColumn(2).width = 18;
+  hourlySheet.getColumn(3).width = 14;
+  hourlySheet.getColumn(4).width = 14;
+  hourlySheet.getColumn(4).numFmt = '#,##0.00';
+  hourlySheet.getColumn(5).width = 14;
+  hourlySheet.getColumn(5).numFmt = '0.00';
+  hourlySheet.getColumn(6).width = 14;
+  hourlySheet.getColumn(6).numFmt = '0.00';
+
+  // Monthly Summary sheet
+  const monthlySheet = workbook.addWorksheet('Månedlig Oppsummering');
+  monthlySheet.getCell('A1').value = 'Månedlig Oppsummering';
+  monthlySheet.getCell('A1').font = { bold: true, size: 14 };
+
+  monthlySheet.getRow(2).values = ['Måned', 'Inntekt (EUR)', 'Timer', 'Snittpris (EUR/MW)'];
+  monthlySheet.getRow(2).font = { bold: true };
+
+  monthly.forEach((row, i) => {
+    monthlySheet.getRow(i + 3).values = [row.month, row.revenue, row.hours, row.avgPrice];
+  });
+
+  const totalRow = monthly.length + 3;
+  monthlySheet.getCell(`A${totalRow}`).value = 'TOTAL';
+  monthlySheet.getCell(`A${totalRow}`).font = { bold: true };
+  monthlySheet.getCell(`B${totalRow}`).value = { formula: `SUM(B3:B${totalRow - 1})` };
+  monthlySheet.getCell(`C${totalRow}`).value = { formula: `SUM(C3:C${totalRow - 1})` };
+  monthlySheet.getCell(`D${totalRow}`).value = { formula: `AVERAGE(D3:D${totalRow - 1})` };
+
+  monthlySheet.getColumn(2).numFmt = '#,##0.00';
+  monthlySheet.getColumn(4).numFmt = '#,##0.00';
+
+  // Configuration sheet
+  const configSheet = workbook.addWorksheet('Konfigurasjon');
+  configSheet.getCell('A1').value = 'Batterikonfigurasjon';
+  configSheet.getCell('A1').font = { bold: true, size: 14 };
+
+  const configRows = [
+    ['Effektkapasitet (MW)', config.powerMw],
+    ['Energikapasitet (MWh)', config.capacityMwh],
+    ['Virkningsgrad (%)', config.efficiency],
+    ['Min SOC (%)', config.socMin],
+    ['Maks SOC (%)', config.socMax],
+    ['År', config.year],
+    ['Total Inntekt (EUR)', { formula: `'Månedlig Oppsummering'!B${totalRow}` }],
+    ['Totalt Antall Timer', config.totalHours],
+    ['Tilgjengelige Timer', config.availableHours],
+    ['Tilgjengelighet (%)', { formula: 'B10/B9*100' }]
+  ];
+
+  configRows.forEach((row, i) => {
+    configSheet.getRow(i + 3).values = row;
+  });
+
+  configSheet.getColumn(1).width = 25;
+  configSheet.getColumn(2).width = 15;
+
+  await workbook.xlsx.writeFile(filePath);
+  return filePath;
+});
+
+ipcMain.handle('file:savePdf', async (event, pdfData, defaultName) => {
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    defaultPath: defaultName,
+    filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
+  });
+  if (canceled || !filePath) return null;
+
+  const html = buildPdfHtml(pdfData);
+
+  // Create hidden BrowserWindow to render HTML
+  const pdfWindow = new BrowserWindow({
+    width: 1123,  // A4 landscape at 96dpi
+    height: 794,
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  await pdfWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+
+  // Wait for images to load
+  await pdfWindow.webContents.executeJavaScript(`
+    new Promise(resolve => {
+      const imgs = document.querySelectorAll('img');
+      if (imgs.length === 0) return resolve();
+      let loaded = 0;
+      imgs.forEach(img => {
+        if (img.complete) { loaded++; if (loaded === imgs.length) resolve(); }
+        else { img.onload = img.onerror = () => { loaded++; if (loaded === imgs.length) resolve(); }; }
+      });
+    });
+  `);
+
+  const pdfBuffer = await pdfWindow.webContents.printToPDF({
+    landscape: true,
+    pageSize: 'A4',
+    printBackground: true,
+    margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 }
+  });
+
+  pdfWindow.destroy();
+  fs.writeFileSync(filePath, pdfBuffer);
+  return filePath;
+});
+
+function buildArbitragePage2(data, monthly, totalRevenue, totalHours, avgPrice, monthlyRows, now) {
+  const f = data.financials || {};
+  const config = data.config;
+
+  const arbMonthlyRows = monthly.map(m => `
+    <tr>
+      <td>${m.month}</td>
+      <td style="text-align:right">${euroFmt(m.revenue)}</td>
+      <td style="text-align:right">${euroFmt(m.chargeCost || 0)}</td>
+      <td style="text-align:right">${euroFmt(m.dischargeRevenue || 0)}</td>
+      <td style="text-align:right">${m.hours}</td>
+      <td style="text-align:right">${euroFmt(m.avgPrice)}</td>
+    </tr>
+  `).join('');
+
+  const totalCharge = monthly.reduce((s, m) => s + (m.chargeCost || 0), 0);
+  const totalDischarge = monthly.reduce((s, m) => s + (m.dischargeRevenue || 0), 0);
+  const pctPositive = f.totalDays > 0 ? ((f.positiveDays / f.totalDays) * 100).toFixed(0) : 0;
+
+  return `
+  <div class="table-section">
+    <div class="page2-header">
+      <h2>Finansiell oppsummering</h2>
+      <div class="meta">Prisområde: NO1 &middot; Periode: ${config.year} &middot; ${now}</div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <span class="kpi-value accent">${euroFmt(f.expectedMonthly)}</span>
+        <span class="kpi-label">Forventet månedsinntekt</span>
+        <span class="kpi-sub">Snitt siste hele måneder</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-value">${euroFmt(f.expectedYearly)}</span>
+        <span class="kpi-label">Forventet årsinntekt</span>
+        <span class="kpi-sub">${euroFmt(f.expectedYearlyPerMw)}/MW &middot; ${config.powerMw} MW</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-value green">${pctPositive}%</span>
+        <span class="kpi-label">Lønnsomme dager</span>
+        <span class="kpi-sub">${f.positiveDays} av ${f.totalDays} dager med positiv inntekt</span>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="summary-box">
+        <h3>Nøkkeltall</h3>
+        <div class="summary-row">
+          <span class="sr-label">Total nettoinntekt</span>
+          <span class="sr-value">${euroFmt(f.totalRevenue)}</span>
+        </div>
+        <div class="summary-row">
+          <span class="sr-label">Total ladekostnad</span>
+          <span class="sr-value">${euroFmt(f.totalChargeCost)}</span>
+        </div>
+        <div class="summary-row">
+          <span class="sr-label">Total utladeinntekt</span>
+          <span class="sr-value">${euroFmt(f.totalDischargeRevenue)}</span>
+        </div>
+        <div class="summary-row">
+          <span class="sr-label">Inntekt per MW (periode)</span>
+          <span class="sr-value">${euroFmt(f.revenuePerMw)}</span>
+        </div>
+        <div class="summary-row">
+          <span class="sr-label">Sykluser per MW per dag</span>
+          <span class="sr-value">${f.duration.toFixed(1)}h</span>
+        </div>
+      </div>
+      <div class="summary-box">
+        <h3>Daglig inntektsfordeling</h3>
+        <div class="summary-row">
+          <span class="sr-label">Gjennomsnitt per dag</span>
+          <span class="sr-value">${euroFmt(f.avgDailyRevenue)}</span>
+        </div>
+        <div class="summary-row">
+          <span class="sr-label">Median per dag</span>
+          <span class="sr-value">${euroFmt(f.medianDailyRevenue)}</span>
+        </div>
+        <div class="summary-row">
+          <span class="sr-label">Beste dag</span>
+          <span class="sr-value">${euroFmt(f.maxDailyRevenue)}</span>
+        </div>
+        <div class="summary-row">
+          <span class="sr-label">Svakeste dag</span>
+          <span class="sr-value">${euroFmt(f.minDailyRevenue)}</span>
+        </div>
+        <div class="summary-row">
+          <span class="sr-label">Beste måned</span>
+          <span class="sr-value">${f.bestMonth} (${euroFmt(f.bestMonthRevenue)})</span>
+        </div>
+      </div>
+    </div>
+
+    <h2 style="font-size:13px; margin-bottom:8px;">Månedlig oppsummering</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Måned</th>
+          <th>Nettoinntekt</th>
+          <th>Ladekostnad</th>
+          <th>Utladeinntekt</th>
+          <th>Dager</th>
+          <th>Snitt/dag</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${arbMonthlyRows}
+        <tr class="total-row">
+          <td>TOTAL</td>
+          <td style="text-align:right">${euroFmt(totalRevenue)}</td>
+          <td style="text-align:right">${euroFmt(totalCharge)}</td>
+          <td style="text-align:right">${euroFmt(totalDischarge)}</td>
+          <td style="text-align:right">${totalHours}</td>
+          <td style="text-align:right">${euroFmt(avgPrice)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="disclaimer">
+      Tallene er basert på faktiske driftsdata fra vår batteriinstallasjon i prisområde NO1 over de siste månedene.
+      Inntekten reflekterer reell handel mot spotmarkedet, inkludert dager uten drift grunnet testing og klargjøring i oppstartsperioden.
+      Virkningsgrad (${config.efficiency}%) er medregnet.
+    </div>
+  </div>
+
+  <div class="footer">
+    Konfidensielt &middot; Basert på driftsdata ${config.year} &middot; Prisområde NO1
+  </div>`;
+}
+
+function buildPdfHtml(data) {
+  const { chartImages, monthly, config, metrics } = data;
+  const now = new Date().toLocaleDateString('nb-NO', { year: 'numeric', month: 'long', day: 'numeric' });
+  const duration = (config.capacityMwh / config.powerMw).toFixed(1);
+
+  const monthlyRows = monthly.map(m => `
+    <tr>
+      <td>${m.month}</td>
+      <td style="text-align:right">${euroFmt(m.revenue)}</td>
+      <td style="text-align:right">${m.hours}</td>
+      <td style="text-align:right">€${m.avgPrice.toFixed(0)}</td>
+    </tr>
+  `).join('');
+
+  const totalRevenue = monthly.reduce((s, m) => s + m.revenue, 0);
+  const totalHours = monthly.reduce((s, m) => s + m.hours, 0);
+  const avgPrice = totalHours > 0 ? monthly.reduce((s, m) => s + m.avgPrice * m.hours, 0) / totalHours : 0;
+
+  const chartSection = (title, base64) => {
+    if (!base64) return '';
+    return `
+      <div class="chart-box">
+        <h3>${title}</h3>
+        <img src="${base64}" />
+      </div>
+    `;
+  };
+
+  return `<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #fff;
+    color: #1a1a2e;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .page { padding: 24px 32px; }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 3px solid #e94560;
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+  }
+  .header h1 { font-size: 20px; color: #1a1a2e; }
+  .header .meta { font-size: 10px; color: #666; text-align: right; }
+  .config-bar {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    background: #f5f5f5;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-size: 10px;
+  }
+  .config-bar span { color: #666; }
+  .config-bar strong { color: #1a1a2e; }
+  .metrics-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .metric-box {
+    background: #f8f8f8;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 12px;
+    text-align: center;
+  }
+  .metric-box .value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #e94560;
+    display: block;
+    margin-bottom: 2px;
+  }
+  .metric-box .label {
+    font-size: 9px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+  .chart-box {
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+  .chart-box h3 {
+    font-size: 11px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #1a1a2e;
+    letter-spacing: 0.3px;
+  }
+  .chart-box img {
+    width: 100%;
+    height: auto;
+    min-height: 160px;
+    display: block;
+  }
+  .table-section { margin-bottom: 16px; page-break-before: always; }
+  .table-section h2 {
+    font-size: 13px;
+    margin-bottom: 8px;
+    color: #1a1a2e;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+  th {
+    background: #1a1a2e;
+    color: #fff;
+    padding: 6px 10px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  th:nth-child(n+2) { text-align: right; }
+  td {
+    padding: 5px 10px;
+    border-bottom: 1px solid #eee;
+  }
+  tr:nth-child(even) td { background: #fafafa; }
+  tr.total-row td {
+    font-weight: 700;
+    border-top: 2px solid #1a1a2e;
+    background: #f0f0f0;
+  }
+  .page2-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 3px solid #e94560;
+    padding-bottom: 10px;
+    margin-bottom: 18px;
+  }
+  .page2-header h2 { font-size: 16px; color: #1a1a2e; }
+  .page2-header .meta { font-size: 10px; color: #666; }
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .kpi-card {
+    background: #f8f8f8;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .kpi-card .kpi-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1a1a2e;
+    display: block;
+    margin-bottom: 2px;
+  }
+  .kpi-card .kpi-value.accent { color: #e94560; }
+  .kpi-card .kpi-value.green { color: #16a34a; }
+  .kpi-card .kpi-label {
+    font-size: 9px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .kpi-card .kpi-sub {
+    font-size: 9px;
+    color: #999;
+    margin-top: 4px;
+  }
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+  .summary-box {
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .summary-box h3 {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 8px 12px;
+    background: #f5f5f5;
+    color: #333;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  .summary-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 12px;
+    font-size: 10px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-row .sr-label { color: #666; }
+  .summary-row .sr-value { font-weight: 600; color: #1a1a2e; }
+  .disclaimer {
+    margin-top: 14px;
+    padding: 10px 14px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 6px;
+    font-size: 9px;
+    color: #92400e;
+    line-height: 1.5;
+  }
+  .footer {
+    margin-top: 16px;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+    font-size: 9px;
+    color: #999;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <h1>${config.reportType === 'arbitrage' ? 'Arbitrasje Inntektsrapport' : 'FCR-N Inntektsrapport'}</h1>
+    <div class="meta">
+      Generert: ${now}<br>
+      ${config.reportType === 'arbitrage' ? 'Driftsperiode' : 'Prisdata'}: ${config.year}
+    </div>
+  </div>
+
+  <div class="config-bar">
+    <div><span>Effekt:</span> <strong>${config.powerMw} MW</strong></div>
+    <div><span>Energi:</span> <strong>${config.capacityMwh} MWh</strong></div>
+    <div><span>Varighet:</span> <strong>${duration}h</strong></div>
+    <div><span>Virkningsgrad:</span> <strong>${config.efficiency}%</strong></div>
+    <div><span>SOC:</span> <strong>${config.socMin}%–${config.socMax}%</strong></div>
+    <div><span>Prisområde:</span> <strong>NO1</strong></div>
+  </div>
+
+  <div class="metrics-row">
+    <div class="metric-box">
+      <span class="value">${metrics.totalRevenue}</span>
+      <span class="label">Total inntekt</span>
+    </div>
+    <div class="metric-box">
+      <span class="value">${metrics.availableHours}</span>
+      <span class="label">${config.reportType === 'arbitrage' ? 'Antall dager' : 'Tilgjengelige timer'}</span>
+    </div>
+    <div class="metric-box">
+      <span class="value">${metrics.availability}</span>
+      <span class="label">${config.reportType === 'arbitrage' ? 'Sykluser' : 'Tilgjengelighet'}</span>
+    </div>
+    <div class="metric-box">
+      <span class="value">${metrics.avgPrice}</span>
+      <span class="label">${config.reportType === 'arbitrage' ? 'Snitt per dag' : 'Snittpris'}</span>
+    </div>
+  </div>
+
+  <div class="charts-grid">
+    ${config.reportType === 'arbitrage'
+      ? `${chartSection('Månedlig inntekt', chartImages.monthly)}
+         ${chartSection('Daglig profitt', chartImages.price)}
+         ${chartSection('Typisk dagsprofil', chartImages.soc)}
+         ${chartSection('Kumulativ inntekt', chartImages.freq)}`
+      : `${chartSection('Månedlig inntekt', chartImages.monthly)}
+         ${chartSection('Prisfordeling', chartImages.price)}
+         ${chartSection('SOC-utvikling', chartImages.soc)}
+         ${chartSection('Frekvensfordeling', chartImages.freq)}`
+    }
+  </div>
+
+  ${config.reportType === 'arbitrage' ? buildArbitragePage2(data, monthly, totalRevenue, totalHours, avgPrice, monthlyRows, now) : `
+  <div class="table-section">
+    <h2>Månedlig oppsummering</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Måned</th>
+          <th>Inntekt (EUR)</th>
+          <th>Timer</th>
+          <th>Snittpris (EUR/MW)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${monthlyRows}
+        <tr class="total-row">
+          <td>TOTAL</td>
+          <td style="text-align:right">${euroFmt(totalRevenue)}</td>
+          <td style="text-align:right">${totalHours}</td>
+          <td style="text-align:right">€${avgPrice.toFixed(0)}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    Denne rapporten er generert basert på historiske FCR-N priser for ${config.year} (NO1).
+  </div>
+  `}
+</div>
+</body>
+</html>`;
+}
+
+function euroFmt(value) {
+  return '€' + Math.round(value).toLocaleString('nb-NO');
+}
+
+// Get data directory (works in both dev and packaged app)
+function getDataPath() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'data');
+  }
+  return path.join(__dirname, '..', 'data');
+}
+
 ipcMain.handle('data:loadPriceFile', async (event, year) => {
-  const dataPath = path.join(__dirname, '..', '..', `PrimaryReservesD-1-${year}.csv`);
+  const dataPath = path.join(getDataPath(), `PrimaryReservesD-1-${year}.csv`);
   try {
     return fs.readFileSync(dataPath, 'utf-8');
   } catch (err) {
@@ -65,7 +668,7 @@ ipcMain.handle('data:loadPriceFile', async (event, year) => {
 
 ipcMain.handle('data:getAvailableYears', async () => {
   const years = [];
-  const baseDir = path.join(__dirname, '..', '..');
+  const baseDir = getDataPath();
   for (const year of [2024, 2025]) {
     const filePath = path.join(baseDir, `PrimaryReservesD-1-${year}.csv`);
     if (fs.existsSync(filePath)) {
@@ -73,6 +676,18 @@ ipcMain.handle('data:getAvailableYears', async () => {
     }
   }
   return years;
+});
+
+ipcMain.handle('data:loadSpotData', async () => {
+  const spotDir = path.join(getDataPath(), 'spot');
+  if (!fs.existsSync(spotDir)) return null;
+  const filePath = path.join(spotDir, 'entsoe_spot_prices_rows.csv');
+  try {
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch (err) {
+    console.error('Failed to load spot data:', err);
+    return null;
+  }
 });
 
 app.whenReady().then(() => {

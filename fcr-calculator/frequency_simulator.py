@@ -175,8 +175,6 @@ def simulate_frequency_for_year(year: int, seed: int | None = None) -> pd.DataFr
     if seed is not None:
         np.random.seed(seed)
 
-    start = pd.Timestamp(f"{year}-01-01", tz="UTC")
-
     # Simulate month by month to capture seasonal patterns
     monthly_dfs = []
 

@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from io import BytesIO
 
 from data_loader import load_price_data, load_frequency_data, get_available_years
 from calculator import (
@@ -234,7 +235,7 @@ if use_soc_simulation and "soc_start" in hourly.columns:
     st.plotly_chart(fig_soc, use_container_width=True)
 
     # Show unavailable hours
-    unavailable = hourly[hourly["available"] == False]
+    unavailable = hourly[~hourly["available"]]
     if len(unavailable) > 0:
         st.warning(f"⚠️ {len(unavailable)} hours unavailable due to SOC limits")
 
@@ -256,13 +257,81 @@ if freq_df is not None and freq_mode == "Simulated (Nordic stats)":
 # Export
 st.header("Export Data")
 
-csv = hourly.to_csv(index=False)
-st.download_button(
-    "Download Hourly Data (CSV)",
-    csv,
-    f"fcr_revenue_{year}.csv",
-    "text/csv"
-)
+col_exp1, col_exp2 = st.columns(2)
+
+with col_exp1:
+    csv = hourly.to_csv(index=False)
+    st.download_button(
+        "Download CSV (Raw Data)",
+        csv,
+        f"fcr_revenue_{year}.csv",
+        "text/csv"
+    )
+
+with col_exp2:
+    def create_xlsx_export():
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            # Hourly data with readable headers
+            hourly_export = hourly.copy()
+
+            header_map = {
+                "timestamp": "Timestamp",
+                "FCR-N Price EUR/MW": "FCR-N Price (EUR/MW)",
+                "available": "Available",
+                "revenue_eur": "Revenue (EUR)",
+                "soc_start": "SOC Start (%)",
+                "soc_end": "SOC End (%)",
+                "month": "Month"
+            }
+            hourly_export.columns = [header_map.get(c, c) for c in hourly_export.columns]
+            hourly_export.to_excel(writer, sheet_name="Hourly Data", index=False, startrow=1)
+
+            ws = writer.sheets["Hourly Data"]
+            ws["A1"] = f"FCR-N Revenue Analysis - {year} - {power_mw} MW Battery"
+
+            # Monthly summary with formulas
+            monthly_export = monthly.copy()
+            monthly_export.columns = ["Month", "Revenue (EUR)", "Hours", "Avg Price (EUR/MW)"]
+            monthly_export.to_excel(writer, sheet_name="Monthly Summary", index=False, startrow=1)
+
+            ws_monthly = writer.sheets["Monthly Summary"]
+            ws_monthly["A1"] = "Monthly Summary"
+
+            # Add totals row with formulas
+            total_row = len(monthly_export) + 3
+            ws_monthly[f"A{total_row}"] = "TOTAL"
+            ws_monthly[f"B{total_row}"] = f"=SUM(B3:B{total_row-1})"
+            ws_monthly[f"C{total_row}"] = f"=SUM(C3:C{total_row-1})"
+            ws_monthly[f"D{total_row}"] = f"=AVERAGE(D3:D{total_row-1})"
+
+            # Config sheet
+            config_data = pd.DataFrame([
+                ["Power Capacity (MW)", power_mw],
+                ["Energy Capacity (MWh)", capacity_mwh],
+                ["Round-trip Efficiency (%)", efficiency * 100],
+                ["Min SOC (%)", soc_min * 100],
+                ["Max SOC (%)", soc_max * 100],
+                ["Year", year],
+                ["Total Revenue (EUR)", f"='Monthly Summary'!B{total_row}"],
+                ["Total Hours", result.total_hours],
+                ["Available Hours", result.available_hours],
+                ["Availability (%)", f"=I9/I8*100"]
+            ], columns=["Parameter", "Value"])
+            config_data.to_excel(writer, sheet_name="Configuration", index=False, header=False, startcol=8)
+
+            ws_config = writer.sheets["Configuration"]
+            ws_config["H1"] = "Battery Configuration"
+
+        return output.getvalue()
+
+    xlsx_data = create_xlsx_export()
+    st.download_button(
+        "Download Excel (With Formulas)",
+        xlsx_data,
+        f"fcr_revenue_{year}.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
 # Summary table
 st.header("Summary")

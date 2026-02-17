@@ -42,8 +42,5 @@ def aggregate_frequency_to_hourly(freq_df: pd.DataFrame) -> pd.DataFrame:
 
 def get_available_years() -> list[int]:
     """Return list of years with available price data."""
-    years = []
-    for year in [2024, 2025, 2026]:
-        if (DATA_DIR / f"PrimaryReservesD-1-{year}.csv").exists():
-            years.append(year)
-    return years
+    return [year for year in [2024, 2025, 2026]
+            if (DATA_DIR / f"PrimaryReservesD-1-{year}.csv").exists()]

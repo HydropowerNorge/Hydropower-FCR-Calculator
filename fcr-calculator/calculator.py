@@ -122,11 +122,8 @@ def calculate_revenue(
     # If no frequency data for an hour, assume available
     merged["available"] = merged["available"].fillna(True)
 
-    # Calculate hourly revenue
-    merged["revenue_eur"] = merged.apply(
-        lambda row: config.power_mw * row["FCR-N Price EUR/MW"] if row["available"] else 0,
-        axis=1
-    )
+    # Calculate hourly revenue (vectorized)
+    merged["revenue_eur"] = config.power_mw * merged["FCR-N Price EUR/MW"] * merged["available"]
 
     total_revenue = merged["revenue_eur"].sum()
     available_hours = merged["available"].sum()

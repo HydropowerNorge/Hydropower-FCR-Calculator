@@ -20,35 +20,29 @@ function calculateFcrActivation(frequency, powerMw) {
   return (50.0 - frequency) / 0.1 * powerMw;
 }
 
-// Simulate battery SOC evolution using 1-second frequency data with NEM
+// Simulate battery SOC evolution using 1-second frequency data with NEM.
 // NEM (Normal State Energy Management) adds power offset to restore SOC
-// while still participating in FCR when frequency is in normal band
+// while still participating in FCR when frequency is in normal band.
 function simulateSocHourly(freqData, config, startSoc = 0.5) {
-  console.log(`[SOC] Starting simulation with ${freqData.length} samples`);
-
   const minEnergy = config.capacityMwh * config.socMin;
   const maxEnergy = config.capacityMwh * config.socMax;
 
   // NEM parameters
-  const NEM_POWER_RATIO = 0.34; // 34% of capacity for NEM
-  const NEM_WINDOW_SECONDS = 120; // 2-minute rolling average (faster response)
+  const NEM_POWER_RATIO = 0.34;
+  const NEM_WINDOW_SECONDS = 120;
 
-  // NEM SOC thresholds - relative to user's SOC limits with 15% buffer
+  // NEM SOC thresholds - relative to user's SOC limits with 25% buffer
   const socRange = config.socMax - config.socMin;
-  const nemBuffer = socRange * 0.25; // Start NEM when 25% into the usable range
+  const nemBuffer = socRange * 0.25;
   const nemEnableLower = config.socMin + nemBuffer;
-  const nemDisableLower = config.socMin + socRange * 0.5; // Disable at midpoint
+  const nemDisableLower = config.socMin + socRange * 0.5;
   const nemEnableUpper = config.socMax - nemBuffer;
   const nemDisableUpper = config.socMax - socRange * 0.5;
 
-  console.log(`[SOC] NEM thresholds: enable=${(nemEnableLower * 100).toFixed(1)}%/${(nemEnableUpper * 100).toFixed(1)}%, disable=${(nemDisableLower * 100).toFixed(1)}%/${(nemDisableUpper * 100).toFixed(1)}%`);
-
-  // freqData is now { frequencies: Float64Array, summary, startTime, hours }
   const frequencies = freqData.frequencies;
   const nSamples = frequencies.length;
   const nHours = Math.floor(nSamples / 3600);
   const startTimeMs = freqData.startTime.getTime();
-  console.log(`[SOC] Processing ${nHours} hours (${nSamples} samples)`);
 
   const results = [];
   let currentEnergy = config.capacityMwh * startSoc;
@@ -59,14 +53,6 @@ function simulateSocHourly(freqData, config, startSoc = 0.5) {
   let nemActiveLow = false;
   let nemActiveHigh = false;
 
-  // Stats tracking
-  let totalNemActiveSeconds = 0;
-  let totalNemChargingSeconds = 0;
-  let totalNemDischargingSeconds = 0;
-  let minSoc = 1;
-  let maxSoc = 0;
-
-  console.log('[SOC] Processing hours with NEM...');
   for (let h = 0; h < nHours; h++) {
     const hourStartEnergy = currentEnergy;
     const hourTimestamp = new Date(startTimeMs + h * 3600000);
@@ -99,18 +85,10 @@ function simulateSocHourly(freqData, config, startSoc = 0.5) {
 
         if (nemActiveLow) {
           nemAllowed = -1; // Charge to restore SOC
-          totalNemChargingSeconds++;
-          totalNemActiveSeconds++;
         } else if (nemActiveHigh) {
           nemAllowed = 1; // Discharge to restore SOC
-          totalNemDischargingSeconds++;
-          totalNemActiveSeconds++;
         }
       }
-
-      // Track SOC range
-      if (soc < minSoc) minSoc = soc;
-      if (soc > maxSoc) maxSoc = soc;
 
       // Rolling 2-min average for NEM_current
       nemAllowedHistory.push(nemAllowed);
@@ -118,8 +96,8 @@ function simulateSocHourly(freqData, config, startSoc = 0.5) {
         nemAllowedHistory.shift();
       }
       let nemSum = 0;
-      for (let i = 0; i < nemAllowedHistory.length; i++) {
-        nemSum += nemAllowedHistory[i];
+      for (let j = 0; j < nemAllowedHistory.length; j++) {
+        nemSum += nemAllowedHistory[j];
       }
       const nemCurrent = nemSum / nemAllowedHistory.length;
 
@@ -165,17 +143,6 @@ function simulateSocHourly(freqData, config, startSoc = 0.5) {
       available
     });
   }
-
-  // Log summary stats
-  const totalSeconds = nHours * 3600;
-  const unavailableHours = results.filter(r => !r.available).length;
-  console.log('[SOC] ═══════════════════════════════════════');
-  console.log(`[SOC] SOC Range: ${(minSoc * 100).toFixed(1)}% - ${(maxSoc * 100).toFixed(1)}%`);
-  console.log(`[SOC] NEM Active: ${(totalNemActiveSeconds / totalSeconds * 100).toFixed(1)}% of time`);
-  console.log(`[SOC]   - Charging (low SOC): ${(totalNemChargingSeconds / totalSeconds * 100).toFixed(1)}%`);
-  console.log(`[SOC]   - Discharging (high SOC): ${(totalNemDischargingSeconds / totalSeconds * 100).toFixed(1)}%`);
-  console.log(`[SOC] Unavailable hours: ${unavailableHours} / ${results.length} (${(unavailableHours / results.length * 100).toFixed(1)}%)`);
-  console.log('[SOC] ═══════════════════════════════════════');
 
   return results;
 }
