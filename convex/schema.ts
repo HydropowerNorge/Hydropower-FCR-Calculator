@@ -20,6 +20,56 @@ export default defineSchema({
     spotPriceEurMwh: v.number(),
   }).index("by_zone_timestamp", ["biddingZone", "timestamp"]),
 
+  afrrMarket: defineTable({
+    year: v.number(),
+    timestamp: v.number(),
+    biddingZone: v.string(),
+    direction: v.string(),
+    reserveType: v.string(),
+    resolutionMin: v.number(),
+    marketVolumeMw: v.optional(v.number()),
+    marketPriceEurMw: v.optional(v.number()),
+    marketActivatedVolumeMw: v.optional(v.number()),
+    marketGotActivated: v.optional(v.boolean()),
+    contractedQuantityMw: v.optional(v.number()),
+    contractedPriceEurMw: v.optional(v.number()),
+    activationPriceEurMwh: v.optional(v.number()),
+    source: v.string(),
+  })
+    .index("by_year", ["year"])
+    .index("by_year_zone_direction_type_resolution_timestamp", [
+      "year",
+      "biddingZone",
+      "direction",
+      "reserveType",
+      "resolutionMin",
+      "timestamp",
+    ])
+    .index("by_zone_direction_type_resolution_timestamp", [
+      "biddingZone",
+      "direction",
+      "reserveType",
+      "resolutionMin",
+      "timestamp",
+    ]),
+
+  afrrSeries: defineTable({
+    year: v.number(),
+    biddingZone: v.string(),
+    direction: v.string(),
+    reserveType: v.string(),
+    resolutionMin: v.number(),
+    sampleCount: v.number(),
+  })
+    .index("by_year", ["year"])
+    .index("by_filter_year", [
+      "biddingZone",
+      "direction",
+      "reserveType",
+      "resolutionMin",
+      "year",
+    ]),
+
   solarProduction: defineTable({
     year: v.number(),
     // Partition key to keep hourly and quarter-hourly series strictly separate.

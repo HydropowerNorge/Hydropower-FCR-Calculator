@@ -1,0 +1,259 @@
+function toFiniteNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function createRng(seed) {
+  let state = Number.isFinite(seed) ? Math.floor(seed) : 42;
+  return function nextRandom() {
+    state = (state * 1664525 + 1013904223) % 4294967296;
+    return state / 4294967296;
+  };
+}
+
+function getHoursInYear(year) {
+  const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+  return isLeapYear ? 8784 : 8760;
+}
+
+function buildSolarCapacityFactors(solarRows, totalHours) {
+  if (!Array.isArray(solarRows) || solarRows.length === 0 || totalHours <= 0) {
+    return new Array(totalHours).fill(0);
+  }
+
+  const production = solarRows
+    .map((row) => toFiniteNumber(row.production))
+    .filter((value) => value !== null)
+    .sort((a, b) => a - b);
+
+  const maxProduction = production.length > 0 ? production[production.length - 1] : 0;
+  if (!Number.isFinite(maxProduction) || maxProduction <= 0) {
+    return new Array(totalHours).fill(0);
+  }
+
+  const normalizedProfile = solarRows
+    .slice()
+    .sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0))
+    .map((row) => {
+      const productionValue = toFiniteNumber(row.production);
+      if (productionValue === null || productionValue <= 0) return 0;
+      return Math.min(1, productionValue / maxProduction);
+    });
+
+  return Array.from({ length: totalHours }, (_, index) => {
+    const profileIndex = Math.floor((index * normalizedProfile.length) / totalHours);
+    return normalizedProfile[Math.min(profileIndex, normalizedProfile.length - 1)] || 0;
+  });
+}
+
+function aggregateMonthly(hourlyData) {
+  const byMonth = new Map();
+
+  for (const row of hourlyData) {
+    const month = new Date(row.timestamp).toISOString().slice(0, 7);
+    if (!byMonth.has(month)) {
+      byMonth.set(month, {
+        month,
+        totalRevenueNok: 0,
+        solarRevenueNok: 0,
+        afrrRevenueNok: 0,
+        capacityRevenueNok: 0,
+        curtailmentCostNok: 0,
+        bidHours: 0,
+        hours: 0,
+        afrrPriceSumNokMw: 0,
+      });
+    }
+
+    const item = byMonth.get(month);
+    item.totalRevenueNok += row.totalRevenueNok;
+    item.solarRevenueNok += row.solarRevenueNok;
+    item.afrrRevenueNok += row.afrrRevenueNok;
+    item.capacityRevenueNok += row.capacityRevenueNok;
+    item.curtailmentCostNok += row.curtailmentCostNok;
+    item.hours += 1;
+
+    if (row.bidVolumeMw > 0) {
+      item.bidHours += 1;
+      item.afrrPriceSumNokMw += row.afrrPriceNokMw;
+    }
+  }
+
+  return Array.from(byMonth.values()).map((month) => ({
+    ...month,
+    avgAfrrPriceNokMw: month.bidHours > 0 ? month.afrrPriceSumNokMw / month.bidHours : 0,
+  }));
+}
+
+function resolveAfrrPriceEurMw(row) {
+  const marketPrice = toFiniteNumber(row?.marketPriceEurMw);
+  if (marketPrice !== null && marketPrice > 0) return marketPrice;
+
+  const contractedPrice = toFiniteNumber(row?.contractedPriceEurMw);
+  if (contractedPrice !== null && contractedPrice > 0) return contractedPrice;
+
+  return 0;
+}
+
+function resolveSpotPriceEurMwh(row, explicitSpotPrice) {
+  if (Number.isFinite(explicitSpotPrice) && explicitSpotPrice > 0) {
+    return explicitSpotPrice;
+  }
+
+  const activationPrice = toFiniteNumber(row?.activationPriceEurMwh);
+  if (activationPrice !== null && activationPrice > 0) return activationPrice;
+
+  return 0;
+}
+
+export function calculateAfrrYearlyRevenue({
+  year,
+  afrrRows,
+  spotRows,
+  solarRows,
+  powerMw,
+  eurToNok = 11,
+  minBidMw = 1,
+  activationMinPct = 0,
+  activationMaxPct = 100,
+  seed = 42,
+}) {
+  const safeYear = Number(year);
+  const safePowerMw = Number(powerMw);
+  const safeEurToNok = Number(eurToNok);
+  const safeMinBidMw = Number(minBidMw);
+
+  if (!Number.isInteger(safeYear)) {
+    throw new Error('Invalid simulation year');
+  }
+  if (!Number.isFinite(safePowerMw) || safePowerMw <= 0) {
+    throw new Error('Invalid power input');
+  }
+  if (!Number.isFinite(safeEurToNok) || safeEurToNok <= 0) {
+    throw new Error('Invalid EUR/NOK conversion rate');
+  }
+  if (!Number.isFinite(safeMinBidMw) || safeMinBidMw < 1) {
+    throw new Error('Minimum bid size must be at least 1 MW');
+  }
+
+  const safeActivationMinPct = Math.max(0, Math.min(100, Number(activationMinPct)));
+  const safeActivationMaxPct = Math.max(
+    safeActivationMinPct,
+    Math.min(100, Number(activationMaxPct)),
+  );
+
+  const totalHours = getHoursInYear(safeYear);
+  const startTs = Date.UTC(safeYear, 0, 1, 0, 0, 0, 0);
+  const afrrByHour = new Map();
+  const spotByHour = new Map();
+  const rng = createRng(Number(seed) || 42);
+
+  (Array.isArray(afrrRows) ? afrrRows : []).forEach((row) => {
+    const timestamp = toFiniteNumber(row.timestamp);
+    if (timestamp === null) return;
+    afrrByHour.set(timestamp, row);
+  });
+
+  (Array.isArray(spotRows) ? spotRows : []).forEach((row) => {
+    const timestamp = toFiniteNumber(row.timestamp);
+    const spotPriceEurMwh = toFiniteNumber(row.spotPriceEurMwh);
+    if (timestamp === null || spotPriceEurMwh === null) return;
+    spotByHour.set(timestamp, spotPriceEurMwh);
+  });
+
+  const solarCapacityFactors = buildSolarCapacityFactors(solarRows, totalHours);
+  const hourlyData = [];
+
+  let totalSolarRevenueNok = 0;
+  let totalAfrrRevenueNok = 0;
+  let totalCapacityRevenueNok = 0;
+  let totalCurtailmentCostNok = 0;
+  let totalBidVolumeMw = 0;
+  let totalActivationPct = 0;
+  let bidHours = 0;
+  let afrrPriceSumNokMw = 0;
+
+  for (let i = 0; i < totalHours; i += 1) {
+    const timestamp = startTs + i * 60 * 60 * 1000;
+    const afrrRow = afrrByHour.get(timestamp) || null;
+    const afrrPriceEurMw = resolveAfrrPriceEurMw(afrrRow);
+    const spotPriceEurMwh = resolveSpotPriceEurMwh(afrrRow, spotByHour.get(timestamp));
+
+    const solarProductionMw = safePowerMw * (solarCapacityFactors[i] || 0);
+    const floorVolumeMw = Math.floor(solarProductionMw);
+    const bidVolumeMw = floorVolumeMw >= safeMinBidMw ? floorVolumeMw : 0;
+    const hasBid = bidVolumeMw > 0;
+
+    const activationPct = hasBid
+      ? safeActivationMinPct + rng() * (safeActivationMaxPct - safeActivationMinPct)
+      : 0;
+
+    const activatedEnergyMwh = hasBid ? bidVolumeMw * (activationPct / 100) : 0;
+    const solarCurtailmentMwh = Math.min(activatedEnergyMwh, solarProductionMw);
+
+    const afrrPriceNokMw = afrrPriceEurMw * safeEurToNok;
+    const spotPriceNokMwh = spotPriceEurMwh * safeEurToNok;
+
+    const solarRevenueNok = solarProductionMw * spotPriceNokMwh;
+    const capacityRevenueNok = hasBid ? bidVolumeMw * afrrPriceNokMw : 0;
+    const curtailmentCostNok = solarCurtailmentMwh * spotPriceNokMwh;
+    const afrrRevenueNok = capacityRevenueNok - curtailmentCostNok;
+    const totalRevenueNok = solarRevenueNok + afrrRevenueNok;
+
+    totalSolarRevenueNok += solarRevenueNok;
+    totalAfrrRevenueNok += afrrRevenueNok;
+    totalCapacityRevenueNok += capacityRevenueNok;
+    totalCurtailmentCostNok += curtailmentCostNok;
+
+    if (hasBid) {
+      bidHours += 1;
+      totalBidVolumeMw += bidVolumeMw;
+      totalActivationPct += activationPct;
+      afrrPriceSumNokMw += afrrPriceNokMw;
+    }
+
+    hourlyData.push({
+      timestamp,
+      solarProductionMw,
+      bidVolumeMw,
+      afrrPriceEurMw,
+      afrrPriceNokMw,
+      spotPriceEurMwh,
+      spotPriceNokMwh,
+      activationPct,
+      activatedEnergyMwh,
+      solarCurtailmentMwh,
+      solarRevenueNok,
+      capacityRevenueNok,
+      curtailmentCostNok,
+      afrrRevenueNok,
+      totalRevenueNok,
+      hasBid,
+    });
+  }
+
+  const totalRevenueNok = totalSolarRevenueNok + totalAfrrRevenueNok;
+  const avgBidVolumeMw = bidHours > 0 ? totalBidVolumeMw / bidHours : 0;
+  const avgActivationPct = bidHours > 0 ? totalActivationPct / bidHours : 0;
+  const avgAfrrPriceNokMw = bidHours > 0 ? afrrPriceSumNokMw / bidHours : 0;
+
+  return {
+    year: safeYear,
+    totalHours,
+    bidHours,
+    totalRevenueNok,
+    totalSolarRevenueNok,
+    totalAfrrRevenueNok,
+    totalCapacityRevenueNok,
+    totalCurtailmentCostNok,
+    avgBidVolumeMw,
+    avgActivationPct,
+    avgAfrrPriceNokMw,
+    hourlyData,
+    monthly: aggregateMonthly(hourlyData),
+  };
+}
+
+export const AfrrCalculator = {
+  calculateAfrrYearlyRevenue,
+};

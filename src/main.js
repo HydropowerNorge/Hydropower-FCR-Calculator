@@ -366,6 +366,24 @@ function sanitizeYear(value) {
   return year;
 }
 
+function sanitizeDirection(value, fallback = 'down') {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (normalized === 'up' || normalized === 'down') return normalized;
+  return fallback;
+}
+
+function sanitizeReserveType(value, fallback = 'afrr') {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (/^[a-z0-9_-]{2,20}$/.test(normalized)) return normalized;
+  return fallback;
+}
+
+function sanitizeResolutionMinutes(value, fallback = 60) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 240) return fallback;
+  return parsed;
+}
+
 function sanitizeDefaultName(defaultName, fallbackName) {
   if (typeof defaultName !== 'string' || defaultName.trim().length === 0) {
     return fallbackName;
@@ -1112,6 +1130,80 @@ ipcMain.handle('data:loadSpotData', async (event, biddingZone = 'NO1') => {
     });
   } catch (err) {
     console.error('Failed to load spot data from Convex:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('data:loadAfrrData', async (event, year, filters = {}) => {
+  const safeYear = sanitizeYear(year);
+  if (safeYear === null) {
+    return [];
+  }
+
+  const safeBiddingZone = sanitizeAreaCode(filters?.biddingZone, 'NO1');
+  const safeDirection = sanitizeDirection(filters?.direction, 'down');
+  const safeReserveType = sanitizeReserveType(filters?.reserveType, 'afrr');
+  const safeResolutionMin = sanitizeResolutionMinutes(filters?.resolutionMin, 60);
+
+  try {
+    return await runPaginatedConvexQuery('afrr:getAfrrDataPage', {
+      year: safeYear,
+      biddingZone: safeBiddingZone,
+      direction: safeDirection,
+      reserveType: safeReserveType,
+      resolutionMin: safeResolutionMin,
+    });
+  } catch (err) {
+    console.error('Failed to load aFRR data from Convex:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('data:getAfrrAvailableYears', async (event, filters = {}) => {
+  const safeBiddingZone = sanitizeAreaCode(filters?.biddingZone, 'NO1');
+  const safeDirection = sanitizeDirection(filters?.direction, 'down');
+  const safeReserveType = sanitizeReserveType(filters?.reserveType, 'afrr');
+  const safeResolutionMin = sanitizeResolutionMinutes(filters?.resolutionMin, 60);
+
+  try {
+    return await runConvexQuery('afrr:getAvailableYears', {
+      biddingZone: safeBiddingZone,
+      direction: safeDirection,
+      reserveType: safeReserveType,
+      resolutionMin: safeResolutionMin,
+    });
+  } catch (err) {
+    console.error('Failed to fetch aFRR years from Convex:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('data:loadSolarData', async (event, year, resolutionMinutes = 60) => {
+  const safeYear = sanitizeYear(year);
+  if (safeYear === null) {
+    return [];
+  }
+
+  const safeResolutionMinutes = sanitizeResolutionMinutes(resolutionMinutes, 60);
+  try {
+    return await runPaginatedConvexQuery('solar:getSolarDataPage', {
+      year: safeYear,
+      resolutionMinutes: safeResolutionMinutes,
+    });
+  } catch (err) {
+    console.error('Failed to load solar data from Convex:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('data:getSolarAvailableYears', async (event, resolutionMinutes = 60) => {
+  const safeResolutionMinutes = sanitizeResolutionMinutes(resolutionMinutes, 60);
+  try {
+    return await runConvexQuery('solar:getAvailableYears', {
+      resolutionMinutes: safeResolutionMinutes,
+    });
+  } catch (err) {
+    console.error('Failed to fetch solar years from Convex:', err);
     return [];
   }
 });

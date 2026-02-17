@@ -19,6 +19,32 @@ const spotRowValidator = v.object({
   spotPriceEurMwh: v.number(),
 });
 
+const afrrRowValidator = v.object({
+  year: v.number(),
+  timestamp: v.number(),
+  biddingZone: v.string(),
+  direction: v.string(),
+  reserveType: v.string(),
+  resolutionMin: v.number(),
+  marketVolumeMw: v.optional(v.number()),
+  marketPriceEurMw: v.optional(v.number()),
+  marketActivatedVolumeMw: v.optional(v.number()),
+  marketGotActivated: v.optional(v.boolean()),
+  contractedQuantityMw: v.optional(v.number()),
+  contractedPriceEurMw: v.optional(v.number()),
+  activationPriceEurMwh: v.optional(v.number()),
+  source: v.string(),
+});
+
+const afrrSeriesValidator = v.object({
+  year: v.number(),
+  biddingZone: v.string(),
+  direction: v.string(),
+  reserveType: v.string(),
+  resolutionMin: v.number(),
+  sampleCount: v.number(),
+});
+
 const solarRowValidator = v.object({
   year: v.number(),
   resolutionMinutes: v.number(),
@@ -143,6 +169,94 @@ export const insertSpotRows = mutation({
 
     for (const row of args.rows) {
       await ctx.db.insert("spotPrices", row);
+    }
+
+    return {
+      inserted: args.rows.length,
+    };
+  },
+});
+
+export const clearAfrrYear = mutation({
+  args: {
+    year: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const docs = await ctx.db
+      .query("afrrMarket")
+      .withIndex("by_year", (q) => q.eq("year", args.year))
+      .take(DELETE_BATCH_SIZE);
+
+    await Promise.all(docs.map((doc) => ctx.db.delete(doc._id)));
+
+    return {
+      deleted: docs.length,
+      done: docs.length < DELETE_BATCH_SIZE,
+    };
+  },
+});
+
+export const clearAfrrSeriesYear = mutation({
+  args: {
+    year: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const docs = await ctx.db
+      .query("afrrSeries")
+      .withIndex("by_year", (q) => q.eq("year", args.year))
+      .take(DELETE_BATCH_SIZE);
+
+    await Promise.all(docs.map((doc) => ctx.db.delete(doc._id)));
+
+    return {
+      deleted: docs.length,
+      done: docs.length < DELETE_BATCH_SIZE,
+    };
+  },
+});
+
+export const setAfrrSeriesMeta = mutation({
+  args: {
+    series: afrrSeriesValidator,
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("afrrSeries")
+      .withIndex("by_filter_year", (q) =>
+        q
+          .eq("biddingZone", args.series.biddingZone)
+          .eq("direction", args.series.direction)
+          .eq("reserveType", args.series.reserveType)
+          .eq("resolutionMin", args.series.resolutionMin)
+          .eq("year", args.series.year),
+      )
+      .take(1);
+
+    if (existing.length > 0) {
+      await ctx.db.patch(existing[0]._id, {
+        sampleCount: args.series.sampleCount,
+      });
+      return { updated: 1 };
+    }
+
+    await ctx.db.insert("afrrSeries", args.series);
+    return { inserted: 1 };
+  },
+});
+
+export const insertAfrrRows = mutation({
+  args: {
+    rows: v.array(afrrRowValidator),
+  },
+  handler: async (ctx, args) => {
+    if (args.rows.length > MAX_ROWS_PER_MUTATION) {
+      throw new Error(
+        `insertAfrrRows accepts up to ${MAX_ROWS_PER_MUTATION} rows per call`,
+      );
+    }
+
+    for (const row of args.rows) {
+      await ctx.db.insert("afrrMarket", row);
     }
 
     return {

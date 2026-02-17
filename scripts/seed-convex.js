@@ -24,6 +24,7 @@ const SOLAR_DATASET_CONFIGS = [
   },
 ];
 const NODE_TENDERS_FILE_NAME = 'node_tenders_2026.json';
+const AFRR_DATA_FILE_NAME = 'afrr_merged_all_sources_NO1.csv';
 
 dotenv.config({ path: path.join(projectRoot, '.env.local') });
 dotenv.config({ path: path.join(projectRoot, '.env') });
@@ -116,6 +117,21 @@ function parseIsoTimestamp(value) {
 
   const parsed = new Date(trimmed);
   return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+}
+
+function parseOptionalNumber(value) {
+  if (value === null || value === undefined || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseOptionalBoolean(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  return undefined;
 }
 
 function findFirstExisting(paths) {
@@ -221,6 +237,43 @@ function loadSpotRows(filePath) {
     .sort((a, b) => a.timestamp - b.timestamp);
 }
 
+function loadAfrrRows(filePath) {
+  const rows = readCsv(filePath);
+  const result = [];
+
+  for (const row of rows) {
+    const timestamp = parseIsoTimestamp(row.timestamp_utc);
+    if (timestamp === null) continue;
+
+    const biddingZone = String(row.bidding_zone || '').trim() || 'NO1';
+    const direction = String(row.direction || '').trim().toLowerCase();
+    const reserveType = String(row.reserve_type || '').trim().toLowerCase() || 'afrr';
+    const resolutionMin = parseOptionalNumber(row.resolution_min);
+
+    if (!direction) continue;
+    if (!Number.isFinite(resolutionMin) || resolutionMin <= 0) continue;
+
+    result.push({
+      year: new Date(timestamp).getUTCFullYear(),
+      timestamp,
+      biddingZone,
+      direction,
+      reserveType,
+      resolutionMin,
+      marketVolumeMw: parseOptionalNumber(row.market_volume),
+      marketPriceEurMw: parseOptionalNumber(row.market_price),
+      marketActivatedVolumeMw: parseOptionalNumber(row.market_activated_volume),
+      marketGotActivated: parseOptionalBoolean(row.market_got_activated),
+      contractedQuantityMw: parseOptionalNumber(row.contracted_quantity_mw),
+      contractedPriceEurMw: parseOptionalNumber(row.contracted_price_eur_mw),
+      activationPriceEurMwh: parseOptionalNumber(row.activation_price_eur_mwh),
+      source: AFRR_DATA_FILE_NAME,
+    });
+  }
+
+  return result.sort((a, b) => a.timestamp - b.timestamp);
+}
+
 function findSolarProductionDatasets() {
   const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   const datasets = [];
@@ -258,6 +311,19 @@ function findNodeTendersFile() {
     path.join(projectRoot, 'data', 'nodes', NODE_TENDERS_FILE_NAME),
     homeDir ? path.join(homeDir, 'Downloads', NODE_TENDERS_FILE_NAME) : null,
     `/Users/sander/Downloads/${NODE_TENDERS_FILE_NAME}`,
+  ].filter(Boolean));
+}
+
+function findAfrrMarketFile() {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+  return findFirstExisting([
+    process.env.AFRR_DATA_CSV,
+    path.join(projectRoot, 'data', 'afrr', AFRR_DATA_FILE_NAME),
+    path.join(projectRoot, 'data', AFRR_DATA_FILE_NAME),
+    homeDir ? path.join(homeDir, 'Desktop', AFRR_DATA_FILE_NAME) : null,
+    homeDir ? path.join(homeDir, 'Downloads', AFRR_DATA_FILE_NAME) : null,
+    `/Users/sander/Desktop/${AFRR_DATA_FILE_NAME}`,
+    `/Users/sander/Downloads/${AFRR_DATA_FILE_NAME}`,
   ].filter(Boolean));
 }
 
@@ -424,6 +490,26 @@ async function clearSpotZone(biddingZone) {
   console.log(`Cleared spotPrices zone ${biddingZone}: ${totalDeleted} rows`);
 }
 
+async function clearAfrrYear(year) {
+  let totalDeleted = 0;
+  while (true) {
+    const result = await convex.mutation('ingest:clearAfrrYear', { year });
+    totalDeleted += result.deleted;
+    if (result.done) break;
+  }
+  console.log(`Cleared afrrMarket year ${year}: ${totalDeleted} rows`);
+}
+
+async function clearAfrrSeriesYear(year) {
+  let totalDeleted = 0;
+  while (true) {
+    const result = await convex.mutation('ingest:clearAfrrSeriesYear', { year });
+    totalDeleted += result.deleted;
+    if (result.done) break;
+  }
+  console.log(`Cleared afrrSeries year ${year}: ${totalDeleted} rows`);
+}
+
 async function clearSolarSeries(year, resolutionMinutes) {
   let totalDeleted = 0;
   while (true) {
@@ -461,6 +547,12 @@ async function setSolarSeriesMeta(year, resolutionMinutes, sampleCount) {
       resolutionMinutes,
       sampleCount,
     },
+  });
+}
+
+async function setAfrrSeriesMeta(series) {
+  await convex.mutation('ingest:setAfrrSeriesMeta', {
+    series,
   });
 }
 
@@ -535,6 +627,67 @@ async function seedSpot() {
     await clearSpotZone(biddingZone);
     const inserted = await insertInChunks('ingest:insertSpotRows', zoneRows);
     console.log(`Imported spotPrices zone ${biddingZone}: ${inserted} rows`);
+  }
+}
+
+async function seedAfrr() {
+  const afrrFile = findAfrrMarketFile();
+  if (!afrrFile) {
+    console.warn(`No ${AFRR_DATA_FILE_NAME} found. Skipping afrrMarket import.`);
+    return;
+  }
+
+  console.log(`Reading ${afrrFile}`);
+  const rows = loadAfrrRows(afrrFile);
+  if (rows.length === 0) {
+    console.warn('No valid aFRR rows found. Skipping afrrMarket import.');
+    return;
+  }
+
+  const groupedByYear = new Map();
+  const afrrSeriesByYear = new Map();
+  for (const row of rows) {
+    if (!groupedByYear.has(row.year)) {
+      groupedByYear.set(row.year, []);
+    }
+    groupedByYear.get(row.year).push(row);
+
+    const seriesKey = [
+      row.biddingZone,
+      row.direction,
+      row.reserveType,
+      row.resolutionMin,
+    ].join('|');
+
+    if (!afrrSeriesByYear.has(row.year)) {
+      afrrSeriesByYear.set(row.year, new Map());
+    }
+    const yearSeries = afrrSeriesByYear.get(row.year);
+    if (!yearSeries.has(seriesKey)) {
+      yearSeries.set(seriesKey, {
+        year: row.year,
+        biddingZone: row.biddingZone,
+        direction: row.direction,
+        reserveType: row.reserveType,
+        resolutionMin: row.resolutionMin,
+        sampleCount: 0,
+      });
+    }
+    yearSeries.get(seriesKey).sampleCount += 1;
+  }
+
+  for (const year of Array.from(groupedByYear.keys()).sort((a, b) => a - b)) {
+    const yearRows = groupedByYear.get(year);
+    await clearAfrrYear(year);
+    await clearAfrrSeriesYear(year);
+    const inserted = await insertInChunks('ingest:insertAfrrRows', yearRows);
+
+    const yearSeries = afrrSeriesByYear.get(year) || new Map();
+    for (const series of yearSeries.values()) {
+      await setAfrrSeriesMeta(series);
+    }
+
+    console.log(`Imported afrrMarket year ${year}: ${inserted} rows`);
   }
 }
 
@@ -657,6 +810,26 @@ async function sanityCheck() {
   });
   console.log(`NO1 spot hourly rows: ${spotRowCount}`);
 
+  const afrrYears = await convex.query('afrr:getAvailableYears', {
+    biddingZone: 'NO1',
+    direction: 'down',
+    reserveType: 'afrr',
+    resolutionMin: 60,
+  });
+  console.log(`aFRR years in Convex (NO1/down/60m): ${afrrYears.join(', ') || '(none)'}`);
+
+  if (afrrYears.length > 0) {
+    const latestAfrrYear = afrrYears[afrrYears.length - 1];
+    const afrrRowCount = await countPaginatedRows('afrr:getAfrrDataPage', {
+      year: latestAfrrYear,
+      biddingZone: 'NO1',
+      direction: 'down',
+      reserveType: 'afrr',
+      resolutionMin: 60,
+    });
+    console.log(`aFRR rows for ${latestAfrrYear} (NO1/down/60m): ${afrrRowCount}`);
+  }
+
   const solarResolutions = await convex.query('solar:getAvailableResolutions', {});
   console.log(`Solar resolutions in Convex: ${solarResolutions.join(', ') || '(none)'}`);
 
@@ -694,6 +867,7 @@ async function sanityCheck() {
 
   await seedPrices();
   await seedSpot();
+  await seedAfrr();
   await seedSolarProduction();
   await seedNodeTenders();
   await sanityCheck();

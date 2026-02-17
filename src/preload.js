@@ -20,6 +20,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadPriceData: (year, area = 'NO1') => ipcRenderer.invoke('data:loadPriceData', year, area),
   getAvailableYears: (area = 'NO1') => ipcRenderer.invoke('data:getAvailableYears', area),
   loadSpotData: (biddingZone = 'NO1') => ipcRenderer.invoke('data:loadSpotData', biddingZone),
+  loadAfrrData: (year, filters = {}) => ipcRenderer.invoke('data:loadAfrrData', year, filters),
+  getAfrrAvailableYears: (filters = {}) => ipcRenderer.invoke('data:getAfrrAvailableYears', filters),
+  loadSolarData: (year, resolutionMinutes = 60) => ipcRenderer.invoke('data:loadSolarData', year, resolutionMinutes),
+  getSolarAvailableYears: (resolutionMinutes = 60) => ipcRenderer.invoke('data:getSolarAvailableYears', resolutionMinutes),
   loadNodeTenders: (filters = {}) => invokeWithFallback('data:loadNodeTenders', [], filters),
   getNodeTenderFilters: (dataset = 'nodes_2026_pilot') => invokeWithFallback('data:getNodeTenderFilters', {
     gridNodes: [],

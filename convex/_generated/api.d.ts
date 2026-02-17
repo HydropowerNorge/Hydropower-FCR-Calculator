@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as afrr from "../afrr.js";
 import type * as ingest from "../ingest.js";
 import type * as nodes from "../nodes.js";
 import type * as prices from "../prices.js";
@@ -21,6 +22,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  afrr: typeof afrr;
   ingest: typeof ingest;
   nodes: typeof nodes;
   prices: typeof prices;
