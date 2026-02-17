@@ -9,7 +9,24 @@ import dotenv from 'dotenv';
 import { ConvexHttpClient } from 'convex/browser';
 import type { PdfExportData } from './shared/electron-api';
 
+console.log('[main] Process starting', {
+  platform: process.platform,
+  arch: process.arch,
+  electronVersion: process.versions.electron,
+  nodeVersion: process.versions.node,
+  pid: process.pid,
+  execPath: process.execPath,
+  cwd: process.cwd(),
+  __dirname,
+  resourcesPath: process.resourcesPath,
+  isPackaged: app.isPackaged,
+  appPath: app.getAppPath(),
+  appVersion: app.getVersion(),
+  appName: app.getName(),
+});
+
 if (require('electron-squirrel-startup')) {
+  console.log('[main] Squirrel startup detected, quitting');
   app.quit();
 }
 
@@ -20,18 +37,24 @@ function loadDotEnvFiles() {
     path.join(__dirname, '..')
   ]);
 
+  console.log('[main] Loading .env files from candidate roots:', Array.from(candidateRoots));
+
   for (const root of candidateRoots) {
     const envLocalPath = path.join(root, '.env.local');
     const envPath = path.join(root, '.env');
 
     if (fs.existsSync(envLocalPath)) {
+      console.log('[main] Found .env.local at:', envLocalPath);
       dotenv.config({ path: envLocalPath });
     }
 
     if (fs.existsSync(envPath)) {
+      console.log('[main] Found .env at:', envPath);
       dotenv.config({ path: envPath });
     }
   }
+
+  console.log('[main] CONVEX_URL configured:', !!process.env.CONVEX_URL);
 }
 
 loadDotEnvFiles();
@@ -309,17 +332,23 @@ function resolveGitHubUpdateSource() {
 }
 
 function initializeAutoUpdates() {
+  console.log('[main] Initializing auto-updates', {
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+    disableEnv: process.env.ELECTRON_DISABLE_AUTO_UPDATE,
+  });
   autoUpdatesConfigured = false;
   autoUpdateSourceReference = null;
   autoUpdateConfigurationIssue = null;
   lastAutoUpdateErrorMessage = null;
-  if (!app.isPackaged) return;
-  if (process.env.ELECTRON_DISABLE_AUTO_UPDATE === '1') return;
-  if (!isAutoUpdateSupportedPlatform()) return;
+  if (!app.isPackaged) { console.log('[main] Auto-update skipped: not packaged'); return; }
+  if (process.env.ELECTRON_DISABLE_AUTO_UPDATE === '1') { console.log('[main] Auto-update skipped: disabled by env'); return; }
+  if (!isAutoUpdateSupportedPlatform()) { console.log('[main] Auto-update skipped: unsupported platform'); return; }
 
   try {
     const source = resolveGitHubUpdateSource();
     autoUpdateSourceReference = `${source.host}/${source.repo}/${process.platform}-${process.arch}/${app.getVersion()}`;
+    console.log('[main] Auto-update source:', autoUpdateSourceReference);
 
     if (!source.repo.includes('/')) {
       autoUpdateConfigurationIssue = `ELECTRON_AUTO_UPDATE_REPO must be in "owner/repo" format. Current value: ${source.repo}`;
@@ -395,13 +424,22 @@ function sanitizeDefaultName(defaultName: unknown, fallbackName: string): string
 }
 
 function createWindow() {
+  const preloadPath = path.join(__dirname, 'preload.js');
+  console.log('[main] Creating main window', {
+    __dirname,
+    preloadPath,
+    preloadExists: fs.existsSync(preloadPath),
+    MAIN_WINDOW_VITE_DEV_SERVER_URL: MAIN_WINDOW_VITE_DEV_SERVER_URL || '(not set)',
+    MAIN_WINDOW_VITE_NAME: MAIN_WINDOW_VITE_NAME || '(not set)',
+  });
+
   const mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1000,
     minHeight: 700,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false
     },
@@ -409,10 +447,57 @@ function createWindow() {
     backgroundColor: '#1a1a2e'
   });
 
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error('[main] Window failed to load', { errorCode, errorDescription, validatedURL });
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[main] Window finished loading');
+  });
+
+  mainWindow.webContents.on('dom-ready', () => {
+    console.log('[main] Window DOM ready');
+  });
+
+  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    const levelName = ['verbose', 'info', 'warning', 'error'][level] || 'unknown';
+    console.log(`[renderer:${levelName}] ${message} (${sourceId}:${line})`);
+  });
+
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    console.log('[main] Loading dev server URL:', MAIN_WINDOW_VITE_DEV_SERVER_URL);
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
+    const rendererPath = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
+    console.log('[main] Loading renderer file:', rendererPath);
+    console.log('[main] Renderer file exists:', fs.existsSync(rendererPath));
+
+    // List sibling directories for debugging
+    try {
+      const parentDir = path.join(__dirname, '..');
+      const siblings = fs.readdirSync(parentDir);
+      console.log('[main] Contents of', parentDir, ':', siblings);
+
+      const rendererDir = path.join(__dirname, '../renderer');
+      if (fs.existsSync(rendererDir)) {
+        const rendererContents = fs.readdirSync(rendererDir);
+        console.log('[main] Contents of renderer dir:', rendererContents);
+
+        const windowDir = path.join(rendererDir, MAIN_WINDOW_VITE_NAME);
+        if (fs.existsSync(windowDir)) {
+          const windowContents = fs.readdirSync(windowDir);
+          console.log('[main] Contents of window dir:', windowContents);
+        } else {
+          console.warn('[main] Window dir does not exist:', windowDir);
+        }
+      } else {
+        console.warn('[main] Renderer dir does not exist:', rendererDir);
+      }
+    } catch (err) {
+      console.warn('[main] Could not list directory contents:', err);
+    }
+
+    mainWindow.loadFile(rendererPath);
   }
 }
 
@@ -540,10 +625,12 @@ ipcMain.handle('file:savePdf', async (_event: IpcMainInvokeEvent, pdfData: unkno
   });
   if (canceled || !filePath) return null;
 
+  console.log('[main] Building PDF HTML');
   const html = buildPdfHtml(pdfData as PdfExportData);
   let pdfWindow: BrowserWindow | null = null;
 
   try {
+    console.log('[main] Creating PDF window');
     pdfWindow = new BrowserWindow({
       width: 1123,
 
@@ -555,6 +642,7 @@ ipcMain.handle('file:savePdf', async (_event: IpcMainInvokeEvent, pdfData: unkno
       }
     });
 
+    console.log('[main] Loading PDF data URL');
     await pdfWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
 
     await pdfWindow.webContents.executeJavaScript(`
@@ -830,12 +918,14 @@ let convexUrl: string | null = null;
 function getConvexClient(): ConvexHttpClient {
   const configuredUrl = process.env.CONVEX_URL;
   if (!configuredUrl) {
+    console.error('[main] CONVEX_URL is not set in environment');
     throw new Error(
       'Missing CONVEX_URL. Run `npx convex dev --once` and `npm run convex:seed`, or set CONVEX_URL for your deployment.',
     );
   }
 
   if (!convexClient || convexUrl !== configuredUrl) {
+    console.log('[main] Creating Convex client for URL:', configuredUrl);
     convexClient = new ConvexHttpClient(configuredUrl);
     convexUrl = configuredUrl;
   }
@@ -1092,11 +1182,13 @@ ipcMain.handle('data:getNodeTenderFilters', async (_event: IpcMainInvokeEvent, d
 });
 
 app.whenReady().then(() => {
+  console.log('[main] App ready event fired');
   initializeAutoUpdates();
   installApplicationMenu();
   createWindow();
 
   app.on('activate', () => {
+    console.log('[main] App activate event fired, open windows:', BrowserWindow.getAllWindows().length);
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
@@ -1104,7 +1196,20 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  console.log('[main] All windows closed, platform:', process.platform);
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('will-quit', () => {
+  console.log('[main] App will-quit event fired');
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[main] Uncaught exception:', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[main] Unhandled rejection:', reason);
 });

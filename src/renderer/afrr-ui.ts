@@ -133,6 +133,7 @@ export function createAfrrUI() {
   }
 
   async function loadStaticInputs() {
+    console.log('[afrr-ui] Loading static inputs (aFRR years + solar years)');
     const [afrrYearsRaw, solarYearsRaw] = await Promise.all([
       window.electronAPI.getAfrrAvailableYears({
         biddingZone: 'NO1',
@@ -152,6 +153,8 @@ export function createAfrrUI() {
       .map((year) => Number(year))
       .filter((year) => Number.isInteger(year))
       .sort((a, b) => a - b);
+
+    console.log('[afrr-ui] aFRR years:', afrrYears, 'Solar years:', solarYears);
 
     populateSelect(el.year, afrrYears);
     populateSelect(el.solarYear, solarYears);
@@ -360,7 +363,7 @@ export function createAfrrUI() {
 
       showStatus('Laster aFRR-, sol- og spotdata for valgt år...', 'info');
       setAllVisualStates('loading', 'Beregner aFRR-inntekt...');
-      console.info(`[aFRR UI] Calculation started for aFRR year ${selectedYear}, solar year ${selectedSolarYear}`);
+      console.log(`[afrr-ui] Calculation started: aFRR year=${selectedYear}, solar year=${selectedSolarYear}, powerMw=${powerMw}, eurToNok=${eurToNok}, minBidMw=${minBidMw}`);
 
       const [afrrRowsRaw, solarRowsRaw, spotRowsRaw] = await Promise.all([
         timedFetch(`aFRR ${selectedYear}`, () => window.electronAPI.loadAfrrData(selectedYear, {
@@ -422,6 +425,7 @@ export function createAfrrUI() {
   }
 
   async function init() {
+    console.log('[afrr-ui] init() starting');
     el.statusMessage = document.getElementById('afrrStatusMessage');
     el.totalRevenue = document.getElementById('afrrTotalRevenue');
     el.afrrRevenue = document.getElementById('afrrAffrRevenue');
@@ -442,6 +446,7 @@ export function createAfrrUI() {
     setAllVisualStates('loading', 'Laster aFRR-data...');
     await loadStaticInputs();
     setAllVisualStates('empty', 'Trykk "Beregn aFRR".');
+    console.log('[afrr-ui] init() complete');
 
     if (el.calculateBtn) {
       el.calculateBtn.addEventListener('click', calculate);

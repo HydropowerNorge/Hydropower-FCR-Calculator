@@ -1,9 +1,15 @@
+console.log('[app] Renderer script loading');
+
 import Chart from 'chart.js/auto';
 import Papa from 'papaparse';
 import * as Calculator from './calculator';
 import type { FrequencySummary, HourlyRevenueRow, RevenueResult } from './calculator';
 import * as FrequencySimulator from './frequency';
 import { createAfrrUI } from './afrr-ui';
+
+console.log('[app] Modules imported successfully');
+console.log('[app] electronAPI available:', !!window.electronAPI);
+console.log('[app] electronAPI methods:', window.electronAPI ? Object.keys(window.electronAPI) : 'N/A');
 
 interface NormalizedNodeTenderRow {
   name: string;
@@ -106,7 +112,9 @@ async function runFcrSimulationInWorker(payload: Record<string, unknown>): Promi
   }
 
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./simulation-worker.ts', import.meta.url), { type: 'module' });
+    const workerUrl = new URL('./simulation-worker.ts', import.meta.url);
+    console.log('[app] Creating Web Worker from URL:', workerUrl.href);
+    const worker = new Worker(workerUrl, { type: 'module' });
     activeSimulationWorker = worker;
 
     const cleanup = () => {
@@ -121,23 +129,27 @@ async function runFcrSimulationInWorker(payload: Record<string, unknown>): Promi
       if (!message || typeof message !== 'object') return;
 
       if (message.type === 'progress') {
+        console.log('[app] Worker progress:', message.message);
         showStatus(message.message, 'info');
         return;
       }
 
       if (message.type === 'result') {
+        console.log('[app] Worker returned result');
         cleanup();
         resolve(message.payload);
         return;
       }
 
       if (message.type === 'error') {
+        console.error('[app] Worker error:', message.error);
         cleanup();
         reject(new Error(message.error || 'Simulation worker failed'));
       }
     });
 
     worker.addEventListener('error', (event: ErrorEvent) => {
+      console.error('[app] Worker crashed:', event.message, event.filename, event.lineno);
       cleanup();
       reject(new Error(event.message || 'Simulation worker crashed'));
     });
@@ -382,12 +394,13 @@ function normalizeNodeTenderRow(row: import('../shared/electron-api').NodeTender
 }
 
 async function loadNodeTenderData() {
-  if (!window.electronAPI?.loadNodeTenders) return;
+  if (!window.electronAPI?.loadNodeTenders) { console.log('[app] loadNodeTenders not available, skipping'); return; }
 
   const dataset = elements.nodesDataset?.value || 'nodes_2026_pilot';
   const gridNode = elements.nodesGridNode?.value || '';
   const market = elements.nodesMarket?.value || '';
 
+  console.log('[app] Loading node tender data:', { dataset, gridNode, market });
   showNodesStatus('Laster nodetenderer...', 'info');
   setTableState('nodesTable', 'loading', 'Laster nodetenderer...');
 
@@ -399,6 +412,7 @@ async function loadNodeTenderData() {
     });
 
     nodeTenderRows = (Array.isArray(rows) ? rows : []).map(normalizeNodeTenderRow);
+    console.log('[app] Node tenders loaded:', nodeTenderRows.length, 'rows');
     updateNodesMetrics(nodeTenderRows);
     renderNodesTable(nodeTenderRows);
 
@@ -494,15 +508,23 @@ function setupTabs() {
 }
 
 async function init() {
+  console.log('[app] init() starting');
   setupTabs();
+  console.log('[app] Tabs set up');
+
+  console.log('[app] Initializing aFRR UI');
   await afrrUI.init();
+  console.log('[app] aFRR UI initialized');
+
   setFcrVisualStates('loading', 'Laster visualiseringer...');
   setupSliders();
 
+  console.log('[app] Fetching available years from Convex');
   const years = (await window.electronAPI.getAvailableYears('NO1'))
     .map(y => Number(y))
     .filter(y => Number.isFinite(y))
     .sort((a, b) => a - b);
+  console.log('[app] Available years:', years);
 
   elements.year.innerHTML = '';
   years.forEach(year => {
@@ -527,8 +549,11 @@ async function init() {
     setFcrVisualStates('empty', 'Ingen data tilgjengelig for visualisering.');
   }
 
+  console.log('[app] Initializing nodes module');
   await initializeNodesModule();
+  console.log('[app] Nodes module initialized');
 
+  console.log('[app] init() complete — attaching event listeners');
   elements.year.addEventListener('change', async () => {
     await loadPriceData(parseInt(elements.year.value));
   });
@@ -590,11 +615,13 @@ function setupSliders() {
 }
 
 async function loadPriceData(year: number) {
+  console.log('[app] loadPriceData() called for year:', year);
   elements.loadingState.style.display = 'flex';
   elements.resultsContainer.style.display = 'none';
   setFcrVisualStates('loading', 'Laster prisdata...');
 
   const rows = await window.electronAPI.loadPriceData(year, 'NO1');
+  console.log('[app] Price data received:', rows?.length || 0, 'rows');
   if (!rows || rows.length === 0) {
     elements.loadingState.style.display = 'none';
     elements.resultsContainer.style.display = 'block';
@@ -621,7 +648,8 @@ async function loadPriceData(year: number) {
 }
 
 async function calculate() {
-  if (isCalculating) return;
+  console.log('[app] calculate() called');
+  if (isCalculating) { console.log('[app] Calculation already in progress, skipping'); return; }
   isCalculating = true;
   const calculateBtn = document.getElementById('calculateBtn') as HTMLButtonElement | null;
   if (calculateBtn) calculateBtn.disabled = true;
@@ -1169,4 +1197,9 @@ document.addEventListener('click', (e) => {
 window.addEventListener('scroll', hidePopover, true);
 window.addEventListener('resize', hidePopover);
 
-init();
+console.log('[app] Calling init()');
+init().then(() => {
+  console.log('[app] init() resolved successfully');
+}).catch((error) => {
+  console.error('[app] init() failed:', error);
+});

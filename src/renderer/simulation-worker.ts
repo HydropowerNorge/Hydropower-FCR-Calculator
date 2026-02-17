@@ -62,8 +62,11 @@ function normalizePriceData(priceData: unknown): { timestamp: number; price: num
 
 declare const self: DedicatedWorkerGlobalScope;
 
+console.log('[worker] Simulation worker loaded');
+
 self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
   const message = event.data;
+  console.log('[worker] Received message:', message?.type);
   if (!message || message.type !== 'simulate-fcr') return;
 
   try {
@@ -73,6 +76,7 @@ self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
     const seed = Math.floor(toFiniteNumber(payload.seed, 42));
     const profileName = typeof payload.profileName === 'string' ? payload.profileName : 'medium';
     const priceData = normalizePriceData(payload.priceData);
+    console.log('[worker] Simulation params:', { year, hours, seed, profileName, priceRows: priceData.length });
 
     const configValues = payload.config || { powerMw: 1, capacityMwh: 2, efficiency: 0.9, socMin: 0.2, socMax: 0.8 };
     const config = new BatteryConfig(
@@ -98,6 +102,7 @@ self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
     const priceDataWithDates = priceData.map(row => ({ timestamp: new Date(row.timestamp), price: row.price }));
     const result = calculateRevenue(priceDataWithDates, socData, config);
 
+    console.log('[worker] Simulation complete, posting result');
     self.postMessage({
       type: 'result',
       payload: {
@@ -107,6 +112,7 @@ self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
       }
     } satisfies WorkerOutgoingMessage);
   } catch (error) {
+    console.error('[worker] Simulation failed:', error);
     self.postMessage({
       type: 'error',
       error: error instanceof Error ? error.message : String(error)
