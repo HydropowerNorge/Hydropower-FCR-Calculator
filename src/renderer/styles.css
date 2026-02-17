@@ -171,6 +171,10 @@ body {
   margin-bottom: 10px;
 }
 
+.sidebar [data-tab-config] {
+  margin-top: 6px;
+}
+
 .config-section h2 {
   font-size: 0.74rem;
   font-weight: 700;
