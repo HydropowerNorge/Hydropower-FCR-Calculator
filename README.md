@@ -67,6 +67,9 @@ npm run convex:seed
 - Publishing targets:
   - S3-compatible storage (MEGA S4 bucket)
   - GitHub Releases (same version tag)
+- S4 cleanup behavior:
+  - After a successful release, workflow prunes old files under `updates/`.
+  - It keeps only current-version artifacts plus update manifests (`RELEASES`, `RELEASES.json`).
 - Note: GitHub Releases includes auto-generated source-code archives in addition to uploaded binaries.
 
 ### Required GitHub secrets

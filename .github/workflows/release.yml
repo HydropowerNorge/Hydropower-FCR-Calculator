@@ -137,3 +137,98 @@ jobs:
 
           echo "Publish failed after ${max_attempts} attempts."
           exit 1
+
+  prune-s4-old-artifacts:
+    name: Prune old S4 artifacts
+    needs: publish
+    if: ${{ needs.publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve current app version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "value=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+
+      - name: Prune previous release files from S4 updates prefix
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S4_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S4_SECRET_KEY }}
+          S4_ENDPOINT: ${{ secrets.S4_ENDPOINT }}
+          S4_BUCKET: ${{ secrets.S4_BUCKET }}
+          S4_REGION: ${{ secrets.S4_REGION }}
+          S4_UPDATES_PREFIX: ${{ secrets.S4_UPDATES_PREFIX }}
+          CURRENT_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet boto3
+          python3 - <<'PY'
+          import os
+          import sys
+          import boto3
+          from botocore.config import Config
+
+          endpoint = (os.getenv('S4_ENDPOINT') or 'https://s3.eu-central-1.s4.mega.io').rstrip('/')
+          bucket = os.getenv('S4_BUCKET') or 'app'
+          region = os.getenv('S4_REGION') or 'eu-central-1'
+          updates_prefix = (os.getenv('S4_UPDATES_PREFIX') or 'updates').strip('/')
+          current_version = (os.getenv('CURRENT_VERSION') or '').strip()
+
+          if not current_version:
+            print('Missing CURRENT_VERSION')
+            sys.exit(1)
+
+          key_prefix = f'{updates_prefix}/'
+          keep_markers = {
+            f'-{current_version}',
+            f'_{current_version}'
+          }
+          keep_basenames = {'RELEASES', 'RELEASES.json'}
+
+          s3 = boto3.client(
+            's3',
+            endpoint_url=endpoint,
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+            region_name=region,
+            config=Config(signature_version='s3v4')
+          )
+
+          paginator = s3.get_paginator('list_objects_v2')
+          objects = []
+          for page in paginator.paginate(Bucket=bucket, Prefix=key_prefix):
+            objects.extend(page.get('Contents', []))
+
+          delete_keys = []
+          for obj in objects:
+            key = obj['Key']
+            base = key.rsplit('/', 1)[-1]
+            should_keep = (
+              base in keep_basenames or
+              any(marker in base for marker in keep_markers)
+            )
+            if not should_keep:
+              delete_keys.append(key)
+
+          if not delete_keys:
+            print(f'No old files to delete under {key_prefix}')
+            sys.exit(0)
+
+          print(f'Deleting {len(delete_keys)} old files under {key_prefix}')
+          for i in range(0, len(delete_keys), 1000):
+            chunk = delete_keys[i:i + 1000]
+            resp = s3.delete_objects(
+              Bucket=bucket,
+              Delete={'Objects': [{'Key': key} for key in chunk], 'Quiet': True}
+            )
+            for err in resp.get('Errors', []):
+              print(f"Failed to delete {err.get('Key')}: {err.get('Code')} {err.get('Message')}")
+              sys.exit(1)
+
+          print('S4 prune complete')
+          PY
