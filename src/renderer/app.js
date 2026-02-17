@@ -3,6 +3,7 @@ import Papa from 'papaparse';
 import * as Calculator from './calculator.js';
 import * as FrequencySimulator from './frequency.js';
 import { createArbitrageUI } from './arbitrage-ui.js';
+import { createAfrrUI } from './afrr-ui.js';
 
 // App state
 let priceData = [];
@@ -10,6 +11,7 @@ let freqData = null;
 let currentResult = null;
 let nodeTenderRows = [];
 const arbitrageUI = createArbitrageUI();
+const afrrUI = createAfrrUI();
 let charts = {
   monthly: null,
   price: null,
@@ -487,6 +489,7 @@ async function init() {
   // Set up tabs
   setupTabs();
   await arbitrageUI.init();
+  await afrrUI.init();
   setFcrVisualStates('loading', 'Laster visualiseringer...');
 
   // Set up slider value displays
@@ -1104,17 +1107,80 @@ function showStatus(message, type) {
   elements.statusMessage.className = `status-message ${type}`;
 }
 
-// Info button toggle
+// Popover logic
+const popoverEl = document.getElementById('popover');
+let activePopoverBtn = null;
+
+function showPopover(btn) {
+  const helpId = 'help-' + btn.dataset.help;
+  const helpEl = document.getElementById(helpId);
+  if (!helpEl) return;
+
+  popoverEl.textContent = helpEl.textContent;
+  popoverEl.classList.add('visible');
+
+  const btnRect = btn.getBoundingClientRect();
+  const gap = 8;
+
+  // Temporarily show to measure
+  popoverEl.style.left = '0px';
+  popoverEl.style.top = '0px';
+  const popRect = popoverEl.getBoundingClientRect();
+
+  const spaceAbove = btnRect.top;
+  const placeAbove = spaceAbove >= popRect.height + gap;
+
+  let top;
+  if (placeAbove) {
+    top = btnRect.top - popRect.height - gap;
+    popoverEl.classList.remove('arrow-top');
+    popoverEl.classList.add('arrow-bottom');
+  } else {
+    top = btnRect.bottom + gap;
+    popoverEl.classList.remove('arrow-bottom');
+    popoverEl.classList.add('arrow-top');
+  }
+
+  // Center horizontally on button, clamp to viewport
+  const btnCenter = btnRect.left + btnRect.width / 2;
+  let left = btnCenter - popRect.width / 2;
+  const margin = 8;
+  left = Math.max(margin, Math.min(left, window.innerWidth - popRect.width - margin));
+
+  // Arrow points at button center
+  const arrowLeft = Math.max(12, Math.min(btnCenter - left, popRect.width - 12));
+  popoverEl.style.setProperty('--arrow-left', arrowLeft + 'px');
+
+  popoverEl.style.top = top + 'px';
+  popoverEl.style.left = left + 'px';
+  activePopoverBtn = btn;
+}
+
+function hidePopover() {
+  popoverEl.classList.remove('visible', 'arrow-top', 'arrow-bottom');
+  activePopoverBtn = null;
+}
+
 document.querySelectorAll('.info-btn').forEach(btn => {
   btn.addEventListener('click', (e) => {
     e.preventDefault();
-    const helpId = 'help-' + btn.dataset.help;
-    const helpEl = document.getElementById(helpId);
-    if (helpEl) {
-      helpEl.classList.toggle('visible');
+    e.stopPropagation();
+    if (activePopoverBtn === btn) {
+      hidePopover();
+    } else {
+      showPopover(btn);
     }
   });
 });
+
+document.addEventListener('click', (e) => {
+  if (activePopoverBtn && !popoverEl.contains(e.target) && !e.target.classList.contains('info-btn')) {
+    hidePopover();
+  }
+});
+
+window.addEventListener('scroll', hidePopover, true);
+window.addEventListener('resize', hidePopover);
 
 // Start app
 init();

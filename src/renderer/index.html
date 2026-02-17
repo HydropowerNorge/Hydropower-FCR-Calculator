@@ -40,7 +40,7 @@
           aria-controls="afrrContent"
           aria-selected="false"
           data-hero-title="aFRR"
-          data-hero-description="Planlagt modul for automatisk frekvensgjenoppretting med bud- og aktiveringsanalyse."
+          data-hero-description="Årlig aFRR down-simulering for sol med kapasitetsbetaling, aktivering og curtailmentkost."
         >aFRR</button>
         <button
           id="tab-nodes"
@@ -137,11 +137,42 @@
       </div>
 
       <div data-tab-config="afrr" style="display: none;">
-        <section class="config-section config-section-compact">
-          <h2>aFRR</h2>
-          <p class="info-text">Denne modulen er under utvikling. Her kommer reserveprodukt, aktiveringslogikk og resultatanalyse.</p>
+        <section class="config-section">
+          <h2>aFRR-parametere</h2>
+
+          <div class="input-group">
+            <label for="afrrYear">aFRR år</label>
+            <select id="afrrYear"></select>
+          </div>
+
+          <div class="input-group">
+            <label for="afrrSolarYear">Solprofil år (60m)</label>
+            <select id="afrrSolarYear"></select>
+          </div>
+
+          <div class="input-group">
+            <label for="afrrEurToNok">EUR → NOK</label>
+            <input type="number" id="afrrEurToNok" value="11" min="1" max="30" step="0.1">
+          </div>
+
+          <div class="input-group">
+            <label for="afrrMinBidMw">Min budstørrelse (MW)</label>
+            <input type="number" id="afrrMinBidMw" value="1" min="1" max="50" step="1">
+          </div>
+
+          <div class="input-group">
+            <label for="afrrActivationMaxPct">Maks aktivering (%)</label>
+            <input type="number" id="afrrActivationMaxPct" value="100" min="1" max="100" step="1">
+          </div>
+
+          <div class="input-group">
+            <label for="afrrSeed">Tilfeldig seed</label>
+            <input type="number" id="afrrSeed" value="42" min="1" max="999999" step="1">
+          </div>
+
+          <p id="afrrDataStatus" class="info-text"></p>
         </section>
-        <button class="btn btn-secondary" type="button" disabled>Kommer snart</button>
+        <button id="calculateAfrrBtn" class="btn btn-primary" type="button">Beregn aFRR</button>
       </div>
 
       <div data-tab-config="nodes" style="display: none;">
@@ -368,23 +399,67 @@
       </div><!-- /arbitrageContent -->
 
       <div id="afrrContent" class="tab-content" data-tab-panel="afrr" role="tabpanel" aria-labelledby="tab-afrr">
-        <section class="module-panel">
-          <p class="module-pill">Planlagt modul</p>
-          <h3>aFRR</h3>
-          <p class="module-intro">Vi bygger en modul for å modellere bud, aktiveringer og effektiv leveranse i aFRR-markedet.</p>
-          <div class="module-grid">
-            <article class="module-card">
-              <h4>Markedsvalg</h4>
-              <p>Produkt, kapasitet og tidsoppløsning konfigureres per kjøring.</p>
-            </article>
-            <article class="module-card">
-              <h4>Aktiveringsspor</h4>
-              <p>Viser forventet aktiveringsgrad, energiutslag og tilgjengelighet.</p>
-            </article>
-            <article class="module-card">
-              <h4>Rapporter</h4>
-              <p>Samme eksportflyt som dagens moduler med tabeller og KPI-er.</p>
-            </article>
+        <div id="afrrStatusMessage" class="status-message info">Laster aFRR-data...</div>
+
+        <div class="metrics-row">
+          <div class="metric-card">
+            <span class="metric-value" id="afrrTotalRevenue">-</span>
+            <span class="metric-label">Total inntekt</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value" id="afrrAfrrRevenue">-</span>
+            <span class="metric-label">aFRR netto</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value" id="afrrBidHours">-</span>
+            <span class="metric-label">Budtimer</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value" id="afrrAvgPrice">-</span>
+            <span class="metric-label">Snitt aFRR-pris</span>
+          </div>
+        </div>
+
+        <section class="chart-section">
+          <h2>Månedlig totalinntekt</h2>
+          <div class="chart-container">
+            <canvas id="afrrMonthlyChart"></canvas>
+          </div>
+        </section>
+
+        <section class="chart-section">
+          <h2>Aktiveringsfordeling</h2>
+          <div class="chart-container">
+            <canvas id="afrrActivationChart"></canvas>
+          </div>
+        </section>
+
+        <section class="chart-section">
+          <h2>Kumulativ inntekt</h2>
+          <div class="chart-container">
+            <canvas id="afrrCumulativeChart"></canvas>
+          </div>
+        </section>
+
+        <section class="export-section">
+          <button id="afrrExportCsvBtn" class="btn btn-secondary">Eksporter CSV</button>
+        </section>
+
+        <section class="summary-section">
+          <h2>Månedlig oppsummering</h2>
+          <div class="table-container">
+            <table id="afrrSummaryTable">
+              <thead>
+                <tr>
+                  <th>Måned</th>
+                  <th>Total (NOK)</th>
+                  <th>aFRR netto (NOK)</th>
+                  <th>Budtimer</th>
+                  <th>Snitt aFRR-pris (NOK/MW)</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
           </div>
         </section>
       </div>
@@ -458,6 +533,7 @@
     </main>
   </div>
 
+  <div id="popover" class="popover"></div>
   <script type="module" src="./app.js"></script>
 </body>
 </html>
