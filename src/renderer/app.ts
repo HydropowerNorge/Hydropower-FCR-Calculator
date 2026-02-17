@@ -1215,6 +1215,13 @@ document.addEventListener('click', (e) => {
 window.addEventListener('scroll', hidePopover, true);
 window.addEventListener('resize', hidePopover);
 
+document.querySelectorAll<HTMLButtonElement>('.collapsible-toggle').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const section = btn.closest('.config-section.collapsible');
+    if (section) section.classList.toggle('open');
+  });
+});
+
 console.log('[app] Calling init()');
 init().then(() => {
   console.log('[app] init() resolved successfully');

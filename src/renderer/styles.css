@@ -155,7 +155,7 @@ body {
 }
 
 .config-section {
-  margin-bottom: 18px;
+  margin-bottom: 12px;
   padding: 16px;
   border: 1px solid rgba(52, 90, 101, 0.52);
   border-radius: var(--radius-md);
@@ -167,12 +167,52 @@ body {
   margin-bottom: 0;
 }
 
-.config-section-compact {
-  margin-bottom: 10px;
+.sidebar [data-tab-config] {
+  margin-top: 12px;
 }
 
-.sidebar [data-tab-config] {
-  margin-top: 6px;
+.config-section.collapsible {
+  padding: 0;
+}
+
+.collapsible-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 16px;
+  margin: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  user-select: none;
+  color: inherit;
+  text-align: left;
+}
+
+.collapsible-toggle::after {
+  content: '\25B6';
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.config-section.collapsible.open .collapsible-toggle::after {
+  transform: rotate(90deg);
+}
+
+.collapsible-toggle h2 {
+  margin-bottom: 0;
+}
+
+.collapsible-body {
+  display: none;
+  padding: 0 16px 16px;
+}
+
+.config-section.collapsible.open .collapsible-body {
+  display: block;
 }
 
 .config-section h2 {
@@ -260,14 +300,8 @@ body {
   transition: transform 0.12s ease, box-shadow 0.18s ease, background-color 0.18s ease;
 }
 
-#calculateBtn {
-  margin-top: 6px;
-}
-
-[data-tab-config='afrr'] .btn,
-[data-tab-config='nodes'] .btn,
-[data-tab-config='combined'] .btn {
-  margin-top: 4px;
+.sidebar .btn {
+  margin-top: 12px;
 }
 
 .btn:hover {
