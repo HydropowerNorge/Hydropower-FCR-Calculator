@@ -101,8 +101,9 @@ npm run convex:seed
 
 ### Release steps
 1. Update version in `package.json` (example: `npm version patch`).
-2. Push commit and tag (`git push --follow-tags`).
-3. GitHub Actions builds and publishes all platform artifacts to S4.
+2. Push commit to `main` (`git push`).
+3. GitHub Actions automatically builds and publishes when `package.json` version is increased.
+4. Use manual dispatch only when you need to republish without a version bump.
 
 ### macOS release verification
 After a macOS build, verify the artifact before sharing:
