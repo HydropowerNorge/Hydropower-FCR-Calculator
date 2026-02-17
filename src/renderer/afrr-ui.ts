@@ -1,8 +1,9 @@
 import Chart from 'chart.js/auto';
 import Papa from 'papaparse';
-import { calculateAfrrYearlyRevenue } from './afrr.js';
+import { calculateAfrrYearlyRevenue } from './afrr';
+import type { AfrrYearlyResult, AfrrHourlyRow, AfrrMonthlyRow } from './afrr';
 
-function formatNok(value, digits = 0) {
+function formatNok(value: number, digits = 0): string {
   if (!Number.isFinite(value)) return 'NOK 0';
   return `NOK ${value.toLocaleString('nb-NO', {
     minimumFractionDigits: digits,
@@ -10,20 +11,59 @@ function formatNok(value, digits = 0) {
   })}`;
 }
 
+interface AfrrElements {
+  statusMessage: HTMLElement | null;
+  totalRevenue: HTMLElement | null;
+  afrrRevenue: HTMLElement | null;
+  bidHours: HTMLElement | null;
+  avgPrice: HTMLElement | null;
+  summaryTable: HTMLTableSectionElement | null;
+  year: HTMLSelectElement | null;
+  solarYear: HTMLSelectElement | null;
+  eurToNok: HTMLInputElement | null;
+  minBidMw: HTMLInputElement | null;
+  activationMaxPct: HTMLInputElement | null;
+  seed: HTMLInputElement | null;
+  dataStatus: HTMLElement | null;
+  calculateBtn: HTMLButtonElement | null;
+  exportCsvBtn: HTMLButtonElement | null;
+}
+
 export function createAfrrUI() {
-  const charts = {
+  const charts: {
+    monthly: Chart | null;
+    activation: Chart | null;
+    cumulative: Chart | null;
+  } = {
     monthly: null,
     activation: null,
     cumulative: null,
   };
 
-  const el = {};
-  let currentResult = null;
+  const el: AfrrElements = {
+    statusMessage: null,
+    totalRevenue: null,
+    afrrRevenue: null,
+    bidHours: null,
+    avgPrice: null,
+    summaryTable: null,
+    year: null,
+    solarYear: null,
+    eurToNok: null,
+    minBidMw: null,
+    activationMaxPct: null,
+    seed: null,
+    dataStatus: null,
+    calculateBtn: null,
+    exportCsvBtn: null,
+  };
+
+  let currentResult: AfrrYearlyResult | null = null;
   let isCalculating = false;
 
-  function ensureVisualState(container) {
+  function ensureVisualState(container: HTMLElement): HTMLElement | null {
     if (!container) return null;
-    let stateEl = container.querySelector('.visual-state');
+    let stateEl = container.querySelector<HTMLElement>('.visual-state');
     if (!stateEl) {
       stateEl = document.createElement('div');
       stateEl.className = 'visual-state';
@@ -32,7 +72,7 @@ export function createAfrrUI() {
     return stateEl;
   }
 
-  function setContainerState(container, state, message) {
+  function setContainerState(container: HTMLElement | null, state: string, message: string) {
     if (!container) return;
     container.dataset.state = state || 'ready';
     const stateEl = ensureVisualState(container);
@@ -41,38 +81,38 @@ export function createAfrrUI() {
     }
   }
 
-  function setChartState(chartId, state, message) {
-    const canvas = document.getElementById(chartId);
+  function setChartState(chartId: string, state: string, message: string) {
+    const canvas = document.getElementById(chartId) as HTMLCanvasElement | null;
     if (!canvas) return;
-    const container = canvas.closest('.chart-container');
+    const container = canvas.closest<HTMLElement>('.chart-container');
     if (!container) return;
     setContainerState(container, state, message);
     canvas.style.opacity = state === 'ready' ? '1' : '0.18';
   }
 
-  function setTableState(state, message) {
+  function setTableState(state: string, message: string) {
     const table = document.getElementById('afrrSummaryTable');
     if (!table) return;
-    const container = table.closest('.table-container');
+    const container = table.closest<HTMLElement>('.table-container');
     if (!container) return;
     setContainerState(container, state, message);
     table.style.opacity = state === 'ready' ? '1' : '0.35';
   }
 
-  function setAllVisualStates(state, message) {
+  function setAllVisualStates(state: string, message: string) {
     setChartState('afrrMonthlyChart', state, message);
     setChartState('afrrActivationChart', state, message);
     setChartState('afrrCumulativeChart', state, message);
     setTableState(state, message);
   }
 
-  function showStatus(message, type = 'info') {
+  function showStatus(message: string, type = 'info') {
     if (!el.statusMessage) return;
     el.statusMessage.textContent = message;
     el.statusMessage.className = `status-message ${type}`;
   }
 
-  async function timedFetch(label, fetcher) {
+  async function timedFetch<T>(label: string, fetcher: () => Promise<T>): Promise<T> {
     const startedAt = performance.now();
     const result = await fetcher();
     const durationMs = Math.round(performance.now() - startedAt);
@@ -81,7 +121,7 @@ export function createAfrrUI() {
     return result;
   }
 
-  function populateSelect(selectEl, values) {
+  function populateSelect(selectEl: HTMLSelectElement | null, values: number[]) {
     if (!selectEl) return;
     selectEl.innerHTML = '';
     values.forEach((value) => {
@@ -116,10 +156,10 @@ export function createAfrrUI() {
     populateSelect(el.year, afrrYears);
     populateSelect(el.solarYear, solarYears);
 
-    if (afrrYears.length > 0) {
+    if (afrrYears.length > 0 && el.year) {
       el.year.value = String(afrrYears[afrrYears.length - 1]);
     }
-    if (solarYears.length > 0) {
+    if (solarYears.length > 0 && el.solarYear) {
       el.solarYear.value = String(solarYears[solarYears.length - 1]);
     }
 
@@ -128,7 +168,7 @@ export function createAfrrUI() {
     }
   }
 
-  function updateMonthlyChart(monthly) {
+  function updateMonthlyChart(monthly: AfrrMonthlyRow[]) {
     if (!Array.isArray(monthly) || monthly.length === 0) {
       if (charts.monthly) {
         charts.monthly.destroy();
@@ -138,7 +178,7 @@ export function createAfrrUI() {
       return;
     }
 
-    const ctx = document.getElementById('afrrMonthlyChart').getContext('2d');
+    const ctx = (document.getElementById('afrrMonthlyChart') as HTMLCanvasElement).getContext('2d')!;
     if (charts.monthly) charts.monthly.destroy();
 
     charts.monthly = new Chart(ctx, {
@@ -168,7 +208,7 @@ export function createAfrrUI() {
     setChartState('afrrMonthlyChart', 'ready', '');
   }
 
-  function updateActivationChart(hourlyData) {
+  function updateActivationChart(hourlyData: AfrrHourlyRow[]) {
     const bidRows = (Array.isArray(hourlyData) ? hourlyData : []).filter((row) => row.hasBid);
     if (bidRows.length === 0) {
       if (charts.activation) {
@@ -179,14 +219,14 @@ export function createAfrrUI() {
       return;
     }
 
-    const bins = new Array(10).fill(0);
+    const bins = new Array<number>(10).fill(0);
     bidRows.forEach((row) => {
       const pct = Number(row.activationPct) || 0;
       const index = Math.min(9, Math.max(0, Math.floor(pct / 10)));
       bins[index] += 1;
     });
 
-    const ctx = document.getElementById('afrrActivationChart').getContext('2d');
+    const ctx = (document.getElementById('afrrActivationChart') as HTMLCanvasElement).getContext('2d')!;
     if (charts.activation) charts.activation.destroy();
 
     charts.activation = new Chart(ctx, {
@@ -209,7 +249,7 @@ export function createAfrrUI() {
     setChartState('afrrActivationChart', 'ready', '');
   }
 
-  function updateCumulativeChart(hourlyData) {
+  function updateCumulativeChart(hourlyData: AfrrHourlyRow[]) {
     if (!Array.isArray(hourlyData) || hourlyData.length === 0) {
       if (charts.cumulative) {
         charts.cumulative.destroy();
@@ -225,7 +265,7 @@ export function createAfrrUI() {
       return cumulative;
     });
 
-    const ctx = document.getElementById('afrrCumulativeChart').getContext('2d');
+    const ctx = (document.getElementById('afrrCumulativeChart') as HTMLCanvasElement).getContext('2d')!;
     if (charts.cumulative) charts.cumulative.destroy();
 
     charts.cumulative = new Chart(ctx, {
@@ -259,31 +299,33 @@ export function createAfrrUI() {
     setChartState('afrrCumulativeChart', 'ready', '');
   }
 
-  function updateSummaryTable(monthly) {
+  function updateSummaryTable(monthly: AfrrMonthlyRow[]) {
     if (!Array.isArray(monthly) || monthly.length === 0) {
-      el.summaryTable.innerHTML = '';
+      if (el.summaryTable) el.summaryTable.innerHTML = '';
       setTableState('empty', 'Ingen månedlige rader.');
       return;
     }
 
-    el.summaryTable.innerHTML = monthly.map((row) => `
-      <tr>
-        <td>${row.month}</td>
-        <td>${formatNok(Math.round(row.totalRevenueNok))}</td>
-        <td>${formatNok(Math.round(row.afrrRevenueNok))}</td>
-        <td>${row.bidHours.toLocaleString('nb-NO')}</td>
-        <td>${formatNok(Math.round(row.avgAfrrPriceNokMw))}</td>
-      </tr>
-    `).join('');
+    if (el.summaryTable) {
+      el.summaryTable.innerHTML = monthly.map((row) => `
+        <tr>
+          <td>${row.month}</td>
+          <td>${formatNok(Math.round(row.totalRevenueNok))}</td>
+          <td>${formatNok(Math.round(row.afrrRevenueNok))}</td>
+          <td>${row.bidHours.toLocaleString('nb-NO')}</td>
+          <td>${formatNok(Math.round(row.avgAfrrPriceNokMw))}</td>
+        </tr>
+      `).join('');
+    }
 
     setTableState('ready', '');
   }
 
-  function displayResults(result) {
-    el.totalRevenue.textContent = formatNok(Math.round(result.totalRevenueNok));
-    el.afrrRevenue.textContent = formatNok(Math.round(result.totalAfrrRevenueNok));
-    el.bidHours.textContent = `${result.bidHours.toLocaleString('nb-NO')} / ${result.totalHours.toLocaleString('nb-NO')}`;
-    el.avgPrice.textContent = `${formatNok(Math.round(result.avgAfrrPriceNokMw))}/MW`;
+  function displayResults(result: AfrrYearlyResult) {
+    if (el.totalRevenue) el.totalRevenue.textContent = formatNok(Math.round(result.totalRevenueNok));
+    if (el.afrrRevenue) el.afrrRevenue.textContent = formatNok(Math.round(result.totalAfrrRevenueNok));
+    if (el.bidHours) el.bidHours.textContent = `${result.bidHours.toLocaleString('nb-NO')} / ${result.totalHours.toLocaleString('nb-NO')}`;
+    if (el.avgPrice) el.avgPrice.textContent = `${formatNok(Math.round(result.avgAfrrPriceNokMw))}/MW`;
 
     updateMonthlyChart(result.monthly);
     updateActivationChart(result.hourlyData);
@@ -297,8 +339,8 @@ export function createAfrrUI() {
     if (el.calculateBtn) el.calculateBtn.disabled = true;
 
     try {
-      const selectedYear = Number(el.year.value);
-      const selectedSolarYear = Number(el.solarYear.value);
+      const selectedYear = Number(el.year?.value);
+      const selectedSolarYear = Number(el.solarYear?.value);
       if (!Number.isInteger(selectedYear)) {
         showStatus('Velg et gyldig aFRR-år.', 'warning');
         setAllVisualStates('empty', 'Manglende årsvalg.');
@@ -310,11 +352,11 @@ export function createAfrrUI() {
         return;
       }
 
-      const powerMw = Number(document.getElementById('powerMw')?.value || 0);
-      const eurToNok = Number(el.eurToNok.value);
-      const minBidMw = Number(el.minBidMw.value);
-      const activationMaxPct = Number(el.activationMaxPct.value);
-      const seed = Number(el.seed.value);
+      const powerMw = Number(document.getElementById('powerMw')?.getAttribute('value') || (document.getElementById('powerMw') as HTMLInputElement)?.value || 0);
+      const eurToNok = Number(el.eurToNok?.value);
+      const minBidMw = Number(el.minBidMw?.value);
+      const activationMaxPct = Number(el.activationMaxPct?.value);
+      const seed = Number(el.seed?.value);
 
       showStatus('Laster aFRR-, sol- og spotdata for valgt år...', 'info');
       setAllVisualStates('loading', 'Beregner aFRR-inntekt...');
@@ -382,20 +424,20 @@ export function createAfrrUI() {
   async function init() {
     el.statusMessage = document.getElementById('afrrStatusMessage');
     el.totalRevenue = document.getElementById('afrrTotalRevenue');
-    el.afrrRevenue = document.getElementById('afrrAfrrRevenue');
+    el.afrrRevenue = document.getElementById('afrrAffrRevenue');
     el.bidHours = document.getElementById('afrrBidHours');
     el.avgPrice = document.getElementById('afrrAvgPrice');
-    el.summaryTable = document.getElementById('afrrSummaryTable').querySelector('tbody');
+    el.summaryTable = document.getElementById('afrrSummaryTable')?.querySelector('tbody') ?? null;
 
-    el.year = document.getElementById('afrrYear');
-    el.solarYear = document.getElementById('afrrSolarYear');
-    el.eurToNok = document.getElementById('afrrEurToNok');
-    el.minBidMw = document.getElementById('afrrMinBidMw');
-    el.activationMaxPct = document.getElementById('afrrActivationMaxPct');
-    el.seed = document.getElementById('afrrSeed');
+    el.year = document.getElementById('afrrYear') as HTMLSelectElement | null;
+    el.solarYear = document.getElementById('afrrSolarYear') as HTMLSelectElement | null;
+    el.eurToNok = document.getElementById('afrrEurToNok') as HTMLInputElement | null;
+    el.minBidMw = document.getElementById('afrrMinBidMw') as HTMLInputElement | null;
+    el.activationMaxPct = document.getElementById('afrrActivationMaxPct') as HTMLInputElement | null;
+    el.seed = document.getElementById('afrrSeed') as HTMLInputElement | null;
     el.dataStatus = document.getElementById('afrrDataStatus');
-    el.calculateBtn = document.getElementById('calculateAfrrBtn');
-    el.exportCsvBtn = document.getElementById('afrrExportCsvBtn');
+    el.calculateBtn = document.getElementById('calculateAfrrBtn') as HTMLButtonElement | null;
+    el.exportCsvBtn = document.getElementById('afrrExportCsvBtn') as HTMLButtonElement | null;
 
     setAllVisualStates('loading', 'Laster aFRR-data...');
     await loadStaticInputs();

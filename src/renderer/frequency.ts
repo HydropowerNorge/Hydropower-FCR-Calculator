@@ -1,6 +1,16 @@
+import type { FrequencyData, FrequencySummary } from './calculator';
+
+export interface FrequencyProfile {
+  name: string;
+  pctOutside: number;
+  eventsPerHour: number;
+  avgEventDuration: number;
+  underRatio: number;
+}
+
 // Frequency profiles based on real Nordic grid data (Oct 2025 - Jan 2026)
 // Analyzed from 6.4 million 1-second samples
-export const FREQUENCY_PROFILES = {
+export const FREQUENCY_PROFILES: Record<string, FrequencyProfile> = {
   high: {
     name: 'High (Volatile)',
     pctOutside: 0.86,
@@ -24,12 +34,12 @@ export const FREQUENCY_PROFILES = {
   }
 };
 
-export function getProfile(profileName) {
+export function getProfile(profileName: string): FrequencyProfile {
   return FREQUENCY_PROFILES[profileName] || FREQUENCY_PROFILES.medium;
 }
 
 // Seeded random number generator (simple LCG)
-function createRng(seed) {
+function createRng(seed: number): () => number {
   let s = seed;
   return function() {
     s = (s * 1664525 + 1013904223) % 4294967296;
@@ -38,7 +48,7 @@ function createRng(seed) {
 }
 
 // Box-Muller transform for normal distribution
-function normalRandom(rng, mean = 0, std = 1) {
+function normalRandom(rng: () => number, mean = 0, std = 1): number {
   const u1 = Math.max(rng(), Number.EPSILON);
   const u2 = rng();
   const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
@@ -46,12 +56,12 @@ function normalRandom(rng, mean = 0, std = 1) {
 }
 
 // Exponential distribution
-function exponentialRandom(rng, lambda) {
+function exponentialRandom(rng: () => number, lambda: number): number {
   return -Math.log(1 - rng()) / lambda;
 }
 
 // Poisson distribution
-function poissonRandom(rng, lambda) {
+function poissonRandom(rng: () => number, lambda: number): number {
   if (!Number.isFinite(lambda) || lambda <= 0) return 0;
 
   // Knuth's exact method is accurate for small lambdas.
@@ -71,13 +81,19 @@ function poissonRandom(rng, lambda) {
   return Math.max(0, draw);
 }
 
-function safePct(part, total) {
+function safePct(part: number, total: number): number {
   if (!Number.isFinite(total) || total <= 0) return 0;
   return (part / total) * 100;
 }
 
 // Simulate realistic Nordic grid frequency based on profile statistics
-export function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed = 42, profileName = 'medium') {
+export function simulateFrequency(
+  startTime: Date,
+  hours: number,
+  resolutionSeconds = 1,
+  seed = 42,
+  profileName = 'medium',
+): FrequencyData {
   const rng = createRng(seed);
 
   const totalSeconds = hours * 3600;
@@ -146,7 +162,7 @@ export function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed 
     let magnitude = exponentialRandom(rng, 1 / 0.03) + 0.1;
     magnitude = Math.min(magnitude, 0.5);
 
-    let eventFreq;
+    let eventFreq: number;
     if (isUnder) {
       eventFreq = Math.max(49.0, 49.9 - magnitude);
     } else {
@@ -157,7 +173,7 @@ export function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed 
     const rampSamples = Math.min(5, Math.floor(durationSamples / 3));
     for (let i = eventStart; i < eventEnd; i++) {
       const posInEvent = i - eventStart;
-      let factor;
+      let factor: number;
       if (rampSamples > 0 && posInEvent < rampSamples) {
         factor = posInEvent / rampSamples;
       } else if (rampSamples > 0 && posInEvent > (eventEnd - eventStart - rampSamples)) {
@@ -174,7 +190,7 @@ export function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed 
   const histMax = 50.5;
   const binCount = 100;
   const binWidth = (histMax - histMin) / binCount;
-  const histogram = new Array(binCount).fill(0);
+  const histogram = new Array<number>(binCount).fill(0);
 
   let sum = 0;
   let minHz = Infinity;
@@ -201,12 +217,12 @@ export function simulateFrequency(startTime, hours, resolutionSeconds = 1, seed 
   const meanHz = sum / nSamples;
 
   // Build histogram labels
-  const histogramLabels = [];
+  const histogramLabels: string[] = [];
   for (let i = 0; i < binCount; i++) {
     histogramLabels.push((histMin + i * binWidth + binWidth / 2).toFixed(3));
   }
 
-  const summary = {
+  const summary: FrequencySummary = {
     meanHz,
     minHz,
     maxHz,

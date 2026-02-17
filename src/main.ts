@@ -1,9 +1,13 @@
-const { app, BrowserWindow, Menu, autoUpdater, ipcMain, dialog } = require('electron');
-const path = require('node:path');
-const fs = require('node:fs');
-const ExcelJS = require('exceljs');
-const dotenv = require('dotenv');
-const { ConvexHttpClient } = require('convex/browser');
+/// <reference types="@electron-forge/plugin-vite/forge-vite-env" />
+
+import { app, BrowserWindow, Menu, autoUpdater, ipcMain, dialog } from 'electron';
+import type { IpcMainInvokeEvent, MessageBoxOptions, MenuItemConstructorOptions } from 'electron';
+import path from 'node:path';
+import fs from 'node:fs';
+import ExcelJS from 'exceljs';
+import dotenv from 'dotenv';
+import { ConvexHttpClient } from 'convex/browser';
+import type { PdfExportData } from './shared/electron-api';
 
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -21,11 +25,11 @@ function loadDotEnvFiles() {
     const envPath = path.join(root, '.env');
 
     if (fs.existsSync(envLocalPath)) {
-      dotenv.config({ path: envLocalPath, quiet: true });
+      dotenv.config({ path: envLocalPath });
     }
 
     if (fs.existsSync(envPath)) {
-      dotenv.config({ path: envPath, quiet: true });
+      dotenv.config({ path: envPath });
     }
   }
 }
@@ -40,19 +44,19 @@ const DEFAULT_AUTO_UPDATE_HOST = 'https://update.electronjs.org';
 let autoUpdatesConfigured = false;
 let autoUpdateListenersAttached = false;
 let manualUpdateCheckInProgress = false;
-let autoUpdateSourceReference = null;
-let autoUpdateConfigurationIssue = null;
-let lastAutoUpdateErrorMessage = null;
+let autoUpdateSourceReference: string | null = null;
+let autoUpdateConfigurationIssue: string | null = null;
+let lastAutoUpdateErrorMessage: string | null = null;
 
-function isAutoUpdateSupportedPlatform() {
+function isAutoUpdateSupportedPlatform(): boolean {
   return process.platform === 'darwin' || process.platform === 'win32';
 }
 
-function getActiveWindow() {
+function getActiveWindow(): BrowserWindow | null {
   return BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
 }
 
-function showMessageBoxWithWindow(options) {
+function showMessageBoxWithWindow(options: MessageBoxOptions) {
   const activeWindow = getActiveWindow();
   if (activeWindow) {
     return dialog.showMessageBox(activeWindow, options);
@@ -61,7 +65,7 @@ function showMessageBoxWithWindow(options) {
   return dialog.showMessageBox(options);
 }
 
-function buildAutoUpdateErrorDetail(rawMessage) {
+function buildAutoUpdateErrorDetail(rawMessage: string): string {
   const message = typeof rawMessage === 'string' && rawMessage.trim().length > 0
     ? rawMessage.trim()
     : 'Unknown error';
@@ -77,7 +81,7 @@ function buildAutoUpdateErrorDetail(rawMessage) {
   return message;
 }
 
-function createCheckForUpdatesMenuItem() {
+function createCheckForUpdatesMenuItem(): MenuItemConstructorOptions {
   return {
     id: UPDATE_MENU_ITEM_ID,
     label: manualUpdateCheckInProgress ? 'Checking for updates...' : 'Check for updates...',
@@ -88,72 +92,72 @@ function createCheckForUpdatesMenuItem() {
   };
 }
 
-function buildApplicationMenuTemplate() {
+function buildApplicationMenuTemplate(): MenuItemConstructorOptions[] {
   const isMac = process.platform === 'darwin';
 
   return [
     ...(isMac ? [{
       label: app.name,
       submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' }
+        { role: 'about' as const },
+        { type: 'separator' as const },
+        { role: 'services' as const },
+        { type: 'separator' as const },
+        { role: 'hide' as const },
+        { role: 'hideOthers' as const },
+        { role: 'unhide' as const },
+        { type: 'separator' as const },
+        { role: 'quit' as const }
       ]
     }] : []),
     {
       label: 'File',
-      submenu: [isMac ? { role: 'close' } : { role: 'quit' }]
+      submenu: [isMac ? { role: 'close' as const } : { role: 'quit' as const }]
     },
     {
       label: 'Edit',
       submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
+        { role: 'undo' as const },
+        { role: 'redo' as const },
+        { type: 'separator' as const },
+        { role: 'cut' as const },
+        { role: 'copy' as const },
+        { role: 'paste' as const },
         ...(isMac ? [
-          { role: 'pasteAndMatchStyle' },
-          { role: 'delete' },
-          { role: 'selectAll' }
+          { role: 'pasteAndMatchStyle' as const },
+          { role: 'delete' as const },
+          { role: 'selectAll' as const }
         ] : [
-          { role: 'delete' },
-          { type: 'separator' },
-          { role: 'selectAll' }
+          { role: 'delete' as const },
+          { type: 'separator' as const },
+          { role: 'selectAll' as const }
         ])
       ]
     },
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' }
+        { role: 'reload' as const },
+        { role: 'forceReload' as const },
+        { role: 'toggleDevTools' as const },
+        { type: 'separator' as const },
+        { role: 'resetZoom' as const },
+        { role: 'zoomIn' as const },
+        { role: 'zoomOut' as const },
+        { type: 'separator' as const },
+        { role: 'togglefullscreen' as const }
       ]
     },
     {
       label: 'Window',
       submenu: [
-        { role: 'minimize' },
-        { role: 'zoom' },
+        { role: 'minimize' as const },
+        { role: 'zoom' as const },
         ...(isMac ? [
-          { type: 'separator' },
-          { role: 'front' }
+          { type: 'separator' as const },
+          { role: 'front' as const }
         ] : [
-          { role: 'close' }
+          { role: 'close' as const }
         ])
       ]
     },
@@ -168,7 +172,7 @@ function installApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(buildApplicationMenuTemplate()));
 }
 
-function setManualUpdateCheckInProgress(inProgress) {
+function setManualUpdateCheckInProgress(inProgress: boolean) {
   manualUpdateCheckInProgress = inProgress;
   installApplicationMenu();
 }
@@ -205,7 +209,7 @@ function attachAutoUpdateFeedbackHandlers() {
     });
   });
 
-  autoUpdater.on('error', (error) => {
+  autoUpdater.on('error', (error: Error) => {
     const rawMessage = error instanceof Error ? error.message : String(error ?? 'Unknown error');
     lastAutoUpdateErrorMessage = rawMessage;
 
@@ -346,44 +350,44 @@ function initializeAutoUpdates() {
   }
 }
 
-function sanitizeAreaCode(value, fallback = 'NO1') {
+function sanitizeAreaCode(value: unknown, fallback = 'NO1'): string {
   const normalized = typeof value === 'string' ? value.trim().toUpperCase() : '';
   return SAFE_CODE_PATTERN.test(normalized) ? normalized : fallback;
 }
 
-function sanitizeLookupValue(value, maxLength = 120) {
+function sanitizeLookupValue(value: unknown, maxLength = 120): string | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim();
   if (normalized.length === 0) return null;
   return normalized.slice(0, maxLength);
 }
 
-function sanitizeYear(value) {
+function sanitizeYear(value: unknown): number | null {
   const year = Number(value);
   if (!Number.isInteger(year)) return null;
   if (year < 2000 || year > 2100) return null;
   return year;
 }
 
-function sanitizeDirection(value, fallback = 'down') {
+function sanitizeDirection(value: unknown, fallback = 'down'): string {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
   if (normalized === 'up' || normalized === 'down') return normalized;
   return fallback;
 }
 
-function sanitizeReserveType(value, fallback = 'afrr') {
+function sanitizeReserveType(value: unknown, fallback = 'afrr'): string {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
   if (/^[a-z0-9_-]{2,20}$/.test(normalized)) return normalized;
   return fallback;
 }
 
-function sanitizeResolutionMinutes(value, fallback = 60) {
+function sanitizeResolutionMinutes(value: unknown, fallback = 60): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 240) return fallback;
   return parsed;
 }
 
-function sanitizeDefaultName(defaultName, fallbackName) {
+function sanitizeDefaultName(defaultName: unknown, fallbackName: string): string {
   if (typeof defaultName !== 'string' || defaultName.trim().length === 0) {
     return fallbackName;
   }
@@ -412,7 +416,7 @@ function createWindow() {
   }
 }
 
-ipcMain.handle('file:save', async (event, data, defaultName) => {
+ipcMain.handle('file:save', async (_event: IpcMainInvokeEvent, data: unknown, defaultName: unknown) => {
   const safeDefaultName = sanitizeDefaultName(defaultName, 'export.csv');
   const { canceled, filePath } = await dialog.showSaveDialog({
     defaultPath: safeDefaultName,
@@ -426,7 +430,7 @@ ipcMain.handle('file:save', async (event, data, defaultName) => {
   return null;
 });
 
-ipcMain.handle('file:saveXlsx', async (event, exportData, defaultName) => {
+ipcMain.handle('file:saveXlsx', async (_event: IpcMainInvokeEvent, exportData: unknown, defaultName: unknown) => {
   if (!exportData || typeof exportData !== 'object') {
     return null;
   }
@@ -438,10 +442,11 @@ ipcMain.handle('file:saveXlsx', async (event, exportData, defaultName) => {
   });
   if (canceled || !filePath) return null;
 
+  const data = exportData as Record<string, unknown>;
   const workbook = new ExcelJS.Workbook();
-  const hourlyData = Array.isArray(exportData.hourlyData) ? exportData.hourlyData : [];
-  const monthly = Array.isArray(exportData.monthly) ? exportData.monthly : [];
-  const config = exportData.config && typeof exportData.config === 'object' ? exportData.config : {};
+  const hourlyData = Array.isArray(data.hourlyData) ? data.hourlyData : [];
+  const monthly = Array.isArray(data.monthly) ? data.monthly : [];
+  const config = data.config && typeof data.config === 'object' ? data.config as Record<string, unknown> : {};
 
   // Hourly Data sheet
   const hourlySheet = workbook.addWorksheet('Timedata');
@@ -451,14 +456,14 @@ ipcMain.handle('file:saveXlsx', async (event, exportData, defaultName) => {
   hourlySheet.getRow(2).values = ['Tidspunkt', 'FCR-N Pris (EUR/MW)', 'Tilgjengelig', 'Inntekt (EUR)', 'SOC Start (%)', 'SOC Slutt (%)'];
   hourlySheet.getRow(2).font = { bold: true };
 
-  hourlyData.forEach((row, i) => {
+  hourlyData.forEach((row: Record<string, unknown>, i: number) => {
     hourlySheet.getRow(i + 3).values = [
-      new Date(row.timestamp),
-      row.price,
-      row.available ? 'Ja' : 'Nei',
-      row.revenue,
-      row.socStart !== null ? row.socStart * 100 : null,
-      row.socEnd !== null ? row.socEnd * 100 : null
+      new Date(row.timestamp as number),
+      row.price as number,
+      (row.available as boolean) ? 'Ja' : 'Nei',
+      row.revenue as number,
+      (row.socStart as number | null) !== null ? (row.socStart as number) * 100 : null,
+      (row.socEnd as number | null) !== null ? (row.socEnd as number) * 100 : null
     ];
   });
 
@@ -480,16 +485,16 @@ ipcMain.handle('file:saveXlsx', async (event, exportData, defaultName) => {
   monthlySheet.getRow(2).values = ['Måned', 'Inntekt (EUR)', 'Timer', 'Snittpris (EUR/MW)'];
   monthlySheet.getRow(2).font = { bold: true };
 
-  monthly.forEach((row, i) => {
-    monthlySheet.getRow(i + 3).values = [row.month, row.revenue, row.hours, row.avgPrice];
+  monthly.forEach((row: Record<string, unknown>, i: number) => {
+    monthlySheet.getRow(i + 3).values = [row.month as string, row.revenue as number, row.hours as number, row.avgPrice as number];
   });
 
   const totalRow = monthly.length + 3;
   monthlySheet.getCell(`A${totalRow}`).value = 'TOTAL';
   monthlySheet.getCell(`A${totalRow}`).font = { bold: true };
-  monthlySheet.getCell(`B${totalRow}`).value = { formula: `SUM(B3:B${totalRow - 1})` };
-  monthlySheet.getCell(`C${totalRow}`).value = { formula: `SUM(C3:C${totalRow - 1})` };
-  monthlySheet.getCell(`D${totalRow}`).value = { formula: `AVERAGE(D3:D${totalRow - 1})` };
+  monthlySheet.getCell(`B${totalRow}`).value = { formula: `SUM(B3:B${totalRow - 1})` } as unknown as ExcelJS.CellFormulaValue;
+  monthlySheet.getCell(`C${totalRow}`).value = { formula: `SUM(C3:C${totalRow - 1})` } as unknown as ExcelJS.CellFormulaValue;
+  monthlySheet.getCell(`D${totalRow}`).value = { formula: `AVERAGE(D3:D${totalRow - 1})` } as unknown as ExcelJS.CellFormulaValue;
 
   monthlySheet.getColumn(2).numFmt = '#,##0.00';
   monthlySheet.getColumn(4).numFmt = '#,##0.00';
@@ -499,7 +504,7 @@ ipcMain.handle('file:saveXlsx', async (event, exportData, defaultName) => {
   configSheet.getCell('A1').value = 'Batterikonfigurasjon';
   configSheet.getCell('A1').font = { bold: true, size: 14 };
 
-  const configRows = [
+  const configRows: [string, unknown][] = [
     ['Effektkapasitet (MW)', config.powerMw],
     ['Energikapasitet (MWh)', config.capacityMwh],
     ['Virkningsgrad (%)', config.efficiency],
@@ -513,7 +518,7 @@ ipcMain.handle('file:saveXlsx', async (event, exportData, defaultName) => {
   ];
 
   configRows.forEach((row, i) => {
-    configSheet.getRow(i + 3).values = row;
+    configSheet.getRow(i + 3).values = row as ExcelJS.CellValue[];
   });
 
   configSheet.getColumn(1).width = 25;
@@ -523,7 +528,7 @@ ipcMain.handle('file:saveXlsx', async (event, exportData, defaultName) => {
   return filePath;
 });
 
-ipcMain.handle('file:savePdf', async (event, pdfData, defaultName) => {
+ipcMain.handle('file:savePdf', async (_event: IpcMainInvokeEvent, pdfData: unknown, defaultName: unknown) => {
   if (!pdfData || typeof pdfData !== 'object') {
     return null;
   }
@@ -535,8 +540,8 @@ ipcMain.handle('file:savePdf', async (event, pdfData, defaultName) => {
   });
   if (canceled || !filePath) return null;
 
-  const html = buildPdfHtml(pdfData);
-  let pdfWindow = null;
+  const html = buildPdfHtml(pdfData as PdfExportData);
+  let pdfWindow: BrowserWindow | null = null;
 
   try {
     pdfWindow = new BrowserWindow({
@@ -583,7 +588,7 @@ ipcMain.handle('file:savePdf', async (event, pdfData, defaultName) => {
   }
 });
 
-function buildPdfHtml(data) {
+function buildPdfHtml(data: PdfExportData): string {
   const { chartImages, monthly, config, metrics } = data;
   const now = new Date().toLocaleDateString('nb-NO', { year: 'numeric', month: 'long', day: 'numeric' });
   const duration = (config.capacityMwh / config.powerMw).toFixed(1);
@@ -601,7 +606,7 @@ function buildPdfHtml(data) {
   const totalHours = monthly.reduce((s, m) => s + m.hours, 0);
   const avgPrice = totalHours > 0 ? monthly.reduce((s, m) => s + m.avgPrice * m.hours, 0) / totalHours : 0;
 
-  const chartSection = (title, base64) => {
+  const chartSection = (title: string, base64: string | null) => {
     if (!base64) return '';
     return `
       <div class="chart-box">
@@ -815,14 +820,14 @@ function buildPdfHtml(data) {
 </html>`;
 }
 
-function euroFmt(value) {
+function euroFmt(value: number): string {
   return '€' + Math.round(value).toLocaleString('nb-NO');
 }
 
-let convexClient = null;
-let convexUrl = null;
+let convexClient: ConvexHttpClient | null = null;
+let convexUrl: string | null = null;
 
-function getConvexClient() {
+function getConvexClient(): ConvexHttpClient {
   const configuredUrl = process.env.CONVEX_URL;
   if (!configuredUrl) {
     throw new Error(
@@ -838,19 +843,35 @@ function getConvexClient() {
   return convexClient;
 }
 
-async function runConvexQuery(functionName, args = {}) {
-  const client = getConvexClient();
-  return client.query(functionName, args);
+interface PaginatedResult {
+  page: unknown[];
+  isDone: boolean;
+  continueCursor: string;
 }
 
-async function runPaginatedConvexQuery(functionName, args = {}, pageSize = 1000, options = {}) {
+interface PaginationOptions {
+  traceLabel?: string;
+  logEveryPage?: boolean;
+}
+
+async function runConvexQuery(functionName: string, args: Record<string, unknown> = {}): Promise<unknown> {
+  const client = getConvexClient();
+  return client.query(functionName as never, args as never);
+}
+
+async function runPaginatedConvexQuery(
+  functionName: string,
+  args: Record<string, unknown> = {},
+  pageSize = 1000,
+  options: PaginationOptions = {},
+): Promise<unknown[]> {
   const traceLabel = typeof options.traceLabel === 'string' && options.traceLabel.trim()
     ? options.traceLabel.trim()
     : null;
   const logEveryPage = options.logEveryPage === true;
   const startedAt = Date.now();
-  const allRows = [];
-  let cursor = null;
+  const allRows: unknown[] = [];
+  let cursor: string | null = null;
   let pageCount = 0;
 
   try {
@@ -862,7 +883,7 @@ async function runPaginatedConvexQuery(functionName, args = {}, pageSize = 1000,
           numItems: pageSize,
           cursor,
         },
-      });
+      }) as PaginatedResult;
       pageCount += 1;
 
       const pageRows = Array.isArray(pageResult?.page) ? pageResult.page.length : 0;
@@ -905,7 +926,7 @@ async function runPaginatedConvexQuery(functionName, args = {}, pageSize = 1000,
   }
 }
 
-ipcMain.handle('data:loadPriceData', async (event, year, area = 'NO1') => {
+ipcMain.handle('data:loadPriceData', async (_event: IpcMainInvokeEvent, year: unknown, area: unknown = 'NO1') => {
   const safeYear = sanitizeYear(year);
   if (safeYear === null) {
     return [];
@@ -923,7 +944,7 @@ ipcMain.handle('data:loadPriceData', async (event, year, area = 'NO1') => {
   }
 });
 
-ipcMain.handle('data:getAvailableYears', async (event, area = 'NO1') => {
+ipcMain.handle('data:getAvailableYears', async (_event: IpcMainInvokeEvent, area: unknown = 'NO1') => {
   const safeArea = sanitizeAreaCode(area, 'NO1');
   try {
     return await runConvexQuery('prices:getAvailableYears', {
@@ -935,7 +956,7 @@ ipcMain.handle('data:getAvailableYears', async (event, area = 'NO1') => {
   }
 });
 
-ipcMain.handle('data:loadSpotData', async (event, biddingZone = 'NO1', year = null) => {
+ipcMain.handle('data:loadSpotData', async (_event: IpcMainInvokeEvent, biddingZone: unknown = 'NO1', year: unknown = null) => {
   const safeBiddingZone = sanitizeAreaCode(biddingZone, 'NO1');
   const safeYear = sanitizeYear(year);
   try {
@@ -949,7 +970,7 @@ ipcMain.handle('data:loadSpotData', async (event, biddingZone = 'NO1', year = nu
   }
 });
 
-ipcMain.handle('data:loadAfrrData', async (event, year, filters = {}) => {
+ipcMain.handle('data:loadAfrrData', async (_event: IpcMainInvokeEvent, year: unknown, filters: Record<string, unknown> = {}) => {
   const safeYear = sanitizeYear(year);
   if (safeYear === null) {
     return [];
@@ -982,7 +1003,7 @@ ipcMain.handle('data:loadAfrrData', async (event, year, filters = {}) => {
   }
 });
 
-ipcMain.handle('data:getAfrrAvailableYears', async (event, filters = {}) => {
+ipcMain.handle('data:getAfrrAvailableYears', async (_event: IpcMainInvokeEvent, filters: Record<string, unknown> = {}) => {
   const safeBiddingZone = sanitizeAreaCode(filters?.biddingZone, 'NO1');
   const safeDirection = sanitizeDirection(filters?.direction, 'down');
   const safeReserveType = sanitizeReserveType(filters?.reserveType, 'afrr');
@@ -997,7 +1018,7 @@ ipcMain.handle('data:getAfrrAvailableYears', async (event, filters = {}) => {
       direction: safeDirection,
       reserveType: safeReserveType,
       resolutionMin: safeResolutionMin,
-    });
+    }) as number[];
     console.info(`[${traceLabel}] fetched ${years.length} years in ${Date.now() - startedAt}ms`);
     return years;
   } catch (err) {
@@ -1006,7 +1027,7 @@ ipcMain.handle('data:getAfrrAvailableYears', async (event, filters = {}) => {
   }
 });
 
-ipcMain.handle('data:loadSolarData', async (event, year, resolutionMinutes = 60) => {
+ipcMain.handle('data:loadSolarData', async (_event: IpcMainInvokeEvent, year: unknown, resolutionMinutes: unknown = 60) => {
   const safeYear = sanitizeYear(year);
   if (safeYear === null) {
     return [];
@@ -1024,7 +1045,7 @@ ipcMain.handle('data:loadSolarData', async (event, year, resolutionMinutes = 60)
   }
 });
 
-ipcMain.handle('data:getSolarAvailableYears', async (event, resolutionMinutes = 60) => {
+ipcMain.handle('data:getSolarAvailableYears', async (_event: IpcMainInvokeEvent, resolutionMinutes: unknown = 60) => {
   const safeResolutionMinutes = sanitizeResolutionMinutes(resolutionMinutes, 60);
   try {
     return await runConvexQuery('solar:getAvailableYears', {
@@ -1036,7 +1057,7 @@ ipcMain.handle('data:getSolarAvailableYears', async (event, resolutionMinutes = 
   }
 });
 
-ipcMain.handle('data:loadNodeTenders', async (event, filters = {}) => {
+ipcMain.handle('data:loadNodeTenders', async (_event: IpcMainInvokeEvent, filters: Record<string, unknown> = {}) => {
   const dataset = sanitizeLookupValue(filters?.dataset, 80) || 'nodes_2026_pilot';
   const gridNode = sanitizeLookupValue(filters?.gridNode, 120);
   const market = sanitizeLookupValue(filters?.market, 120);
@@ -1053,7 +1074,7 @@ ipcMain.handle('data:loadNodeTenders', async (event, filters = {}) => {
   }
 });
 
-ipcMain.handle('data:getNodeTenderFilters', async (event, dataset = 'nodes_2026_pilot') => {
+ipcMain.handle('data:getNodeTenderFilters', async (_event: IpcMainInvokeEvent, dataset: unknown = 'nodes_2026_pilot') => {
   const safeDataset = sanitizeLookupValue(dataset, 80) || 'nodes_2026_pilot';
   try {
     return await runConvexQuery('nodes:getNodeFilterOptions', {

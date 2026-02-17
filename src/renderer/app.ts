@@ -1,14 +1,47 @@
 import Chart from 'chart.js/auto';
 import Papa from 'papaparse';
-import * as Calculator from './calculator.js';
-import * as FrequencySimulator from './frequency.js';
-import { createAfrrUI } from './afrr-ui.js';
+import * as Calculator from './calculator';
+import type { FrequencySummary, HourlyRevenueRow, RevenueResult } from './calculator';
+import * as FrequencySimulator from './frequency';
+import { createAfrrUI } from './afrr-ui';
 
-let priceData = [];
-let currentResult = null;
-let nodeTenderRows = [];
+interface NormalizedNodeTenderRow {
+  name: string;
+  status?: string;
+  gridNode?: string;
+  market?: string;
+  quantityMw: number;
+  reservationPriceNokMwH: number | null;
+  activationPriceNokMwH: number | null;
+  periodStartTs: number | null;
+  periodEndTs: number | null;
+  activeDays: string[];
+  activeWindows: { start: string; end: string }[];
+}
+
+interface MonthlyAggregate {
+  month: string;
+  revenue: number;
+  hours: number;
+  avgPrice: number;
+}
+
+interface WorkerPayload {
+  result: RevenueResult;
+  summary: FrequencySummary;
+  totalSamples: number;
+}
+
+let priceData: { timestamp: Date; price: number; hourNumber: number; volume: number }[] = [];
+let currentResult: (RevenueResult & { freqSummary?: FrequencySummary }) | null = null;
+let nodeTenderRows: NormalizedNodeTenderRow[] = [];
 const afrrUI = createAfrrUI();
-let charts = {
+const charts: {
+  monthly: Chart | null;
+  price: Chart | null;
+  soc: Chart | null;
+  freq: Chart | null;
+} = {
   monthly: null,
   price: null,
   soc: null,
@@ -16,36 +49,36 @@ let charts = {
 };
 
 const elements = {
-  powerMw: document.getElementById('powerMw'),
-  capacityMwh: document.getElementById('capacityMwh'),
-  efficiency: document.getElementById('efficiency'),
-  efficiencyValue: document.getElementById('efficiencyValue'),
-  socMin: document.getElementById('socMin'),
-  socMinValue: document.getElementById('socMinValue'),
-  socMax: document.getElementById('socMax'),
-  socMaxValue: document.getElementById('socMaxValue'),
-  year: document.getElementById('year'),
-  simHours: document.getElementById('simHours'),
-  seed: document.getElementById('seed'),
+  powerMw: document.getElementById('powerMw') as HTMLInputElement,
+  capacityMwh: document.getElementById('capacityMwh') as HTMLInputElement,
+  efficiency: document.getElementById('efficiency') as HTMLInputElement,
+  efficiencyValue: document.getElementById('efficiencyValue')!,
+  socMin: document.getElementById('socMin') as HTMLInputElement,
+  socMinValue: document.getElementById('socMinValue')!,
+  socMax: document.getElementById('socMax') as HTMLInputElement,
+  socMaxValue: document.getElementById('socMaxValue')!,
+  year: document.getElementById('year') as HTMLSelectElement,
+  simHours: document.getElementById('simHours') as HTMLInputElement,
+  seed: document.getElementById('seed') as HTMLInputElement,
 
-  loadingState: document.getElementById('loadingState'),
-  resultsContainer: document.getElementById('resultsContainer'),
-  statusMessage: document.getElementById('statusMessage'),
-  totalRevenue: document.getElementById('totalRevenue'),
-  availableHours: document.getElementById('availableHours'),
-  availability: document.getElementById('availability'),
-  avgPrice: document.getElementById('avgPrice'),
-  annualizedNote: document.getElementById('annualizedNote'),
+  loadingState: document.getElementById('loadingState')!,
+  resultsContainer: document.getElementById('resultsContainer')!,
+  statusMessage: document.getElementById('statusMessage')!,
+  totalRevenue: document.getElementById('totalRevenue')!,
+  availableHours: document.getElementById('availableHours')!,
+  availability: document.getElementById('availability')!,
+  avgPrice: document.getElementById('avgPrice')!,
+  annualizedNote: document.getElementById('annualizedNote') as HTMLElement,
   heroTitle: document.getElementById('heroTitle'),
   heroDescription: document.getElementById('heroDescription'),
-  socSection: document.getElementById('socSection'),
-  freqSection: document.getElementById('freqSection'),
-  summaryTable: document.getElementById('summaryTable').querySelector('tbody'),
+  socSection: document.getElementById('socSection') as HTMLElement,
+  freqSection: document.getElementById('freqSection') as HTMLElement,
+  summaryTable: document.getElementById('summaryTable')!.querySelector('tbody') as HTMLTableSectionElement,
 
-  nodesDataset: document.getElementById('nodesDataset'),
-  nodesGridNode: document.getElementById('nodesGridNode'),
-  nodesMarket: document.getElementById('nodesMarket'),
-  refreshNodesBtn: document.getElementById('refreshNodesBtn'),
+  nodesDataset: document.getElementById('nodesDataset') as HTMLSelectElement | null,
+  nodesGridNode: document.getElementById('nodesGridNode') as HTMLSelectElement | null,
+  nodesMarket: document.getElementById('nodesMarket') as HTMLSelectElement | null,
+  refreshNodesBtn: document.getElementById('refreshNodesBtn') as HTMLButtonElement | null,
   nodesFilterInfo: document.getElementById('nodesFilterInfo'),
 
   nodesStatusMessage: document.getElementById('nodesStatusMessage'),
@@ -59,10 +92,10 @@ const elements = {
 Chart.defaults.color = '#aaa';
 Chart.defaults.borderColor = '#2a2a4a';
 
-let activeSimulationWorker = null;
+let activeSimulationWorker: Worker | null = null;
 let isCalculating = false;
 
-async function runFcrSimulationInWorker(payload) {
+async function runFcrSimulationInWorker(payload: Record<string, unknown>): Promise<WorkerPayload> {
   if (typeof Worker === 'undefined') {
     throw new Error('Worker API is not available');
   }
@@ -73,7 +106,7 @@ async function runFcrSimulationInWorker(payload) {
   }
 
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./simulation-worker.js', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./simulation-worker.ts', import.meta.url), { type: 'module' });
     activeSimulationWorker = worker;
 
     const cleanup = () => {
@@ -83,7 +116,7 @@ async function runFcrSimulationInWorker(payload) {
       worker.terminate();
     };
 
-    worker.addEventListener('message', (event) => {
+    worker.addEventListener('message', (event: MessageEvent) => {
       const message = event.data;
       if (!message || typeof message !== 'object') return;
 
@@ -104,7 +137,7 @@ async function runFcrSimulationInWorker(payload) {
       }
     });
 
-    worker.addEventListener('error', (event) => {
+    worker.addEventListener('error', (event: ErrorEvent) => {
       cleanup();
       reject(new Error(event.message || 'Simulation worker crashed'));
     });
@@ -116,9 +149,9 @@ async function runFcrSimulationInWorker(payload) {
   });
 }
 
-function ensureVisualState(container) {
+function ensureVisualState(container: HTMLElement): HTMLElement | null {
   if (!container) return null;
-  let stateEl = container.querySelector('.visual-state');
+  let stateEl = container.querySelector<HTMLElement>('.visual-state');
   if (!stateEl) {
     stateEl = document.createElement('div');
     stateEl.className = 'visual-state';
@@ -127,7 +160,7 @@ function ensureVisualState(container) {
   return stateEl;
 }
 
-function setContainerState(container, state, message) {
+function setContainerState(container: HTMLElement | null, state: string, message: string) {
   if (!container) return;
   const nextState = state || 'ready';
   container.dataset.state = nextState;
@@ -137,25 +170,25 @@ function setContainerState(container, state, message) {
   }
 }
 
-function setChartState(chartId, state, message) {
-  const canvas = document.getElementById(chartId);
+function setChartState(chartId: string, state: string, message: string) {
+  const canvas = document.getElementById(chartId) as HTMLCanvasElement | null;
   if (!canvas) return;
-  const container = canvas.closest('.chart-container');
+  const container = canvas.closest<HTMLElement>('.chart-container');
   if (!container) return;
   setContainerState(container, state, message);
   canvas.style.opacity = state === 'ready' ? '1' : '0.18';
 }
 
-function setTableState(tableId, state, message) {
+function setTableState(tableId: string, state: string, message: string) {
   const table = document.getElementById(tableId);
   if (!table) return;
-  const container = table.closest('.table-container');
+  const container = table.closest<HTMLElement>('.table-container');
   if (!container) return;
   setContainerState(container, state, message);
   table.style.opacity = state === 'ready' ? '1' : '0.35';
 }
 
-function setFcrVisualStates(state, message) {
+function setFcrVisualStates(state: string, message: string) {
   setChartState('monthlyChart', state, message);
   setChartState('priceChart', state, message);
   setChartState('socChart', state, message);
@@ -163,13 +196,13 @@ function setFcrVisualStates(state, message) {
   setTableState('summaryTable', state, message);
 }
 
-function showNodesStatus(message, type = 'info') {
+function showNodesStatus(message: string, type = 'info') {
   if (!elements.nodesStatusMessage) return;
   elements.nodesStatusMessage.textContent = message;
   elements.nodesStatusMessage.className = `status-message ${type}`;
 }
 
-function escapeHtml(value) {
+function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -178,31 +211,31 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function formatDateRange(startTs, endTs) {
+function formatDateRange(startTs: number | null, endTs: number | null): string {
   if (!Number.isFinite(startTs) || !Number.isFinite(endTs)) return '-';
-  const start = new Date(startTs).toLocaleDateString('nb-NO');
-  const end = new Date(endTs).toLocaleDateString('nb-NO');
+  const start = new Date(startTs!).toLocaleDateString('nb-NO');
+  const end = new Date(endTs!).toLocaleDateString('nb-NO');
   return `${start} - ${end}`;
 }
 
-function formatNokValue(value) {
-  if (!Number.isFinite(value)) return '-';
+function formatNokValue(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '-';
   return `NOK ${Math.round(value).toLocaleString('nb-NO')}`;
 }
 
-function formatSchedule(activeDays, activeWindows) {
+function formatSchedule(activeDays: string[], activeWindows: { start: string; end: string }[]): string {
   const days = Array.isArray(activeDays) && activeDays.length > 0
     ? activeDays.join(', ')
     : 'Ingen dager';
   const windows = Array.isArray(activeWindows) && activeWindows.length > 0
     ? activeWindows
-      .map((window) => `${window.start}-${window.end}`)
+      .map((w) => `${w.start}-${w.end}`)
       .join(', ')
     : 'Ingen vindu';
   return `${days} | ${windows}`;
 }
 
-function setSelectOptions(selectElement, values, placeholderLabel = 'Alle', preserveSelection = true) {
+function setSelectOptions(selectElement: HTMLSelectElement | null, values: string[], placeholderLabel = 'Alle', preserveSelection = true) {
   if (!selectElement) return;
   const previousValue = selectElement.value;
   selectElement.innerHTML = '';
@@ -224,10 +257,10 @@ function setSelectOptions(selectElement, values, placeholderLabel = 'Alle', pres
   }
 }
 
-function buildNodeFilterOptionsFromRows(rows) {
-  const gridNodes = new Set();
-  const markets = new Set();
-  const statuses = new Set();
+function buildNodeFilterOptionsFromRows(rows: NormalizedNodeTenderRow[]) {
+  const gridNodes = new Set<string>();
+  const markets = new Set<string>();
+  const statuses = new Set<string>();
 
   rows.forEach((row) => {
     if (row?.gridNode) gridNodes.add(String(row.gridNode));
@@ -243,17 +276,17 @@ function buildNodeFilterOptionsFromRows(rows) {
   };
 }
 
-function updateNodesMetrics(rows) {
+function updateNodesMetrics(rows: NormalizedNodeTenderRow[]) {
   const totalTenders = rows.length;
   const totalMw = rows.reduce((sum, row) => sum + (Number(row.quantityMw) || 0), 0);
 
   const reservationRows = rows.filter((row) => Number.isFinite(row.reservationPriceNokMwH));
   const activationRows = rows.filter((row) => Number.isFinite(row.activationPriceNokMwH));
   const avgReservation = reservationRows.length > 0
-    ? reservationRows.reduce((sum, row) => sum + row.reservationPriceNokMwH, 0) / reservationRows.length
+    ? reservationRows.reduce((sum, row) => sum + row.reservationPriceNokMwH!, 0) / reservationRows.length
     : null;
   const avgActivation = activationRows.length > 0
-    ? activationRows.reduce((sum, row) => sum + row.activationPriceNokMwH, 0) / activationRows.length
+    ? activationRows.reduce((sum, row) => sum + row.activationPriceNokMwH!, 0) / activationRows.length
     : null;
 
   if (elements.nodesTenderCount) {
@@ -270,7 +303,7 @@ function updateNodesMetrics(rows) {
   }
 }
 
-function renderNodesTable(rows) {
+function renderNodesTable(rows: NormalizedNodeTenderRow[]) {
   if (!elements.nodesTableBody) return;
   if (!Array.isArray(rows) || rows.length === 0) {
     elements.nodesTableBody.innerHTML = '';
@@ -302,13 +335,13 @@ function renderNodesTable(rows) {
   setTableState('nodesTable', 'ready', '');
 }
 
-async function loadNodeFilterOptions(dataset, keepSelections = true) {
+async function loadNodeFilterOptions(dataset: string, keepSelections = true) {
   if (!window.electronAPI?.loadNodeTenders) return;
 
   let result = {
-    gridNodes: [],
-    markets: [],
-    statuses: [],
+    gridNodes: [] as string[],
+    markets: [] as string[],
+    statuses: [] as string[],
     total: 0,
   };
 
@@ -329,7 +362,7 @@ async function loadNodeFilterOptions(dataset, keepSelections = true) {
   }
 }
 
-function normalizeNodeTenderRow(row) {
+function normalizeNodeTenderRow(row: import('../shared/electron-api').NodeTenderRow): NormalizedNodeTenderRow {
   const quantityMw = Number(row?.quantityMw);
   const reservationPriceNokMwH = Number(row?.reservationPriceNokMwH);
   const activationPriceNokMwH = Number(row?.activationPriceNokMwH);
@@ -398,11 +431,11 @@ async function initializeNodesModule() {
 }
 
 function setupTabs() {
-  const tabBtns = Array.from(document.querySelectorAll('.tab-btn'));
-  const tabContents = Array.from(document.querySelectorAll('.tab-content'));
-  const tabConfigs = Array.from(document.querySelectorAll('[data-tab-config]'));
+  const tabBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.tab-btn'));
+  const tabContents = Array.from(document.querySelectorAll<HTMLElement>('.tab-content'));
+  const tabConfigs = Array.from(document.querySelectorAll<HTMLElement>('[data-tab-config]'));
 
-  function applyHeroCopy(tab) {
+  function applyHeroCopy(tab: string) {
     const activeBtn = tabBtns.find(btn => btn.dataset.tab === tab);
     if (!activeBtn) return;
 
@@ -415,7 +448,7 @@ function setupTabs() {
     }
   }
 
-  function activateTab(tab) {
+  function activateTab(tab: string) {
     tabBtns.forEach(btn => {
       const isActive = btn.dataset.tab === tab;
       btn.classList.toggle('active', isActive);
@@ -438,10 +471,10 @@ function setupTabs() {
 
   tabBtns.forEach((btn, index) => {
     btn.addEventListener('click', () => {
-      activateTab(btn.dataset.tab);
+      activateTab(btn.dataset.tab!);
     });
 
-    btn.addEventListener('keydown', (event) => {
+    btn.addEventListener('keydown', (event: KeyboardEvent) => {
       if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
       event.preventDefault();
       const direction = event.key === 'ArrowRight' ? 1 : -1;
@@ -449,7 +482,7 @@ function setupTabs() {
       const nextBtn = tabBtns[nextIndex];
       if (!nextBtn) return;
       nextBtn.focus();
-      activateTab(nextBtn.dataset.tab);
+      activateTab(nextBtn.dataset.tab!);
     });
   });
 
@@ -474,8 +507,8 @@ async function init() {
   elements.year.innerHTML = '';
   years.forEach(year => {
     const option = document.createElement('option');
-    option.value = year;
-    option.textContent = year;
+    option.value = String(year);
+    option.textContent = String(year);
     elements.year.appendChild(option);
   });
 
@@ -484,7 +517,7 @@ async function init() {
     const defaultYear = years.includes(preferredYear)
       ? preferredYear
       : years[years.length - 1];
-    elements.year.value = defaultYear;
+    elements.year.value = String(defaultYear);
     await loadPriceData(defaultYear);
     setFcrVisualStates('empty', 'Trykk "Beregn inntekt" for å vise visualiseringer.');
   } else {
@@ -500,15 +533,15 @@ async function init() {
     await loadPriceData(parseInt(elements.year.value));
   });
 
-  document.getElementById('calculateBtn').addEventListener('click', calculate);
-  document.getElementById('exportBtn').addEventListener('click', exportCsv);
-  document.getElementById('exportXlsxBtn').addEventListener('click', exportXlsx);
-  document.getElementById('exportPdfBtn').addEventListener('click', exportPdf);
+  document.getElementById('calculateBtn')!.addEventListener('click', calculate);
+  document.getElementById('exportBtn')!.addEventListener('click', exportCsv);
+  document.getElementById('exportXlsxBtn')!.addEventListener('click', exportXlsx);
+  document.getElementById('exportPdfBtn')!.addEventListener('click', exportPdf);
 
   if (elements.nodesDataset) {
     elements.nodesDataset.addEventListener('change', async () => {
       try {
-        await loadNodeFilterOptions(elements.nodesDataset.value, false);
+        await loadNodeFilterOptions(elements.nodesDataset!.value, false);
         await loadNodeTenderData();
       } catch (error) {
         console.error('Failed to refresh nodes dataset selection:', error);
@@ -556,7 +589,7 @@ function setupSliders() {
   });
 }
 
-async function loadPriceData(year) {
+async function loadPriceData(year: number) {
   elements.loadingState.style.display = 'flex';
   elements.resultsContainer.style.display = 'none';
   setFcrVisualStates('loading', 'Laster prisdata...');
@@ -578,7 +611,7 @@ async function loadPriceData(year) {
       volume: Number(row.volumeMw) || 0
     }))
     .filter(row => !Number.isNaN(row.timestamp.getTime()))
-    .sort((a, b) => a.timestamp - b.timestamp);
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
   elements.loadingState.style.display = 'none';
   elements.resultsContainer.style.display = 'block';
@@ -590,7 +623,7 @@ async function loadPriceData(year) {
 async function calculate() {
   if (isCalculating) return;
   isCalculating = true;
-  const calculateBtn = document.getElementById('calculateBtn');
+  const calculateBtn = document.getElementById('calculateBtn') as HTMLButtonElement | null;
   if (calculateBtn) calculateBtn.disabled = true;
 
   try {
@@ -610,7 +643,7 @@ async function calculate() {
       configValues.socMax
     );
 
-    const profileName = document.querySelector('input[name="profile"]').value;
+    const profileName = (document.querySelector('input[name="profile"]') as HTMLInputElement).value;
     const hours = parseInt(elements.simHours.value);
     const seed = parseInt(elements.seed.value);
     const year = parseInt(elements.year.value);
@@ -619,7 +652,7 @@ async function calculate() {
     showStatus('Simulerer frekvens', 'info');
     await new Promise(r => setTimeout(r, 10));
 
-    let workerResult;
+    let workerResult: WorkerPayload;
     try {
       workerResult = await runFcrSimulationInWorker({
         year,
@@ -654,7 +687,7 @@ async function calculate() {
       };
     }
 
-    const result = workerResult.result;
+    const result: RevenueResult & { freqSummary?: FrequencySummary } = workerResult.result;
     result.freqSummary = workerResult.summary;
 
     showStatus('Simulering fullført', 'success');
@@ -671,7 +704,7 @@ async function calculate() {
   }
 }
 
-function displayResults(result, showSoc, showFreq) {
+function displayResults(result: RevenueResult & { freqSummary?: FrequencySummary }, showSoc: boolean, showFreq: boolean) {
   elements.totalRevenue.textContent = `€${result.totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   elements.availableHours.textContent = `${result.availableHours.toLocaleString()} / ${result.totalHours.toLocaleString()}`;
   elements.availability.textContent = `${result.availabilityPct.toFixed(1)}%`;
@@ -705,8 +738,8 @@ function displayResults(result, showSoc, showFreq) {
   }
 }
 
-function aggregateMonthly(hourlyData) {
-  const byMonth = new Map();
+function aggregateMonthly(hourlyData: HourlyRevenueRow[]): MonthlyAggregate[] {
+  const byMonth = new Map<string, { revenue: number; hours: number; priceSum: number }>();
 
   for (const row of hourlyData) {
     const date = new Date(row.timestamp);
@@ -716,7 +749,7 @@ function aggregateMonthly(hourlyData) {
       byMonth.set(monthKey, { revenue: 0, hours: 0, priceSum: 0 });
     }
 
-    const m = byMonth.get(monthKey);
+    const m = byMonth.get(monthKey)!;
     m.revenue += row.revenue;
     m.hours++;
     m.priceSum += row.price;
@@ -730,7 +763,7 @@ function aggregateMonthly(hourlyData) {
   }));
 }
 
-function updateMonthlyChart(monthly) {
+function updateMonthlyChart(monthly: MonthlyAggregate[]) {
   if (!Array.isArray(monthly) || monthly.length === 0) {
     if (charts.monthly) {
       charts.monthly.destroy();
@@ -740,7 +773,7 @@ function updateMonthlyChart(monthly) {
     return;
   }
 
-  const ctx = document.getElementById('monthlyChart').getContext('2d');
+  const ctx = (document.getElementById('monthlyChart') as HTMLCanvasElement).getContext('2d')!;
   if (charts.monthly) charts.monthly.destroy();
 
   charts.monthly = new Chart(ctx, {
@@ -764,7 +797,7 @@ function updateMonthlyChart(monthly) {
         y: {
           beginAtZero: true,
           ticks: {
-            callback: v => `€${v.toLocaleString()}`
+            callback: v => `€${(v as number).toLocaleString()}`
           }
         }
       }
@@ -773,7 +806,7 @@ function updateMonthlyChart(monthly) {
   setChartState('monthlyChart', 'ready', '');
 }
 
-function updatePriceChart(hourlyData) {
+function updatePriceChart(hourlyData: HourlyRevenueRow[]) {
   const prices = hourlyData.map(h => h.price);
   if (prices.length === 0) {
     if (charts.price) {
@@ -784,12 +817,12 @@ function updatePriceChart(hourlyData) {
     return;
   }
 
-  const ctx = document.getElementById('priceChart').getContext('2d');
+  const ctx = (document.getElementById('priceChart') as HTMLCanvasElement).getContext('2d')!;
   const min = Math.min(...prices);
   const max = Math.max(...prices);
   const binCount = 50;
-  const bins = new Array(binCount).fill(0);
-  let labels = [];
+  const bins = new Array<number>(binCount).fill(0);
+  let labels: string[];
 
   if (max === min) {
     bins[0] = prices.length;
@@ -836,7 +869,7 @@ function updatePriceChart(hourlyData) {
   setChartState('priceChart', 'ready', '');
 }
 
-function updateSocChart(hourlyData) {
+function updateSocChart(hourlyData: HourlyRevenueRow[]) {
   const dataWithSoc = hourlyData.filter(h => h.socStart !== null);
   if (dataWithSoc.length === 0) {
     if (charts.soc) {
@@ -847,7 +880,7 @@ function updateSocChart(hourlyData) {
     return;
   }
 
-  const ctx = document.getElementById('socChart').getContext('2d');
+  const ctx = (document.getElementById('socChart') as HTMLCanvasElement).getContext('2d')!;
   if (charts.soc) charts.soc.destroy();
 
   const socMin = parseInt(elements.socMin.value);
@@ -860,7 +893,7 @@ function updateSocChart(hourlyData) {
       datasets: [
         {
           label: 'SOC (%)',
-          data: dataWithSoc.map(h => h.socStart * 100),
+          data: dataWithSoc.map(h => h.socStart! * 100),
           borderColor: '#60a5fa',
           backgroundColor: 'rgba(96, 165, 250, 0.1)',
           fill: true,
@@ -906,7 +939,7 @@ function updateSocChart(hourlyData) {
   setChartState('socChart', 'ready', '');
 }
 
-function updateFreqChart(summary) {
+function updateFreqChart(summary: FrequencySummary) {
   if (!summary || !Array.isArray(summary.histogramLabels) || !Array.isArray(summary.histogram) || summary.histogram.length === 0) {
     if (charts.freq) {
       charts.freq.destroy();
@@ -916,7 +949,7 @@ function updateFreqChart(summary) {
     return;
   }
 
-  const ctx = document.getElementById('freqChart').getContext('2d');
+  const ctx = (document.getElementById('freqChart') as HTMLCanvasElement).getContext('2d')!;
   const labels = summary.histogramLabels;
   const bins = summary.histogram;
 
@@ -960,7 +993,7 @@ function updateFreqChart(summary) {
   setChartState('freqChart', 'ready', '');
 }
 
-function updateSummaryTable(monthly) {
+function updateSummaryTable(monthly: MonthlyAggregate[]) {
   if (!Array.isArray(monthly) || monthly.length === 0) {
     elements.summaryTable.innerHTML = '';
     setTableState('summaryTable', 'empty', 'Ingen rader å vise.');
@@ -1045,10 +1078,10 @@ async function exportPdf() {
       year: parseInt(year)
     },
     metrics: {
-      totalRevenue: elements.totalRevenue.textContent,
-      availableHours: elements.availableHours.textContent,
-      availability: elements.availability.textContent,
-      avgPrice: elements.avgPrice.textContent
+      totalRevenue: elements.totalRevenue.textContent || '',
+      availableHours: elements.availableHours.textContent || '',
+      availability: elements.availability.textContent || '',
+      avgPrice: elements.avgPrice.textContent || ''
     }
   };
 
@@ -1060,16 +1093,16 @@ async function exportPdf() {
   }
 }
 
-function showStatus(message, type) {
+function showStatus(message: string, type: string) {
   elements.statusMessage.textContent = message;
   elements.statusMessage.className = `status-message ${type}`;
 }
 
-const popoverEl = document.getElementById('popover');
-let activePopoverBtn = null;
+const popoverEl = document.getElementById('popover')!;
+let activePopoverBtn: HTMLElement | null = null;
 
-function showPopover(btn) {
-  const helpId = 'help-' + btn.dataset.help;
+function showPopover(btn: HTMLElement) {
+  const helpId = 'help-' + (btn as HTMLElement & { dataset: { help: string } }).dataset.help;
   const helpEl = document.getElementById(helpId);
   if (!helpEl) return;
 
@@ -1086,7 +1119,7 @@ function showPopover(btn) {
   const spaceAbove = btnRect.top;
   const placeAbove = spaceAbove >= popRect.height + gap;
 
-  let top;
+  let top: number;
   if (placeAbove) {
     top = btnRect.top - popRect.height - gap;
     popoverEl.classList.remove('arrow-top');
@@ -1115,7 +1148,7 @@ function hidePopover() {
   activePopoverBtn = null;
 }
 
-document.querySelectorAll('.info-btn').forEach(btn => {
+document.querySelectorAll<HTMLButtonElement>('.info-btn').forEach(btn => {
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1128,7 +1161,7 @@ document.querySelectorAll('.info-btn').forEach(btn => {
 });
 
 document.addEventListener('click', (e) => {
-  if (activePopoverBtn && !popoverEl.contains(e.target) && !e.target.classList.contains('info-btn')) {
+  if (activePopoverBtn && !popoverEl.contains(e.target as Node) && !(e.target as HTMLElement).classList.contains('info-btn')) {
     hidePopover();
   }
 });

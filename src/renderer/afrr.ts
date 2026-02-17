@@ -1,9 +1,87 @@
-function toFiniteNumber(value) {
+export interface AfrrCalculationParams {
+  year: number;
+  afrrRows: AfrrInputRow[];
+  spotRows: SpotInputRow[];
+  solarRows: SolarInputRow[];
+  powerMw: number;
+  eurToNok?: number;
+  minBidMw?: number;
+  activationMinPct?: number;
+  activationMaxPct?: number;
+  seed?: number;
+}
+
+interface AfrrInputRow {
+  timestamp?: number;
+  marketPriceEurMw?: number;
+  contractedPriceEurMw?: number;
+  activationPriceEurMwh?: number;
+}
+
+interface SpotInputRow {
+  timestamp?: number;
+  spotPriceEurMwh?: number;
+}
+
+interface SolarInputRow {
+  timestamp?: number;
+  production?: number;
+}
+
+export interface AfrrHourlyRow {
+  timestamp: number;
+  solarProductionMw: number;
+  bidVolumeMw: number;
+  afrrPriceEurMw: number;
+  afrrPriceNokMw: number;
+  spotPriceEurMwh: number;
+  spotPriceNokMwh: number;
+  activationPct: number;
+  activatedEnergyMwh: number;
+  solarCurtailmentMwh: number;
+  solarRevenueNok: number;
+  capacityRevenueNok: number;
+  curtailmentCostNok: number;
+  afrrRevenueNok: number;
+  totalRevenueNok: number;
+  hasBid: boolean;
+}
+
+export interface AfrrMonthlyRow {
+  month: string;
+  totalRevenueNok: number;
+  solarRevenueNok: number;
+  afrrRevenueNok: number;
+  capacityRevenueNok: number;
+  curtailmentCostNok: number;
+  bidHours: number;
+  hours: number;
+  afrrPriceSumNokMw: number;
+  avgAfrrPriceNokMw: number;
+}
+
+export interface AfrrYearlyResult {
+  year: number;
+  totalHours: number;
+  bidHours: number;
+  totalRevenueNok: number;
+  totalSolarRevenueNok: number;
+  totalAfrrRevenueNok: number;
+  totalCapacityRevenueNok: number;
+  totalCurtailmentCostNok: number;
+  avgBidVolumeMw: number;
+  avgActivationPct: number;
+  avgAfrrPriceNokMw: number;
+  hourlyData: AfrrHourlyRow[];
+  monthly: AfrrMonthlyRow[];
+}
+
+function toFiniteNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function createRng(seed) {
+function createRng(seed: number): () => number {
   let state = Number.isFinite(seed) ? Math.floor(seed) : 42;
   return function nextRandom() {
     state = (state * 1664525 + 1013904223) % 4294967296;
@@ -11,19 +89,19 @@ function createRng(seed) {
   };
 }
 
-function getHoursInYear(year) {
+function getHoursInYear(year: number): number {
   const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
   return isLeapYear ? 8784 : 8760;
 }
 
-function buildSolarCapacityFactors(solarRows, totalHours) {
+function buildSolarCapacityFactors(solarRows: SolarInputRow[], totalHours: number): number[] {
   if (!Array.isArray(solarRows) || solarRows.length === 0 || totalHours <= 0) {
     return new Array(totalHours).fill(0);
   }
 
   const production = solarRows
     .map((row) => toFiniteNumber(row.production))
-    .filter((value) => value !== null)
+    .filter((value): value is number => value !== null)
     .sort((a, b) => a - b);
 
   const maxProduction = production.length > 0 ? production[production.length - 1] : 0;
@@ -46,8 +124,8 @@ function buildSolarCapacityFactors(solarRows, totalHours) {
   });
 }
 
-function aggregateMonthly(hourlyData) {
-  const byMonth = new Map();
+function aggregateMonthly(hourlyData: AfrrHourlyRow[]): AfrrMonthlyRow[] {
+  const byMonth = new Map<string, AfrrMonthlyRow>();
 
   for (const row of hourlyData) {
     const month = new Date(row.timestamp).toISOString().slice(0, 7);
@@ -62,10 +140,11 @@ function aggregateMonthly(hourlyData) {
         bidHours: 0,
         hours: 0,
         afrrPriceSumNokMw: 0,
+        avgAfrrPriceNokMw: 0,
       });
     }
 
-    const item = byMonth.get(month);
+    const item = byMonth.get(month)!;
     item.totalRevenueNok += row.totalRevenueNok;
     item.solarRevenueNok += row.solarRevenueNok;
     item.afrrRevenueNok += row.afrrRevenueNok;
@@ -85,7 +164,7 @@ function aggregateMonthly(hourlyData) {
   }));
 }
 
-function resolveAfrrPriceEurMw(row) {
+function resolveAfrrPriceEurMw(row: AfrrInputRow | null): number {
   const marketPrice = toFiniteNumber(row?.marketPriceEurMw);
   if (marketPrice !== null && marketPrice > 0) return marketPrice;
 
@@ -95,9 +174,9 @@ function resolveAfrrPriceEurMw(row) {
   return 0;
 }
 
-function resolveSpotPriceEurMwh(row, explicitSpotPrice) {
-  if (Number.isFinite(explicitSpotPrice) && explicitSpotPrice > 0) {
-    return explicitSpotPrice;
+function resolveSpotPriceEurMwh(row: AfrrInputRow | null, explicitSpotPrice?: number): number {
+  if (Number.isFinite(explicitSpotPrice) && explicitSpotPrice! > 0) {
+    return explicitSpotPrice!;
   }
 
   const activationPrice = toFiniteNumber(row?.activationPriceEurMwh);
@@ -117,7 +196,7 @@ export function calculateAfrrYearlyRevenue({
   activationMinPct = 0,
   activationMaxPct = 100,
   seed = 42,
-}) {
+}: AfrrCalculationParams): AfrrYearlyResult {
   const safeYear = Number(year);
   const safePowerMw = Number(powerMw);
   const safeEurToNok = Number(eurToNok);
@@ -144,8 +223,8 @@ export function calculateAfrrYearlyRevenue({
 
   const totalHours = getHoursInYear(safeYear);
   const startTs = Date.UTC(safeYear, 0, 1, 0, 0, 0, 0);
-  const afrrByHour = new Map();
-  const spotByHour = new Map();
+  const afrrByHour = new Map<number, AfrrInputRow>();
+  const spotByHour = new Map<number, number>();
   const rng = createRng(Number(seed) || 42);
 
   (Array.isArray(afrrRows) ? afrrRows : []).forEach((row) => {
@@ -162,7 +241,7 @@ export function calculateAfrrYearlyRevenue({
   });
 
   const solarCapacityFactors = buildSolarCapacityFactors(solarRows, totalHours);
-  const hourlyData = [];
+  const hourlyData: AfrrHourlyRow[] = [];
 
   let totalSolarRevenueNok = 0;
   let totalAfrrRevenueNok = 0;

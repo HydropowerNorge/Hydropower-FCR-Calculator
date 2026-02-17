@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.main.json" },
+    { "path": "./tsconfig.renderer.json" }
+  ]
+}

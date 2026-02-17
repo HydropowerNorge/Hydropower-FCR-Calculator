@@ -32,6 +32,9 @@ npm-debug.log*
 *.tmp
 *.temp
 
+# TypeScript build info
+*.tsbuildinfo
+
 # Large local datasets and analysis artifacts
 *.csv
 *.xlsx

@@ -1,5 +1,57 @@
+export interface FrequencyData {
+  frequencies: Float64Array;
+  summary: FrequencySummary;
+  startTime: Date;
+  hours: number;
+}
+
+export interface FrequencySummary {
+  meanHz: number;
+  minHz: number;
+  maxHz: number;
+  pctOutsideBand: number;
+  pctUnder: number;
+  pctOver: number;
+  histogram: number[];
+  histogramLabels: string[];
+}
+
+export interface SocHourlyResult {
+  hour: Date;
+  socStart: number;
+  socEnd: number;
+  socChange: number;
+  unavailableSeconds: number;
+  available: boolean;
+}
+
+export interface HourlyRevenueRow {
+  timestamp: Date;
+  price: number;
+  available: boolean;
+  revenue: number;
+  socStart: number | null;
+  socEnd: number | null;
+}
+
+export interface RevenueResult {
+  hourlyData: HourlyRevenueRow[];
+  totalRevenue: number;
+  availableHours: number;
+  totalHours: number;
+  availabilityPct: number;
+  avgPrice: number;
+  freqSummary?: FrequencySummary;
+}
+
 export class BatteryConfig {
-  constructor(powerMw, capacityMwh, efficiency = 0.90, socMin = 0.20, socMax = 0.80) {
+  powerMw: number;
+  capacityMwh: number;
+  efficiency: number;
+  socMin: number;
+  socMax: number;
+
+  constructor(powerMw: number, capacityMwh: number, efficiency = 0.90, socMin = 0.20, socMax = 0.80) {
     this.powerMw = powerMw;
     this.capacityMwh = capacityMwh;
     this.efficiency = efficiency;
@@ -13,7 +65,7 @@ export class BatteryConfig {
 // - At 49.9 Hz: full discharge (+powerMw)
 // - At 50.0 Hz: zero activation
 // - At 50.1 Hz: full charge (-powerMw)
-export function calculateFcrActivation(frequency, powerMw) {
+export function calculateFcrActivation(frequency: number, powerMw: number): number {
   if (frequency <= 49.9) return powerMw;
   if (frequency >= 50.1) return -powerMw;
   return (50.0 - frequency) / 0.1 * powerMw;
@@ -22,7 +74,7 @@ export function calculateFcrActivation(frequency, powerMw) {
 // Simulate battery SOC evolution using 1-second frequency data with NEM.
 // NEM (Normal State Energy Management) adds power offset to restore SOC
 // while still participating in FCR when frequency is in normal band.
-export function simulateSocHourly(freqData, config, startSoc = 0.5) {
+export function simulateSocHourly(freqData: FrequencyData, config: BatteryConfig, startSoc = 0.5): SocHourlyResult[] {
   const minEnergy = config.capacityMwh * config.socMin;
   const maxEnergy = config.capacityMwh * config.socMax;
 
@@ -43,7 +95,7 @@ export function simulateSocHourly(freqData, config, startSoc = 0.5) {
   const nHours = Math.floor(nSamples / 3600);
   const startTimeMs = freqData.startTime.getTime();
 
-  const results = [];
+  const results: SocHourlyResult[] = [];
   let currentEnergy = config.capacityMwh * startSoc;
   const sqrtEfficiency = Math.sqrt(config.efficiency);
 
@@ -150,14 +202,18 @@ export function simulateSocHourly(freqData, config, startSoc = 0.5) {
 }
 
 // Calculate revenue by combining price data with availability from SOC simulation
-export function calculateRevenue(priceData, socData, config) {
+export function calculateRevenue(
+  priceData: { timestamp: Date; price: number }[],
+  socData: SocHourlyResult[],
+  config: BatteryConfig,
+): RevenueResult {
   // Create lookup map for SOC data by hour
-  const socByHour = new Map();
+  const socByHour = new Map<number, SocHourlyResult>();
   for (const row of socData) {
     socByHour.set(row.hour.getTime(), row);
   }
 
-  const hourlyResults = [];
+  const hourlyResults: HourlyRevenueRow[] = [];
   let totalRevenue = 0;
   let availableHours = 0;
 
@@ -195,4 +251,3 @@ export function calculateRevenue(priceData, socData, config) {
     avgPrice
   };
 }
-
