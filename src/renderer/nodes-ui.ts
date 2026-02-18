@@ -69,6 +69,18 @@ function normalizeTimestamp(value: unknown): number | null {
   return numeric < 1_000_000_000_000 ? Math.round(numeric * 1000) : Math.round(numeric);
 }
 
+function getTenderYearSuffix(tender: NodeTenderRow | null): string {
+  const startTs = normalizeTimestamp(tender?.periodStartTs);
+  const endTs = normalizeTimestamp(tender?.periodEndTs);
+  if (!startTs || !endTs || startTs >= endTs) return 'ukjent_aar';
+
+  const startYear = new Date(startTs).getUTCFullYear();
+  const endYear = new Date(endTs - 1).getUTCFullYear();
+
+  if (!Number.isInteger(startYear) || !Number.isInteger(endYear)) return 'ukjent_aar';
+  return startYear === endYear ? String(startYear) : `${startYear}_${endYear}`;
+}
+
 function formatDateTime(ts: number | null): string {
   if (!ts) return 'Ikke oppgitt';
   return new Intl.DateTimeFormat('nb-NO', {
@@ -389,8 +401,8 @@ export function createNodesUI(): { init: () => Promise<void> } {
     }));
 
     const tender = getSelectedTender();
-    const tenderName = (tender?.name || 'nodes').replace(/\s+/g, '_');
-    await window.electronAPI.saveFile(csvContent, `nodes_inntekt_${tenderName}.csv`);
+    const yearSuffix = getTenderYearSuffix(tender);
+    await window.electronAPI.saveFile(csvContent, `nodes_inntekt_${yearSuffix}.csv`);
   }
 
   async function init(): Promise<void> {

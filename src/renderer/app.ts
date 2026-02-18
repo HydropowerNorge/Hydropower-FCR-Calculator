@@ -1132,7 +1132,10 @@ async function exportYearlyCombinedCsv(): Promise<void> {
     };
   }));
 
-  await window.electronAPI.saveFile(csvContent, `aarskalkyle_kombinert_${result.fcrYear}.csv`);
+  const yearSuffix = result.fcrYear === result.afrrYear
+    ? `${result.fcrYear}`
+    : `${result.fcrYear}_${result.afrrYear}`;
+  await window.electronAPI.saveFile(csvContent, `aarskalkyle_kombinert_${yearSuffix}.csv`);
 }
 
 async function loadPriceData(year: number): Promise<void> {
@@ -1598,18 +1601,13 @@ async function exportCsv(): Promise<void> {
   const result = currentResult;
 
   const monthlyRows = aggregateFcrMonthlyForCsv(result.hourlyData);
-  let accumulatedRevenueEur = 0;
   const csvContent = Papa.unparse(monthlyRows.map((row) => {
-    accumulatedRevenueEur += row.revenueEur;
     return {
       'Måned': row.monthLabel,
       'Timer totalt': row.totalHours,
-      'Timer tilgjengelig': row.availableHours,
-      'Timer utilgjengelig': row.unavailableHours,
-      'Snittpris (EUR/MW)': row.avgPriceEurMw.toFixed(4),
-      'Inntekt FCR-N (EUR)': row.revenueEur.toFixed(2),
-      'Akkumulert FCR-N (EUR)': accumulatedRevenueEur.toFixed(2),
-      'Årssum FCR-N (EUR)': result.totalRevenue.toFixed(2),
+      'Timer deltagelse': row.availableHours,
+      'Snittpris (EUR/MW)': row.avgPriceEurMw.toFixed(0),
+      'Inntekt FCR-N (EUR)': row.revenueEur.toFixed(0),
     };
   }));
 
