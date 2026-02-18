@@ -1123,16 +1123,12 @@ async function exportYearlyCombinedCsv(): Promise<void> {
     accumulatedTotalEur += row.totalEur;
     return {
       'Måned': formatShortMonthLabelNb(row.month),
-      'FCR-N (EUR)': row.fcrEur.toFixed(2),
-      'aFRR (EUR)': row.afrrEur.toFixed(2),
-      'Nodes/Euroflex (EUR)': row.nodesEur.toFixed(2),
-      'Sum reservemarkeder (EUR)': row.totalEur.toFixed(2),
-      'Akkumulert sum (EUR)': accumulatedTotalEur.toFixed(2),
-      'Årssum reservemarkeder (EUR)': result.totalEur.toFixed(2),
-      'Konservativ referanse (EUR)': CONSERVATIVE_TOTAL_EUR.toFixed(2),
-      'Avvik årssum mot referanse (EUR)': (result.totalEur - CONSERVATIVE_TOTAL_EUR).toFixed(2),
+      'FCR-N (EUR)': row.fcrEur.toFixed(0),
+      'aFRR (EUR)': row.afrrEur.toFixed(0),
+      'Nodes/Euroflex (EUR)': row.nodesEur.toFixed(0),
+      'Sum reservemarkeder (EUR)': row.totalEur.toFixed(0),
+      'Akkumulert sum (EUR)': accumulatedTotalEur.toFixed(0),
       'År (FCR/aFRR)': result.fcrYear,
-      'Nodes-tender': result.nodesTenderName,
     };
   }));
 
