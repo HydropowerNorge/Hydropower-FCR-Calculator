@@ -3,6 +3,7 @@ import Papa from 'papaparse';
 import { calculateAfrrYearlyRevenue } from './afrr';
 import type { AfrrYearlyResult, AfrrMonthlyRow } from './afrr';
 import { showStatusMessage } from './status-message';
+import { buildExcelFileBytes } from './excel-export';
 
 const MONTH_NAMES_NB_FULL = ['Januar', 'Februar', 'Mars', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Desember'];
 const HIDDEN_YEARS = new Set<number>([2021, 2026]);
@@ -51,6 +52,7 @@ function normalizeYearList(values: unknown): number[] {
 export function createAfrrUI(options: AfrrUIOptions = {}): {
   init: () => Promise<void>;
   exportCsv: () => Promise<void>;
+  exportExcel: () => Promise<void>;
   hasResult: () => boolean;
 } {
   const charts: {
@@ -332,30 +334,62 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
     const result = currentResult;
 
     let accumulatedAfrrIncomeEur = 0;
+    const exportRows = result.monthly
+      .slice()
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .map((row) => {
+        accumulatedAfrrIncomeEur += row.afrrIncomeEur;
+        const controlledTotal = row.spotIncomeEur + row.afrrIncomeEur - row.activationCostEur;
+        return {
+          'Måned': formatYearMonthLabelNb(row.month),
+          'Timer totalt': row.hours,
+          'Budtimer': row.bidHours,
+          'Snitt aFRR-pris (EUR/MW)': row.avgAfrrPriceEurMw.toFixed(4),
+          'Spotinntekt (EUR)': row.spotIncomeEur.toFixed(2),
+          'aFRR kapasitetsinntekt (EUR)': row.afrrIncomeEur.toFixed(2),
+          'Aktiveringskostnad (EUR)': row.activationCostEur.toFixed(2),
+          'Sum inntekt (EUR)': row.totalIncomeEur.toFixed(2),
+          'Kontrollsum spot + aFRR - aktivering (EUR)': controlledTotal.toFixed(2),
+          'Akkumulert aFRR-kapasitet (EUR)': accumulatedAfrrIncomeEur.toFixed(2),
+          'Årssum aFRR-kapasitet (EUR)': result.totalAfrrIncomeEur.toFixed(2),
+          'Årssum total inntekt (EUR)': result.totalIncomeEur.toFixed(2),
+        };
+      });
+
+    const csvContent = Papa.unparse(exportRows);
+    await window.electronAPI.saveFile(csvContent, `afrr_inntekt_${result.year}.csv`);
+  }
+
+  async function exportExcel(): Promise<void> {
+    if (!currentResult) return;
+    const result = currentResult;
+
+    let accumulatedAfrrIncomeEur = 0;
     const monthlyRows = result.monthly
       .slice()
       .sort((a, b) => a.month.localeCompare(b.month));
 
-    const csvContent = Papa.unparse(monthlyRows.map((row) => {
+    const excelRows = monthlyRows.map((row) => {
       accumulatedAfrrIncomeEur += row.afrrIncomeEur;
       const controlledTotal = row.spotIncomeEur + row.afrrIncomeEur - row.activationCostEur;
       return {
         'Måned': formatYearMonthLabelNb(row.month),
         'Timer totalt': row.hours,
         'Budtimer': row.bidHours,
-        'Snitt aFRR-pris (EUR/MW)': row.avgAfrrPriceEurMw.toFixed(4),
-        'Spotinntekt (EUR)': row.spotIncomeEur.toFixed(2),
-        'aFRR kapasitetsinntekt (EUR)': row.afrrIncomeEur.toFixed(2),
-        'Aktiveringskostnad (EUR)': row.activationCostEur.toFixed(2),
-        'Sum inntekt (EUR)': row.totalIncomeEur.toFixed(2),
-        'Kontrollsum spot + aFRR - aktivering (EUR)': controlledTotal.toFixed(2),
-        'Akkumulert aFRR-kapasitet (EUR)': accumulatedAfrrIncomeEur.toFixed(2),
-        'Årssum aFRR-kapasitet (EUR)': result.totalAfrrIncomeEur.toFixed(2),
-        'Årssum total inntekt (EUR)': result.totalIncomeEur.toFixed(2),
+        'Snitt aFRR-pris (EUR/MW)': Number(row.avgAfrrPriceEurMw.toFixed(4)),
+        'Spotinntekt (EUR)': Number(row.spotIncomeEur.toFixed(2)),
+        'aFRR kapasitetsinntekt (EUR)': Number(row.afrrIncomeEur.toFixed(2)),
+        'Aktiveringskostnad (EUR)': Number(row.activationCostEur.toFixed(2)),
+        'Sum inntekt (EUR)': Number(row.totalIncomeEur.toFixed(2)),
+        'Kontrollsum spot + aFRR - aktivering (EUR)': Number(controlledTotal.toFixed(2)),
+        'Akkumulert aFRR-kapasitet (EUR)': Number(accumulatedAfrrIncomeEur.toFixed(2)),
+        'Årssum aFRR-kapasitet (EUR)': Number(result.totalAfrrIncomeEur.toFixed(2)),
+        'Årssum total inntekt (EUR)': Number(result.totalIncomeEur.toFixed(2)),
       };
-    }));
+    });
 
-    await window.electronAPI.saveFile(csvContent, `afrr_inntekt_${result.year}.csv`);
+    const excelBytes = buildExcelFileBytes(excelRows, `aFRR ${result.year}`);
+    await window.electronAPI.saveExcel(excelBytes, `afrr_inntekt_${result.year}.xlsx`);
   }
 
   async function init(): Promise<void> {
@@ -396,6 +430,7 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
   return {
     init,
     exportCsv,
+    exportExcel,
     hasResult: () => currentResult !== null,
   };
 }

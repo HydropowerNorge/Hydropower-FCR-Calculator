@@ -93,6 +93,7 @@ export interface PdfExportData {
 
 export interface ElectronAPI {
   saveFile(data: string, defaultName: string): Promise<string | null>;
+  saveExcel(data: number[], defaultName: string): Promise<string | null>;
   savePdf(pdfData: PdfExportData, defaultName: string): Promise<string | null>;
   loadPriceData(year: number, area?: string): Promise<FcrPriceRow[]>;
   getAvailableYears(area?: string): Promise<number[]>;

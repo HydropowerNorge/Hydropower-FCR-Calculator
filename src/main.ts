@@ -442,6 +442,20 @@ function sanitizeDefaultName(defaultName: unknown, fallbackName: string): string
   return path.basename(defaultName.trim());
 }
 
+function normalizeByteArray(data: unknown): Uint8Array | null {
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (!Array.isArray(data)) return null;
+
+  const bytes = new Uint8Array(data.length);
+  for (let i = 0; i < data.length; i++) {
+    const value = Number(data[i]);
+    if (!Number.isFinite(value)) return null;
+    bytes[i] = Math.max(0, Math.min(255, Math.round(value)));
+  }
+  return bytes;
+}
+
 function logRendererDiagnostics(rendererPath: string): void {
   console.log('[main] Loading renderer file:', rendererPath);
   console.log('[main] Renderer file exists:', fs.existsSync(rendererPath));
@@ -532,6 +546,23 @@ ipcMain.handle('file:save', async (_event: IpcMainInvokeEvent, data: unknown, de
     await fs.promises.writeFile(filePath, csvContent, 'utf-8');
     return filePath;
   }
+  return null;
+});
+
+ipcMain.handle('file:saveExcel', async (_event: IpcMainInvokeEvent, data: unknown, defaultName: unknown) => {
+  const safeDefaultName = sanitizeDefaultName(defaultName, 'export.xlsx');
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    defaultPath: safeDefaultName,
+    filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+  });
+
+  if (!canceled && filePath) {
+    const bytes = normalizeByteArray(data);
+    if (!bytes) return null;
+    await fs.promises.writeFile(filePath, Buffer.from(bytes));
+    return filePath;
+  }
+
   return null;
 });
 

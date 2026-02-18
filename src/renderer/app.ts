@@ -10,6 +10,7 @@ import { calculateNodeYearlyIncome } from './nodes';
 import { createAfrrUI } from './afrr-ui';
 import { createNodesUI } from './nodes-ui';
 import { showStatusMessage } from './status-message';
+import { buildExcelFileBytes } from './excel-export';
 
 console.log('[app] Modules imported successfully');
 console.log('[app] electronAPI available:', !!window.electronAPI);
@@ -149,6 +150,7 @@ const elements = {
   yearlyCombinedNodesCard: document.getElementById('yearlyCombinedNodesCard') as HTMLElement | null,
   yearlyCombinedSummaryTable: document.getElementById('yearlyCombinedSummaryTable')!.querySelector('tbody') as HTMLTableSectionElement,
   sidebarExportCsvBtn: document.getElementById('sidebarExportCsvBtn') as HTMLButtonElement | null,
+  sidebarExportExcelBtn: document.getElementById('sidebarExportExcelBtn') as HTMLButtonElement | null,
 };
 
 Chart.defaults.color = '#aaa';
@@ -296,11 +298,22 @@ function getCsvExportButtonLabel(tab: string): string {
   return 'Eksporter CSV';
 }
 
+function getExcelExportButtonLabel(tab: string): string {
+  if (tab === 'fcr') return 'Eksporter Excel (FCR-N)';
+  if (tab === 'afrr') return 'Eksporter Excel (aFRR)';
+  if (tab === 'nodes') return 'Eksporter Excel (Nodes)';
+  if (tab === 'yearlyCombined') return 'Eksporter Excel (Årskalkyle)';
+  return 'Eksporter Excel';
+}
+
 function updateSidebarCsvExportState(): void {
-  const button = elements.sidebarExportCsvBtn;
-  if (!button) return;
+  const csvButton = elements.sidebarExportCsvBtn;
+  const excelButton = elements.sidebarExportExcelBtn;
+  if (!csvButton && !excelButton) return;
+
   const activeTab = getActiveMainTab();
-  const exportSection = button.closest('.sidebar-export') as HTMLElement | null;
+  const anchorButton = csvButton || excelButton;
+  const exportSection = anchorButton?.closest('.sidebar-export') as HTMLElement | null;
   const shouldShow = activeTab === 'fcr'
     || activeTab === 'afrr'
     || activeTab === 'nodes'
@@ -309,18 +322,27 @@ function updateSidebarCsvExportState(): void {
     exportSection.style.display = shouldShow ? '' : 'none';
   }
   if (!shouldShow) return;
-  button.textContent = getCsvExportButtonLabel(activeTab);
-  button.disabled = !canExportCsvForTab(activeTab);
+
+  const canExport = canExportCsvForTab(activeTab);
+  if (csvButton) {
+    csvButton.textContent = getCsvExportButtonLabel(activeTab);
+    csvButton.disabled = !canExport;
+  }
+  if (excelButton) {
+    excelButton.textContent = getExcelExportButtonLabel(activeTab);
+    excelButton.disabled = !canExport;
+  }
 }
 
 async function exportCsvForActiveTab(): Promise<void> {
-  const button = elements.sidebarExportCsvBtn;
-  if (!button || button.disabled) return;
+  const csvButton = elements.sidebarExportCsvBtn;
+  if (!csvButton || csvButton.disabled) return;
 
   const activeTab = getActiveMainTab();
-  button.disabled = true;
-  const previousLabel = button.textContent;
-  button.textContent = 'Eksporterer CSV...';
+  const previousLabel = csvButton.textContent;
+  if (elements.sidebarExportCsvBtn) elements.sidebarExportCsvBtn.disabled = true;
+  if (elements.sidebarExportExcelBtn) elements.sidebarExportExcelBtn.disabled = true;
+  csvButton.textContent = 'Eksporterer CSV...';
 
   try {
     if (activeTab === 'fcr') {
@@ -333,7 +355,33 @@ async function exportCsvForActiveTab(): Promise<void> {
       await exportYearlyCombinedCsv();
     }
   } finally {
-    button.textContent = previousLabel || 'Eksporter CSV';
+    csvButton.textContent = previousLabel || 'Eksporter CSV';
+    updateSidebarCsvExportState();
+  }
+}
+
+async function exportExcelForActiveTab(): Promise<void> {
+  const excelButton = elements.sidebarExportExcelBtn;
+  if (!excelButton || excelButton.disabled) return;
+
+  const activeTab = getActiveMainTab();
+  const previousLabel = excelButton.textContent;
+  if (elements.sidebarExportCsvBtn) elements.sidebarExportCsvBtn.disabled = true;
+  if (elements.sidebarExportExcelBtn) elements.sidebarExportExcelBtn.disabled = true;
+  excelButton.textContent = 'Eksporterer Excel...';
+
+  try {
+    if (activeTab === 'fcr') {
+      await exportExcel();
+    } else if (activeTab === 'afrr') {
+      await afrrUI.exportExcel();
+    } else if (activeTab === 'nodes') {
+      await nodesUI.exportExcel();
+    } else if (activeTab === 'yearlyCombined') {
+      await exportYearlyCombinedExcel();
+    }
+  } finally {
+    excelButton.textContent = previousLabel || 'Eksporter Excel';
     updateSidebarCsvExportState();
   }
 }
@@ -623,6 +671,7 @@ async function init(): Promise<void> {
   document.getElementById('exportPdfBtn')!.addEventListener('click', exportPdf);
   document.getElementById('calculateYearlyCombinedBtn')?.addEventListener('click', calculateYearlyCombined);
   elements.sidebarExportCsvBtn?.addEventListener('click', exportCsvForActiveTab);
+  elements.sidebarExportExcelBtn?.addEventListener('click', exportExcelForActiveTab);
   updateSidebarCsvExportState();
 }
 
@@ -1215,6 +1264,23 @@ async function calculateYearlyCombined(): Promise<void> {
   }
 }
 
+function buildYearlyCombinedExportRows(result: YearlyCombinedResult, includeNodes: boolean): Array<Record<string, string | number>> {
+  let accumulatedTotalEur = 0;
+  return result.monthly.map((row) => {
+    const effectiveTotalEur = row.fcrEur + row.afrrEur + (includeNodes ? row.nodesEur : 0);
+    accumulatedTotalEur += effectiveTotalEur;
+    return {
+      'Måned': formatShortMonthLabelNb(row.month),
+      'FCR-N (EUR)': Math.round(row.fcrEur),
+      'aFRR (EUR)': Math.round(row.afrrEur),
+      'Nodes/Euroflex (EUR)': Math.round(row.nodesEur),
+      'Sum reservemarkeder (EUR)': Math.round(effectiveTotalEur),
+      'Akkumulert sum (EUR)': Math.round(accumulatedTotalEur),
+      'År (FCR/aFRR)': result.fcrYear,
+    };
+  });
+}
+
 async function exportYearlyCombinedCsv(): Promise<void> {
   if (!currentYearlyCombinedResult) {
     showYearlyCombinedStatus('Beregn årlig total før eksport.', 'warning');
@@ -1223,25 +1289,29 @@ async function exportYearlyCombinedCsv(): Promise<void> {
 
   const result = currentYearlyCombinedResult;
   const includeNodes = isYearlyCombinedNodesIncluded();
-  let accumulatedTotalEur = 0;
-  const csvContent = Papa.unparse(result.monthly.map((row) => {
-    const effectiveTotalEur = row.fcrEur + row.afrrEur + (includeNodes ? row.nodesEur : 0);
-    accumulatedTotalEur += effectiveTotalEur;
-    return {
-      'Måned': formatShortMonthLabelNb(row.month),
-      'FCR-N (EUR)': row.fcrEur.toFixed(0),
-      'aFRR (EUR)': row.afrrEur.toFixed(0),
-      'Nodes/Euroflex (EUR)': row.nodesEur.toFixed(0),
-      'Sum reservemarkeder (EUR)': effectiveTotalEur.toFixed(0),
-      'Akkumulert sum (EUR)': accumulatedTotalEur.toFixed(0),
-      'År (FCR/aFRR)': result.fcrYear,
-    };
-  }));
+  const rows = buildYearlyCombinedExportRows(result, includeNodes);
+  const csvContent = Papa.unparse(rows);
 
   const yearSuffix = result.fcrYear === result.afrrYear
     ? `${result.fcrYear}`
     : `${result.fcrYear}_${result.afrrYear}`;
   await window.electronAPI.saveFile(csvContent, `aarskalkyle_kombinert_${yearSuffix}.csv`);
+}
+
+async function exportYearlyCombinedExcel(): Promise<void> {
+  if (!currentYearlyCombinedResult) {
+    showYearlyCombinedStatus('Beregn årlig total før eksport.', 'warning');
+    return;
+  }
+
+  const result = currentYearlyCombinedResult;
+  const includeNodes = isYearlyCombinedNodesIncluded();
+  const rows = buildYearlyCombinedExportRows(result, includeNodes);
+  const excelBytes = buildExcelFileBytes(rows, 'Årskalkyle');
+  const yearSuffix = result.fcrYear === result.afrrYear
+    ? `${result.fcrYear}`
+    : `${result.fcrYear}_${result.afrrYear}`;
+  await window.electronAPI.saveExcel(excelBytes, `aarskalkyle_kombinert_${yearSuffix}.xlsx`);
 }
 
 async function loadPriceData(year: number): Promise<void> {
@@ -1707,23 +1777,36 @@ function updateSummaryTable(monthly: MonthlyAggregate[]): void {
   setTableState('summaryTable', 'ready', '');
 }
 
+function buildFcrExportRows(result: RevenueResult): Array<Record<string, string | number>> {
+  const monthlyRows = aggregateFcrMonthlyForCsv(result.hourlyData);
+  return monthlyRows.map((row) => ({
+    'Måned': row.monthLabel,
+    'Timer totalt': row.totalHours,
+    'Timer deltagelse': row.availableHours,
+    'Snittpris (EUR/MW)': Math.round(row.avgPriceEurMw),
+    'Inntekt FCR-N (EUR)': Math.round(row.revenueEur),
+  }));
+}
+
 async function exportCsv(): Promise<void> {
   if (!currentResult) return;
   const result = currentResult;
 
-  const monthlyRows = aggregateFcrMonthlyForCsv(result.hourlyData);
-  const csvContent = Papa.unparse(monthlyRows.map((row) => {
-    return {
-      'Måned': row.monthLabel,
-      'Timer totalt': row.totalHours,
-      'Timer deltagelse': row.availableHours,
-      'Snittpris (EUR/MW)': row.avgPriceEurMw.toFixed(0),
-      'Inntekt FCR-N (EUR)': row.revenueEur.toFixed(0),
-    };
-  }));
+  const rows = buildFcrExportRows(result);
+  const csvContent = Papa.unparse(rows);
 
   const year = elements.year.value;
   await window.electronAPI.saveFile(csvContent, `fcr_inntekt_${year}.csv`);
+}
+
+async function exportExcel(): Promise<void> {
+  if (!currentResult) return;
+  const result = currentResult;
+
+  const rows = buildFcrExportRows(result);
+  const excelBytes = buildExcelFileBytes(rows, `FCR-N ${elements.year.value}`);
+  const year = elements.year.value;
+  await window.electronAPI.saveExcel(excelBytes, `fcr_inntekt_${year}.xlsx`);
 }
 
 async function exportPdf(): Promise<void> {

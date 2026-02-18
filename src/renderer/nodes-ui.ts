@@ -3,6 +3,7 @@ import { calculateNodeYearlyIncome } from './nodes';
 import type { NodeYearlyResult } from './nodes';
 import type { NodeTenderRow } from '../shared/electron-api';
 import { showStatusMessage } from './status-message';
+import { buildExcelFileBytes } from './excel-export';
 
 interface NodesElements {
   statusMessage: HTMLElement | null;
@@ -152,6 +153,7 @@ function estimateTenderHours(tender: NodeTenderRow): { eligible: number; total: 
 export function createNodesUI(options: NodesUIOptions = {}): {
   init: () => Promise<void>;
   exportCsv: () => Promise<void>;
+  exportExcel: () => Promise<void>;
   hasResult: () => boolean;
 } {
   const el: NodesElements = {
@@ -414,6 +416,37 @@ export function createNodesUI(options: NodesUIOptions = {}): {
     await window.electronAPI.saveFile(csvContent, `nodes_inntekt_${yearSuffix}.csv`);
   }
 
+  async function exportExcel(): Promise<void> {
+    if (!currentResult) return;
+    const result = currentResult;
+
+    const rowsByMonth = new Map(result.monthly.map((row) => [row.month, row]));
+    const hourlyIncomeNok = result.priceNokMwH * result.quantityMw;
+    let accumulatedIncomeNok = 0;
+
+    const excelRows = MONTH_SEQUENCE.map((month) => {
+      const row = rowsByMonth.get(month.key);
+      const eligibleHours = row?.eligibleHours ?? 0;
+      const incomeNok = row?.incomeNok ?? 0;
+      accumulatedIncomeNok += incomeNok;
+      return {
+        'Måned': month.label,
+        'Kvalifiserte timer': eligibleHours,
+        'Reservasjonspris (NOK/MW/h)': Number(result.priceNokMwH.toFixed(4)),
+        'Volum (MW)': Number(result.quantityMw.toFixed(4)),
+        'Timeinntekt (NOK/h)': Number(hourlyIncomeNok.toFixed(4)),
+        'Inntekt Nodes (NOK)': Number(incomeNok.toFixed(2)),
+        'Akkumulert Nodes (NOK)': Number(accumulatedIncomeNok.toFixed(2)),
+        'Årssum Nodes (NOK)': Number(result.totalIncomeNok.toFixed(2)),
+      };
+    });
+
+    const tender = getSelectedTender();
+    const yearSuffix = getTenderYearSuffix(tender);
+    const excelBytes = buildExcelFileBytes(excelRows, 'Nodes');
+    await window.electronAPI.saveExcel(excelBytes, `nodes_inntekt_${yearSuffix}.xlsx`);
+  }
+
   async function init(): Promise<void> {
     console.log('[nodes-ui] init() starting');
     el.statusMessage = document.getElementById('nodesStatusMessage');
@@ -487,6 +520,7 @@ export function createNodesUI(options: NodesUIOptions = {}): {
   return {
     init,
     exportCsv,
+    exportExcel,
     hasResult: () => currentResult !== null,
   };
 }

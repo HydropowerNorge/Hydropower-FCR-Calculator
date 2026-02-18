@@ -370,6 +370,8 @@ body {
 
 .sidebar-export {
   margin-top: auto;
+  display: grid;
+  gap: 8px;
   padding-top: 12px;
   border-top: 1px solid rgba(52, 90, 101, 0.45);
   position: sticky;

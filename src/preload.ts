@@ -59,6 +59,9 @@ const api: ElectronAPI = {
   saveFile(data: string, defaultName: string): Promise<string | null> {
     return tracedInvoke<string | null>('file:save', data, defaultName);
   },
+  saveExcel(data: number[], defaultName: string): Promise<string | null> {
+    return tracedInvoke<string | null>('file:saveExcel', data, defaultName);
+  },
   savePdf(pdfData, defaultName): Promise<string | null> {
     return tracedInvoke<string | null>('file:savePdf', pdfData, defaultName);
   },
