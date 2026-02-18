@@ -145,6 +145,7 @@ const elements = {
   yearlyCombinedFcrEur: document.getElementById('yearlyCombinedFcrEur')!,
   yearlyCombinedAfrrEur: document.getElementById('yearlyCombinedAfrrEur')!,
   yearlyCombinedNodesEur: document.getElementById('yearlyCombinedNodesEur')!,
+  yearlyCombinedNodesCard: document.getElementById('yearlyCombinedNodesCard') as HTMLElement | null,
   yearlyCombinedSummaryTable: document.getElementById('yearlyCombinedSummaryTable')!.querySelector('tbody') as HTMLTableSectionElement,
 };
 
@@ -258,6 +259,16 @@ function setYearlyCombinedVisualStates(state: string, message: string): void {
 function showYearlyCombinedStatus(message: string, type = 'info'): void {
   elements.yearlyCombinedStatusMessage.textContent = message;
   elements.yearlyCombinedStatusMessage.className = `status-message ${type}`;
+}
+
+function isYearlyCombinedNodesIncluded(): boolean {
+  return false;
+}
+
+function applyYearlyCombinedNodesVisualState(includeNodes: boolean): void {
+  const panel = document.getElementById('yearlyCombinedContent');
+  if (!panel) return;
+  panel.classList.toggle('nodes-optional-off', !includeNodes);
 }
 
 async function runFcrSimulationInWorker(payload: Record<string, unknown>): Promise<WorkerPayload> {
@@ -506,10 +517,12 @@ async function init(): Promise<void> {
 
   populateYearSelect(elements.year, years);
   populateYearSelect(elements.yearlyCombinedYear, years);
+  applyYearlyCombinedNodesVisualState(false);
 
+  let defaultYear: number | null = null;
   if (years.length > 0) {
     const preferredYear = 2025;
-    const defaultYear = years.includes(preferredYear)
+    defaultYear = years.includes(preferredYear)
       ? preferredYear
       : years[years.length - 1];
     elements.year.value = String(defaultYear);
@@ -527,6 +540,11 @@ async function init(): Promise<void> {
   console.log('[app] Nodes module initialized');
   initCombinedView();
   setYearlyCombinedVisualStates('empty', 'Trykk "Beregn årlig total".');
+  if (defaultYear !== null) {
+    showYearlyCombinedStatus(`Klar for ${defaultYear}. Trykk "Beregn årlig total".`, 'info');
+  } else {
+    showYearlyCombinedStatus('Ingen år tilgjengelig for årskalkyle.', 'warning');
+  }
 
   console.log('[app] init() complete — attaching event listeners');
   elements.year.addEventListener('change', async () => {
@@ -946,7 +964,7 @@ async function calculateNodesYearlyForCombined(quantityMw: number): Promise<{
   };
 }
 
-function updateYearlyCombinedMonthlyChart(monthly: YearlyCombinedMonthlyRow[]): void {
+function updateYearlyCombinedMonthlyChart(monthly: YearlyCombinedMonthlyRow[], includeNodes: boolean): void {
   if (!Array.isArray(monthly) || monthly.length === 0) {
     if (charts.yearlyCombinedMonthly) {
       charts.yearlyCombinedMonthly.destroy();
@@ -970,19 +988,24 @@ function updateYearlyCombinedMonthlyChart(monthly: YearlyCombinedMonthlyRow[]): 
           label: 'FCR-N (EUR)',
           data: monthly.map((row) => row.fcrEur),
           backgroundColor: '#f3c640',
-          borderRadius: 4
+          borderRadius: 4,
+          stack: 'core'
         },
         {
           label: 'aFRR (EUR)',
           data: monthly.map((row) => row.afrrEur),
           backgroundColor: '#4fcb73',
-          borderRadius: 4
+          borderRadius: 4,
+          stack: 'core'
         },
         {
-          label: 'Nodes (EUR)',
+          label: includeNodes ? 'Nodes (EUR)' : 'Nodes (opsjonell, EUR)',
           data: monthly.map((row) => row.nodesEur),
-          backgroundColor: '#60a5fa',
-          borderRadius: 4
+          backgroundColor: includeNodes ? '#60a5fa' : 'rgba(96, 165, 250, 0.35)',
+          borderColor: includeNodes ? '#60a5fa' : 'rgba(96, 165, 250, 0.65)',
+          borderWidth: 1,
+          borderRadius: 4,
+          stack: includeNodes ? 'core' : 'optional'
         }
       ]
     },
@@ -1012,6 +1035,7 @@ function updateYearlyCombinedMonthlyChart(monthly: YearlyCombinedMonthlyRow[]): 
 }
 
 function updateYearlyCombinedSummaryTable(monthly: YearlyCombinedMonthlyRow[]): void {
+  const includeNodes = isYearlyCombinedNodesIncluded();
   if (!Array.isArray(monthly) || monthly.length === 0) {
     elements.yearlyCombinedSummaryTable.innerHTML = '';
     setTableState('yearlyCombinedSummaryTable', 'empty', 'Ingen månedlige rader.');
@@ -1023,22 +1047,30 @@ function updateYearlyCombinedSummaryTable(monthly: YearlyCombinedMonthlyRow[]): 
       <td>${row.month}</td>
       <td>${formatEuro(Math.round(row.fcrEur))}</td>
       <td>${formatEuro(Math.round(row.afrrEur))}</td>
-      <td>${formatEuro(Math.round(row.nodesEur))}</td>
-      <td>${formatEuro(Math.round(row.totalEur))}</td>
+      <td class="yearly-nodes-col">${formatEuro(Math.round(row.nodesEur))}</td>
+      <td>${formatEuro(Math.round(row.fcrEur + row.afrrEur + (includeNodes ? row.nodesEur : 0)))}</td>
     </tr>
   `).join('');
   setTableState('yearlyCombinedSummaryTable', 'ready', '');
 }
 
 function renderYearlyCombinedResult(result: YearlyCombinedResult): void {
-  elements.yearlyCombinedTotalEur.textContent = formatEuro(Math.round(result.totalEur));
+  const includeNodes = isYearlyCombinedNodesIncluded();
+  applyYearlyCombinedNodesVisualState(includeNodes);
+  const effectiveTotalEur = result.fcrEur + result.afrrEur + (includeNodes ? result.nodesEur : 0);
+
+  elements.yearlyCombinedTotalEur.textContent = formatEuro(Math.round(effectiveTotalEur));
   elements.yearlyCombinedFcrEur.textContent = formatEuro(Math.round(result.fcrEur));
   elements.yearlyCombinedAfrrEur.textContent = formatEuro(Math.round(result.afrrEur));
   elements.yearlyCombinedNodesEur.textContent = formatEuro(Math.round(result.nodesEur));
-  const deltaVsConservative = result.totalEur - CONSERVATIVE_TOTAL_EUR;
-  elements.yearlyCombinedMeta.textContent = `År ${result.fcrYear} for FCR-N/aFRR. Nodes: "${result.nodesTenderName}" (uendret på tvers av år). Konservativ referanse ${formatEuro(CONSERVATIVE_TOTAL_EUR)}. Avvik: ${formatSignedEuro(deltaVsConservative)}.`;
+  const deltaVsConservative = effectiveTotalEur - CONSERVATIVE_TOTAL_EUR;
+  if (includeNodes) {
+    elements.yearlyCombinedMeta.textContent = `År ${result.fcrYear} for FCR-N/aFRR. Nodes: "${result.nodesTenderName}" (inkludert i total). Konservativ referanse ${formatEuro(CONSERVATIVE_TOTAL_EUR)}. Avvik: ${formatSignedEuro(deltaVsConservative)}.`;
+  } else {
+    elements.yearlyCombinedMeta.textContent = `År ${result.fcrYear} for FCR-N/aFRR. Nodes: "${result.nodesTenderName}" (opsjonell merinntekt, ikke inkludert i total). Konservativ referanse ${formatEuro(CONSERVATIVE_TOTAL_EUR)}. Avvik: ${formatSignedEuro(deltaVsConservative)}.`;
+  }
 
-  updateYearlyCombinedMonthlyChart(result.monthly);
+  updateYearlyCombinedMonthlyChart(result.monthly, includeNodes);
   updateYearlyCombinedSummaryTable(result.monthly);
 }
 
@@ -1100,7 +1132,11 @@ async function calculateYearlyCombined(): Promise<void> {
     };
 
     renderYearlyCombinedResult(currentYearlyCombinedResult);
-    showYearlyCombinedStatus('Årskalkyle fullført (rå beregning, uten normalisering).', 'success');
+    if (isYearlyCombinedNodesIncluded()) {
+      showYearlyCombinedStatus('Årskalkyle fullført. Nodes er inkludert i total.', 'success');
+    } else {
+      showYearlyCombinedStatus('Årskalkyle fullført. Nodes vises som opsjonell merinntekt.', 'success');
+    }
   } catch (error) {
     console.error('[combined-yearly] Calculation failed:', error);
     const message = error instanceof Error ? error.message : 'Årskalkyle feilet.';
@@ -1119,15 +1155,17 @@ async function exportYearlyCombinedCsv(): Promise<void> {
   }
 
   const result = currentYearlyCombinedResult;
+  const includeNodes = isYearlyCombinedNodesIncluded();
   let accumulatedTotalEur = 0;
   const csvContent = Papa.unparse(result.monthly.map((row) => {
-    accumulatedTotalEur += row.totalEur;
+    const effectiveTotalEur = row.fcrEur + row.afrrEur + (includeNodes ? row.nodesEur : 0);
+    accumulatedTotalEur += effectiveTotalEur;
     return {
       'Måned': formatShortMonthLabelNb(row.month),
       'FCR-N (EUR)': row.fcrEur.toFixed(0),
       'aFRR (EUR)': row.afrrEur.toFixed(0),
       'Nodes/Euroflex (EUR)': row.nodesEur.toFixed(0),
-      'Sum reservemarkeder (EUR)': row.totalEur.toFixed(0),
+      'Sum reservemarkeder (EUR)': effectiveTotalEur.toFixed(0),
       'Akkumulert sum (EUR)': accumulatedTotalEur.toFixed(0),
       'År (FCR/aFRR)': result.fcrYear,
     };
@@ -1143,6 +1181,7 @@ async function loadPriceData(year: number): Promise<void> {
   console.log('[app] loadPriceData() called for year:', year);
   setFcrResultContainerVisible(false);
   setFcrVisualStates('loading', 'Laster prisdata...');
+  showStatus(`Laster prisdata for ${year}...`, 'info');
 
   const rows = await window.electronAPI.loadPriceData(year, 'NO1');
   console.log('[app] Price data received:', rows?.length || 0, 'rows');
@@ -1165,7 +1204,7 @@ async function loadPriceData(year: number): Promise<void> {
 
   setFcrResultContainerVisible(true);
 
-  showStatus('Prisdata lastet', 'success');
+  showStatus(`Prisdata for ${year} lastet. Trykk "Beregn inntekt".`, 'info');
   setFcrVisualStates('empty', 'Trykk "Beregn inntekt" for å vise visualiseringer.');
 }
 

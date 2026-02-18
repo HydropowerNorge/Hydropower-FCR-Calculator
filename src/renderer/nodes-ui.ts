@@ -443,7 +443,7 @@ export function createNodesUI(): { init: () => Promise<void> } {
           el.tenderSelect.value = '0';
         }
         renderTenderInfo(getSelectedTender());
-        showStatus(`${allTenders.length} tender(e) lastet. Velg en og trykk "Beregn inntekt".`, 'success');
+        showStatus(`${allTenders.length} tender(e) lastet. Velg en og trykk "Beregn inntekt".`, 'info');
         setTableState('empty', 'Trykk "Beregn inntekt" for å vise resultater.');
       }
     } catch (error) {

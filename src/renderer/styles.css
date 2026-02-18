@@ -678,6 +678,14 @@ tr:hover td {
   color: var(--text-muted);
 }
 
+.yearly-nodes-col {
+  transition: opacity 0.18s ease;
+}
+
+#yearlyCombinedContent.nodes-optional-off .yearly-nodes-col {
+  opacity: 0.46;
+}
+
 .visual-state {
   position: absolute;
   inset: 0;

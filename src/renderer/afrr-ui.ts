@@ -363,7 +363,16 @@ export function createAfrrUI(): { init: () => Promise<void> } {
 
     setAllVisualStates('loading', 'Laster aFRR-data...');
     await loadStaticInputs();
-    setAllVisualStates('empty', 'Trykk "Beregn aFRR".');
+    if (!el.year || el.year.options.length === 0) {
+      showStatus('Ingen aFRR-år tilgjengelig.', 'warning');
+      setAllVisualStates('empty', 'Ingen aFRR-data tilgjengelig.');
+    } else if (resolvedSolarYear === null) {
+      showStatus('Ingen solprofil tilgjengelig.', 'warning');
+      setAllVisualStates('empty', 'Manglende solprofil.');
+    } else {
+      showStatus('Klar. Velg år og trykk "Beregn aFRR".', 'info');
+      setAllVisualStates('empty', 'Trykk "Beregn aFRR".');
+    }
     console.log('[afrr-ui] init() complete');
 
     if (el.calculateBtn) {
