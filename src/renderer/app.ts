@@ -32,6 +32,16 @@ interface PriceDataRow {
   volume: number;
 }
 
+type CombinedMarket = 'aFRR' | 'FCR-N' | 'NODES/Euroflex';
+
+interface CombinedPriorityRow {
+  block: string;
+  market: CombinedMarket;
+  valueEurMwHour: number;
+  reason: string;
+  consequence: string;
+}
+
 let priceData: PriceDataRow[] = [];
 let currentResult: (RevenueResult & { freqSummary?: FrequencySummary }) | null = null;
 const afrrUI = createAfrrUI();
@@ -41,11 +51,13 @@ const charts: {
   price: Chart | null;
   soc: Chart | null;
   freq: Chart | null;
+  combinedPriority: Chart | null;
 } = {
   monthly: null,
   price: null,
   soc: null,
-  freq: null
+  freq: null,
+  combinedPriority: null
 };
 
 const elements = {
@@ -74,6 +86,12 @@ const elements = {
   socSection: document.getElementById('socSection') as HTMLElement,
   freqSection: document.getElementById('freqSection') as HTMLElement,
   summaryTable: document.getElementById('summaryTable')!.querySelector('tbody') as HTMLTableSectionElement,
+  combinedReserveTotal: document.getElementById('combinedReserveTotal')!,
+  combinedAfrrRevenue: document.getElementById('combinedAfrrRevenue')!,
+  combinedFcrRevenue: document.getElementById('combinedFcrRevenue')!,
+  combinedNodesRevenue: document.getElementById('combinedNodesRevenue')!,
+  combinedDifferenceText: document.getElementById('combinedDifferenceText')!,
+  combinedPriorityTable: document.getElementById('combinedPriorityTable')!.querySelector('tbody') as HTMLTableSectionElement,
 };
 
 Chart.defaults.color = '#aaa';
@@ -81,6 +99,55 @@ Chart.defaults.borderColor = '#2a2a4a';
 
 let activeSimulationWorker: Worker | null = null;
 let isCalculating = false;
+
+const combinedAnnualRevenue = {
+  afrrEur: 200_737,
+  fcrCombinedEur: 52_000,
+  nodesEur: 15_145,
+  fcrStandaloneEur: 165_000,
+};
+
+const combinedPriorityRows: CombinedPriorityRow[] = [
+  {
+    block: '00:00-06:00',
+    market: 'FCR-N',
+    valueEurMwHour: 22,
+    reason: 'Stabil nattdrift og konservativ FCR-N-prising gir best forventet verdi.',
+    consequence: 'Kapasitet bindes i FCR-N i denne blokken.'
+  },
+  {
+    block: '06:00-12:00',
+    market: 'aFRR',
+    valueEurMwHour: 45,
+    reason: 'Høyere kapasitetsbetaling gjør aFRR mer lønnsomt enn FCR-N.',
+    consequence: 'Samme MW kan ikke samtidig brukes i FCR-N.'
+  },
+  {
+    block: '12:00-18:00',
+    market: 'aFRR',
+    valueEurMwHour: 38,
+    reason: 'aFRR holder høyest verdi i denne perioden.',
+    consequence: 'Kapasitet prioriteres til aFRR.'
+  },
+  {
+    block: '18:00-22:00',
+    market: 'NODES/Euroflex',
+    valueEurMwHour: 52,
+    reason: 'Lokal flaskehals kan gi høy fleksibilitetsverdi i enkeltperioder.',
+    consequence: 'Når NODES er best, må FCR-N/aFRR vike for samme kapasitet.'
+  },
+  {
+    block: '22:00-24:00',
+    market: 'FCR-N',
+    valueEurMwHour: 24,
+    reason: 'Tilbake til FCR-N når relative priser i øvrige markeder faller.',
+    consequence: 'Ny allokering per timeblokk, fortsatt uten dobbelbooking.'
+  }
+];
+
+function formatEuro(value: number): string {
+  return `€${value.toLocaleString('nb-NO', { maximumFractionDigits: 0 })}`;
+}
 
 async function runFcrSimulationInWorker(payload: Record<string, unknown>): Promise<WorkerPayload> {
   if (typeof Worker === 'undefined') {
@@ -301,6 +368,7 @@ async function init(): Promise<void> {
   console.log('[app] Initializing nodes module');
   await nodesUI.init();
   console.log('[app] Nodes module initialized');
+  initCombinedView();
 
   console.log('[app] init() complete — attaching event listeners');
   elements.year.addEventListener('change', async () => {
@@ -324,6 +392,104 @@ function setupSliders(): void {
     input.addEventListener('input', () => {
       display.textContent = input.value;
     });
+  });
+}
+
+function initCombinedView(): void {
+  renderCombinedMetrics();
+  renderCombinedPriorityTable();
+  updateCombinedPriorityChart();
+}
+
+function renderCombinedMetrics(): void {
+  const reserveTotal = combinedAnnualRevenue.afrrEur + combinedAnnualRevenue.fcrCombinedEur + combinedAnnualRevenue.nodesEur;
+  const fcrDifference = combinedAnnualRevenue.fcrStandaloneEur - combinedAnnualRevenue.fcrCombinedEur;
+
+  elements.combinedReserveTotal.textContent = formatEuro(reserveTotal);
+  elements.combinedAfrrRevenue.textContent = formatEuro(combinedAnnualRevenue.afrrEur);
+  elements.combinedFcrRevenue.textContent = formatEuro(combinedAnnualRevenue.fcrCombinedEur);
+  elements.combinedNodesRevenue.textContent = formatEuro(combinedAnnualRevenue.nodesEur);
+  elements.combinedDifferenceText.textContent = `Differanse: ${formatEuro(fcrDifference)} (fra ${formatEuro(combinedAnnualRevenue.fcrStandaloneEur)} til ${formatEuro(combinedAnnualRevenue.fcrCombinedEur)} i kombinert modell).`;
+}
+
+function renderCombinedPriorityTable(): void {
+  elements.combinedPriorityTable.innerHTML = combinedPriorityRows.map((row) => `
+    <tr>
+      <td>${row.block}</td>
+      <td>${row.market}</td>
+      <td>${row.reason}</td>
+      <td>${row.consequence}</td>
+    </tr>
+  `).join('');
+}
+
+function updateCombinedPriorityChart(): void {
+  const chartCanvas = document.getElementById('combinedPriorityChart') as HTMLCanvasElement | null;
+  if (!chartCanvas) return;
+
+  const ctx = chartCanvas.getContext('2d');
+  if (!ctx) return;
+
+  if (charts.combinedPriority) {
+    charts.combinedPriority.destroy();
+  }
+
+  const labels = combinedPriorityRows.map(row => row.block);
+  const aFRRData = combinedPriorityRows.map(row => row.market === 'aFRR' ? row.valueEurMwHour : null);
+  const fcrData = combinedPriorityRows.map(row => row.market === 'FCR-N' ? row.valueEurMwHour : null);
+  const nodesData = combinedPriorityRows.map(row => row.market === 'NODES/Euroflex' ? row.valueEurMwHour : null);
+
+  charts.combinedPriority = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'aFRR valgt',
+          data: aFRRData,
+          backgroundColor: '#4fcb73',
+          borderRadius: 4
+        },
+        {
+          label: 'FCR-N valgt',
+          data: fcrData,
+          backgroundColor: '#f3c640',
+          borderRadius: 4
+        },
+        {
+          label: 'NODES/Euroflex valgt',
+          data: nodesData,
+          backgroundColor: '#60a5fa',
+          borderRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Indikativ verdi (EUR/MW/h)'
+          }
+        }
+      },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            footer: (items) => {
+              const first = items[0];
+              if (!first) return '';
+              const row = combinedPriorityRows[first.dataIndex];
+              if (!row) return '';
+              return 'Samme kapasitet kan ikke dobbelbookes i denne blokken.';
+            }
+          }
+        }
+      }
+    }
   });
 }
 

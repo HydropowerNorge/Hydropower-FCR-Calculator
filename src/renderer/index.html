@@ -24,11 +24,11 @@
       <nav class="tab-nav" role="tablist" aria-label="Analysemoduler">
         <button
           id="tab-fcr"
-          class="tab-btn active"
+          class="tab-btn"
           data-tab="fcr"
           role="tab"
           aria-controls="fcrContent"
-          aria-selected="true"
+          aria-selected="false"
           data-hero-title="FCR-N analyse"
           data-hero-description="Bruk historiske NO1-data til å estimere batteriinntekter med tydelige KPI-er og eksportklare rapporter."
         >FCR-N</button>
@@ -54,13 +54,13 @@
         >Nodes</button>
         <button
           id="tab-combined"
-          class="tab-btn"
+          class="tab-btn active"
           data-tab="combined"
           role="tab"
           aria-controls="combinedContent"
-          aria-selected="false"
+          aria-selected="true"
           data-hero-title="Kombinert"
-          data-hero-description="Planlagt samlekjøring av markeder for helhetlig verdiestimat og sammenligning."
+          data-hero-description="Viser hvorfor batteriet må velge markedet med best verdi per time, og hvorfor FCR-N blir lavere i kombinert case."
         >Kombinert</button>
       </nav>
 
@@ -153,12 +153,12 @@
 
       <div data-tab-config="combined" style="display: none;">
         <section class="config-section collapsible">
-          <button class="collapsible-toggle" type="button"><h2>Kombinert</h2></button>
+          <button class="collapsible-toggle" type="button"><h2>Kombinert forklaring</h2></button>
           <div class="collapsible-body">
-            <p class="info-text">Denne modulen er under utvikling. Her kommer kombinert analyse på tvers av markedene.</p>
+            <p class="info-text">Visningen forklarer hvorfor samme kapasitet ikke kan bindes i to markeder samtidig.</p>
+            <p class="info-text">Tallgrunnlag: aFRR €200 737, FCR-N €52 000 og NODES/Euroflex €15 145.</p>
           </div>
         </section>
-        <button class="btn btn-secondary" type="button" disabled>Kommer snart</button>
       </div>
     </aside>
 
@@ -167,13 +167,13 @@
       <section class="hero-banner">
         <div class="hero-content">
           <p class="hero-kicker">Hydropower</p>
-          <h2 id="heroTitle">FCR-N analyse</h2>
-          <p id="heroDescription">Bruk historiske NO1-data til å estimere batteriinntekter med tydelige KPI-er og eksportklare rapporter.</p>
+          <h2 id="heroTitle">Kombinert</h2>
+          <p id="heroDescription">Viser hvorfor batteriet må velge markedet med best verdi per time, og hvorfor FCR-N blir lavere i kombinert case.</p>
         </div>
       </section>
 
       <!-- FCR-N Tab Content -->
-      <div id="fcrContent" class="tab-content active" data-tab-panel="fcr" role="tabpanel" aria-labelledby="tab-fcr">
+      <div id="fcrContent" class="tab-content" data-tab-panel="fcr" role="tabpanel" aria-labelledby="tab-fcr">
       <div id="loadingState" class="loading-state">
         <p>Laster prisdata...</p>
       </div>
@@ -356,25 +356,92 @@
         </section>
       </div>
 
-      <div id="combinedContent" class="tab-content" data-tab-panel="combined" role="tabpanel" aria-labelledby="tab-combined">
-        <section class="module-panel">
-          <p class="module-pill">Planlagt modul</p>
-          <h3>Kombinert</h3>
-          <p class="module-intro">Denne fanen samler FCR-N, arbitrasje og kommende markeder i ett scenario med felles resultater.</p>
-          <div class="module-grid">
-            <article class="module-card">
-              <h4>Scenariokjøring</h4>
-              <p>Kjør markeder side om side uten å endre grunnkonfigurasjon.</p>
+      <div id="combinedContent" class="tab-content active" data-tab-panel="combined" role="tabpanel" aria-labelledby="tab-combined">
+        <section class="module-panel combined-panel">
+          <p class="module-pill">Kombinert modell</p>
+          <h3>Markedsvalg per time</h3>
+          <p class="module-intro">
+            Kapasitet kan flyttes mellom aFRR, FCR-N og NODES/Euroflex gjennom året.
+            Samme MW kan likevel bare allokeres til ett marked i samme time.
+          </p>
+
+          <section class="combined-qa-grid">
+            <article class="module-card combined-answer">
+              <h4>FCR-N og NODES/Euroflex samtidig?</h4>
+              <p>
+                Ja i løpet av året, men ikke med samme kapasitet i samme time.
+                Allokeringen gjøres time for time.
+              </p>
             </article>
-            <article class="module-card">
-              <h4>Prioriteringsregler</h4>
-              <p>Definer hvilke markeder som får kapasitet ved konflikt.</p>
+            <article class="module-card combined-answer">
+              <h4>aFRR og FCR-N samtidig?</h4>
+              <p>
+                Prinsippet er det samme. Reservert kapasitet kan ikke dobbelbookes.
+                Markedet med best verdi i aktuell time prioriteres.
+              </p>
             </article>
-            <article class="module-card">
-              <h4>Samlet verdi</h4>
-              <p>En konsolidert KPI-visning med eksport for ledelse og drift.</p>
-            </article>
+          </section>
+
+          <div class="metrics-row combined-metrics">
+            <div class="metric-card">
+              <span class="metric-value" id="combinedReserveTotal">-</span>
+              <span class="metric-label">Sum reserveinntekt</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value" id="combinedAfrrRevenue">-</span>
+              <span class="metric-label">aFRR</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value" id="combinedFcrRevenue">-</span>
+              <span class="metric-label">FCR-N i kombinert</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value" id="combinedNodesRevenue">-</span>
+              <span class="metric-label">NODES/Euroflex</span>
+            </div>
           </div>
+
+          <section class="combined-insight-grid">
+            <article class="module-card">
+              <h4>Hvorfor er FCR-N €52 000 her, men €165 000 i eget ark?</h4>
+              <p>
+                €165 000 er et separat FCR-N-estimat med større allokering til FCR-N.
+                I kombinert drift prioriteres marked med høyest verdi time for time, og FCR-N-andelen blir lavere.
+              </p>
+              <p class="combined-diff" id="combinedDifferenceText">Differanse: -</p>
+            </article>
+            <article class="module-card">
+              <h4>Allokeringsregel</h4>
+              <p>
+                For hver time velges markedet med høyest forventet verdi gitt tilgjengelig kapasitet og markedskrav.
+                Derfor kan ikke inntekt fra markedene summeres uten å ta hensyn til overlapp.
+              </p>
+            </article>
+          </section>
+
+          <section class="chart-section">
+            <h2>Eksempeluke: valgt marked per timeblokk</h2>
+            <div class="chart-container">
+              <canvas id="combinedPriorityChart"></canvas>
+            </div>
+          </section>
+
+          <section class="summary-section">
+            <h2>Eksempel på allokering</h2>
+            <div class="table-container">
+              <table id="combinedPriorityTable">
+                <thead>
+                  <tr>
+                    <th>Timeblokk</th>
+                    <th>Valgt marked</th>
+                    <th>Hvorfor</th>
+                    <th>Konsekvens</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
         </section>
       </div>
     </main>
