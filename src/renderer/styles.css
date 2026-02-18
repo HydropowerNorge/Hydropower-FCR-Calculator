@@ -135,6 +135,10 @@ body {
   text-overflow: ellipsis;
 }
 
+.tab-btn-wide {
+  grid-column: span 2;
+}
+
 .tab-btn:hover {
   color: var(--text-primary);
   background: rgba(79, 203, 115, 0.08);
@@ -622,6 +626,21 @@ tr:hover td {
   line-height: 1.45;
 }
 
+.yearly-combined-panel {
+  padding: 22px;
+}
+
+.yearly-combined-metrics {
+  margin-top: 14px;
+}
+
+.yearly-combined-note {
+  margin-top: 6px;
+  margin-bottom: 4px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 .visual-state {
   position: absolute;
   inset: 0;
@@ -1024,6 +1043,10 @@ tr:hover td {
     grid-template-columns: 1fr;
   }
 
+  .tab-btn-wide {
+    grid-column: span 1;
+  }
+
   .export-section .btn {
     width: 100%;
     min-width: 0;
@@ -1045,6 +1068,10 @@ tr:hover td {
 
   .nodes-tender-grid {
     grid-template-columns: 1fr;
+  }
+
+  .yearly-combined-panel {
+    padding: 16px;
   }
 
   .combined-panel {

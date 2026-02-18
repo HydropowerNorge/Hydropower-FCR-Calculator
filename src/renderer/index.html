@@ -23,6 +23,16 @@
 
       <nav class="tab-nav" role="tablist" aria-label="Analysemoduler">
         <button
+          id="tab-yearlyCombined"
+          class="tab-btn tab-btn-wide active"
+          data-tab="yearlyCombined"
+          role="tab"
+          aria-controls="yearlyCombinedContent"
+          aria-selected="true"
+          data-hero-title="Årskalkyle"
+          data-hero-description="Kombinerer FCR-N, aFRR og Nodes i én årlig inntektskalkyle med samme metoder som i hver enkelt modul."
+        >Årskalkyle</button>
+        <button
           id="tab-fcr"
           class="tab-btn"
           data-tab="fcr"
@@ -54,11 +64,11 @@
         >Nodes</button>
         <button
           id="tab-combined"
-          class="tab-btn active"
+          class="tab-btn"
           data-tab="combined"
           role="tab"
           aria-controls="combinedContent"
-          aria-selected="true"
+          aria-selected="false"
           data-hero-title="Kombinert"
           data-hero-description="Viser hvorfor batteriet må velge markedet med best verdi per time, og hvorfor FCR-N blir lavere i kombinert case."
         >Kombinert</button>
@@ -100,7 +110,7 @@
       </section>
 
       <!-- FCR-N data config -->
-      <div data-tab-config="fcr">
+      <div data-tab-config="fcr" style="display: none;">
         <section class="config-section collapsible">
           <button class="collapsible-toggle" type="button"><h2>Datavalg</h2></button>
           <div class="collapsible-body">
@@ -160,6 +170,22 @@
           </div>
         </section>
       </div>
+
+      <div data-tab-config="yearlyCombined">
+        <section class="config-section collapsible">
+          <button class="collapsible-toggle" type="button"><h2>Årskalkyle</h2></button>
+          <div class="collapsible-body">
+            <div class="input-group">
+              <label for="yearlyCombinedYear">År for kalkyle</label>
+              <select id="yearlyCombinedYear"></select>
+            </div>
+            <p class="info-text">Beregner FCR-N, aFRR og Nodes med samme metode som i hver enkelt fane.</p>
+            <p class="info-text">Nodes holdes uendret på tvers av år.</p>
+            <p class="info-text">Nodes konverteres til EUR med fast kurs 11,5 NOK/EUR for samlet total.</p>
+          </div>
+        </section>
+        <button id="calculateYearlyCombinedBtn" class="btn btn-primary" type="button">Beregn årlig total</button>
+      </div>
     </aside>
 
     <!-- Main Content -->
@@ -167,8 +193,8 @@
       <section class="hero-banner">
         <div class="hero-content">
           <p class="hero-kicker">Hydropower</p>
-          <h2 id="heroTitle">Kombinert</h2>
-          <p id="heroDescription">Viser hvorfor batteriet må velge markedet med best verdi per time, og hvorfor FCR-N blir lavere i kombinert case.</p>
+          <h2 id="heroTitle">Årskalkyle</h2>
+          <p id="heroDescription">Kombinerer FCR-N, aFRR og Nodes i én årlig inntektskalkyle med samme metoder som i hver enkelt modul.</p>
         </div>
       </section>
 
@@ -391,7 +417,7 @@
         </section>
       </div>
 
-      <div id="combinedContent" class="tab-content active" data-tab-panel="combined" role="tabpanel" aria-labelledby="tab-combined">
+      <div id="combinedContent" class="tab-content" data-tab-panel="combined" role="tabpanel" aria-labelledby="tab-combined">
         <section class="module-panel combined-panel">
           <p class="module-pill">Kombinert modell</p>
           <h3>Markedsvalg per time</h3>
@@ -549,6 +575,71 @@
                 <canvas id="combinedRatioChart"></canvas>
               </div>
             </section>
+          </section>
+        </section>
+      </div>
+
+      <div id="yearlyCombinedContent" class="tab-content active" data-tab-panel="yearlyCombined" role="tabpanel" aria-labelledby="tab-yearlyCombined">
+        <div id="yearlyCombinedStatusMessage" class="status-message info">Trykk "Beregn årlig total".</div>
+
+        <section class="module-panel yearly-combined-panel">
+          <p class="module-pill">Årlig kalkyle</p>
+          <h3>FCR-N + aFRR + Nodes</h3>
+          <p id="yearlyCombinedMeta" class="module-intro">Klar for beregning.</p>
+
+          <div class="metrics-row yearly-combined-metrics">
+            <div class="metric-card">
+              <span class="metric-value" id="yearlyCombinedTotalEur">-</span>
+              <span class="metric-label">Total (EUR)</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value" id="yearlyCombinedFcrEur">-</span>
+              <span class="metric-label">FCR-N (EUR)</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value" id="yearlyCombinedAfrrEur">-</span>
+              <span class="metric-label">aFRR (EUR)</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value" id="yearlyCombinedNodesNok">-</span>
+              <span class="metric-label">Nodes (NOK)</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-value" id="yearlyCombinedNodesEur">-</span>
+              <span class="metric-label">Nodes (EUR-ekv)</span>
+            </div>
+          </div>
+
+          <p class="yearly-combined-note">Kurs for Nodes-konvertering: 11,5 NOK/EUR.</p>
+
+          <section class="chart-section">
+            <h2>Månedlig fordeling (EUR-ekv)</h2>
+            <div class="chart-container">
+              <canvas id="yearlyCombinedMonthlyChart"></canvas>
+            </div>
+          </section>
+
+          <section class="export-section">
+            <button id="yearlyCombinedExportCsvBtn" class="btn btn-secondary" type="button">Eksporter CSV</button>
+          </section>
+
+          <section class="summary-section">
+            <h2>Månedlig oppsummering</h2>
+            <div class="table-container">
+              <table id="yearlyCombinedSummaryTable">
+                <thead>
+                  <tr>
+                    <th>Måned</th>
+                    <th>FCR-N (EUR)</th>
+                    <th>aFRR (EUR)</th>
+                    <th>Nodes (NOK)</th>
+                    <th>Nodes (EUR-ekv)</th>
+                    <th>Total (EUR)</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
           </section>
         </section>
       </div>

@@ -5,6 +5,8 @@ import Papa from 'papaparse';
 import * as Calculator from './calculator';
 import type { FrequencySummary, HourlyRevenueRow, RevenueResult } from './calculator';
 import * as FrequencySimulator from './frequency';
+import { calculateAfrrYearlyRevenue } from './afrr';
+import { calculateNodeYearlyIncome } from './nodes';
 import { createAfrrUI } from './afrr-ui';
 import { createNodesUI } from './nodes-ui';
 
@@ -42,6 +44,27 @@ interface CombinedPriorityRow {
   consequence: string;
 }
 
+interface YearlyCombinedMonthlyRow {
+  month: string;
+  fcrEur: number;
+  afrrEur: number;
+  nodesNok: number;
+  nodesEur: number;
+  totalEur: number;
+}
+
+interface YearlyCombinedResult {
+  totalEur: number;
+  fcrEur: number;
+  afrrEur: number;
+  nodesNok: number;
+  nodesEur: number;
+  fcrYear: number;
+  afrrYear: number;
+  nodesTenderName: string;
+  monthly: YearlyCombinedMonthlyRow[];
+}
+
 let priceData: PriceDataRow[] = [];
 let currentResult: (RevenueResult & { freqSummary?: FrequencySummary }) | null = null;
 const afrrUI = createAfrrUI();
@@ -53,13 +76,15 @@ const charts: {
   freq: Chart | null;
   combinedPriority: Chart | null;
   combinedRatio: Chart | null;
+  yearlyCombinedMonthly: Chart | null;
 } = {
   monthly: null,
   price: null,
   soc: null,
   freq: null,
   combinedPriority: null,
-  combinedRatio: null
+  combinedRatio: null,
+  yearlyCombinedMonthly: null
 };
 
 const elements = {
@@ -74,6 +99,7 @@ const elements = {
   year: document.getElementById('year') as HTMLSelectElement,
   simHours: document.getElementById('simHours') as HTMLInputElement,
   seed: document.getElementById('seed') as HTMLInputElement,
+  yearlyCombinedYear: document.getElementById('yearlyCombinedYear') as HTMLSelectElement,
 
   loadingState: document.getElementById('loadingState')!,
   resultsContainer: document.getElementById('resultsContainer')!,
@@ -100,6 +126,14 @@ const elements = {
   combinedRatioAfrr: document.getElementById('combinedRatioAfrr')!,
   combinedRatioFcr: document.getElementById('combinedRatioFcr')!,
   combinedRatioNodes: document.getElementById('combinedRatioNodes')!,
+  yearlyCombinedStatusMessage: document.getElementById('yearlyCombinedStatusMessage')!,
+  yearlyCombinedMeta: document.getElementById('yearlyCombinedMeta')!,
+  yearlyCombinedTotalEur: document.getElementById('yearlyCombinedTotalEur')!,
+  yearlyCombinedFcrEur: document.getElementById('yearlyCombinedFcrEur')!,
+  yearlyCombinedAfrrEur: document.getElementById('yearlyCombinedAfrrEur')!,
+  yearlyCombinedNodesNok: document.getElementById('yearlyCombinedNodesNok')!,
+  yearlyCombinedNodesEur: document.getElementById('yearlyCombinedNodesEur')!,
+  yearlyCombinedSummaryTable: document.getElementById('yearlyCombinedSummaryTable')!.querySelector('tbody') as HTMLTableSectionElement,
 };
 
 Chart.defaults.color = '#aaa';
@@ -107,6 +141,8 @@ Chart.defaults.borderColor = '#2a2a4a';
 
 let activeSimulationWorker: Worker | null = null;
 let isCalculating = false;
+let isYearlyCombinedCalculating = false;
+let currentYearlyCombinedResult: YearlyCombinedResult | null = null;
 
 const combinedAnnualRevenue = {
   afrrEur: 200_737,
@@ -114,6 +150,9 @@ const combinedAnnualRevenue = {
   nodesEur: 15_145,
   fcrStandaloneEur: 165_000,
 };
+
+const MONTH_LABELS_NB = ['Jan', 'Feb', 'Mar', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Des'];
+const NODES_NOK_PER_EUR = 11.5;
 
 const combinedPriorityRows: CombinedPriorityRow[] = [
   {
@@ -155,6 +194,33 @@ const combinedPriorityRows: CombinedPriorityRow[] = [
 
 function formatEuro(value: number): string {
   return `€${value.toLocaleString('nb-NO', { maximumFractionDigits: 0 })}`;
+}
+
+function formatNok(value: number): string {
+  return `NOK ${value.toLocaleString('nb-NO', { maximumFractionDigits: 0 })}`;
+}
+
+function toTenderTimestampMs(value: unknown): number | null {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return numeric < 1_000_000_000_000 ? Math.round(numeric * 1000) : Math.round(numeric);
+}
+
+function parseYearMonthToIndex(value: string): number | null {
+  const match = String(value).match(/^\d{4}-(\d{2})$/);
+  if (!match) return null;
+  const month = Number(match[1]);
+  return month >= 1 && month <= 12 ? month - 1 : null;
+}
+
+function setYearlyCombinedVisualStates(state: string, message: string): void {
+  setChartState('yearlyCombinedMonthlyChart', state, message);
+  setTableState('yearlyCombinedSummaryTable', state, message);
+}
+
+function showYearlyCombinedStatus(message: string, type = 'info'): void {
+  elements.yearlyCombinedStatusMessage.textContent = message;
+  elements.yearlyCombinedStatusMessage.className = `status-message ${type}`;
 }
 
 async function runFcrSimulationInWorker(payload: Record<string, unknown>): Promise<WorkerPayload> {
@@ -332,6 +398,16 @@ function setupTabs(): void {
   }
 }
 
+function populateYearSelect(selectEl: HTMLSelectElement, years: number[]): void {
+  selectEl.innerHTML = '';
+  years.forEach((year) => {
+    const option = document.createElement('option');
+    option.value = String(year);
+    option.textContent = String(year);
+    selectEl.appendChild(option);
+  });
+}
+
 async function init(): Promise<void> {
   console.log('[app] init() starting');
   setupTabs();
@@ -351,13 +427,8 @@ async function init(): Promise<void> {
     .sort((a, b) => a - b);
   console.log('[app] Available years:', years);
 
-  elements.year.innerHTML = '';
-  years.forEach(year => {
-    const option = document.createElement('option');
-    option.value = String(year);
-    option.textContent = String(year);
-    elements.year.appendChild(option);
-  });
+  populateYearSelect(elements.year, years);
+  populateYearSelect(elements.yearlyCombinedYear, years);
 
   if (years.length > 0) {
     const preferredYear = 2025;
@@ -365,6 +436,7 @@ async function init(): Promise<void> {
       ? preferredYear
       : years[years.length - 1];
     elements.year.value = String(defaultYear);
+    elements.yearlyCombinedYear.value = String(defaultYear);
     await loadPriceData(defaultYear);
     setFcrVisualStates('empty', 'Trykk "Beregn inntekt" for å vise visualiseringer.');
   } else {
@@ -377,6 +449,7 @@ async function init(): Promise<void> {
   await nodesUI.init();
   console.log('[app] Nodes module initialized');
   initCombinedView();
+  setYearlyCombinedVisualStates('empty', 'Trykk "Beregn årlig total".');
 
   console.log('[app] init() complete — attaching event listeners');
   elements.year.addEventListener('change', async () => {
@@ -387,6 +460,8 @@ async function init(): Promise<void> {
   document.getElementById('exportBtn')!.addEventListener('click', exportCsv);
   document.getElementById('exportXlsxBtn')!.addEventListener('click', exportXlsx);
   document.getElementById('exportPdfBtn')!.addEventListener('click', exportPdf);
+  document.getElementById('calculateYearlyCombinedBtn')?.addEventListener('click', calculateYearlyCombined);
+  document.getElementById('yearlyCombinedExportCsvBtn')?.addEventListener('click', exportYearlyCombinedCsv);
 }
 
 function setupSliders(): void {
@@ -613,6 +688,372 @@ function updateCombinedPriorityChart(): void {
       }
     }
   });
+}
+
+async function calculateFcrYearlyForCombined(year: number): Promise<{ totalEur: number; monthlyByMonth: number[] }> {
+  const rows = await window.electronAPI.loadPriceData(year, 'NO1');
+  const localPriceData = (Array.isArray(rows) ? rows : [])
+    .map(row => ({
+      timestamp: new Date(row.timestamp),
+      hourNumber: Number(row.hourNumber) || 0,
+      price: Number(row.priceEurMw) || 0,
+      volume: Number(row.volumeMw) || 0
+    }))
+    .filter(row => !Number.isNaN(row.timestamp.getTime()))
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+  if (localPriceData.length === 0) {
+    throw new Error(`Ingen FCR-prisdata funnet for ${year}`);
+  }
+
+  const configValues = {
+    powerMw: parseFloat(elements.powerMw.value),
+    capacityMwh: parseFloat(elements.capacityMwh.value),
+    efficiency: parseInt(elements.efficiency.value, 10) / 100,
+    socMin: parseInt(elements.socMin.value, 10) / 100,
+    socMax: parseInt(elements.socMax.value, 10) / 100
+  };
+  const config = new Calculator.BatteryConfig(
+    configValues.powerMw,
+    configValues.capacityMwh,
+    configValues.efficiency,
+    configValues.socMin,
+    configValues.socMax
+  );
+
+  const profileName = (document.querySelector('input[name="profile"]') as HTMLInputElement).value;
+  const hours = parseInt(elements.simHours.value, 10);
+  const seed = parseInt(elements.seed.value, 10);
+
+  let workerResult: WorkerPayload;
+  try {
+    workerResult = await runFcrSimulationInWorker({
+      year,
+      hours,
+      seed,
+      profileName,
+      config: configValues,
+      priceData: localPriceData.map((row) => ({
+        timestamp: new Date(row.timestamp).getTime(),
+        price: row.price
+      }))
+    });
+  } catch (error) {
+    console.warn('[combined-yearly] Worker unavailable, using main thread fallback', error);
+    const startTime = new Date(Date.UTC(year, 0, 1));
+    const localFreqData = FrequencySimulator.simulateFrequency(startTime, hours, 1, seed, profileName);
+    const socData = Calculator.simulateSocHourly(localFreqData, config);
+    const result = Calculator.calculateRevenue(localPriceData, socData, config);
+    workerResult = {
+      result,
+      summary: localFreqData.summary,
+      totalSamples: localFreqData.frequencies.length
+    };
+  }
+
+  const monthlyByMonth = new Array<number>(12).fill(0);
+  const monthly = aggregateMonthly(workerResult.result.hourlyData);
+  monthly.forEach((row) => {
+    const index = parseYearMonthToIndex(row.month);
+    if (index !== null) {
+      monthlyByMonth[index] = row.revenue;
+    }
+  });
+
+  return {
+    totalEur: workerResult.result.totalRevenue,
+    monthlyByMonth
+  };
+}
+
+async function calculateAfrrYearlyForCombined(afrrYear: number): Promise<{ totalEur: number; monthlyByMonth: number[] }> {
+  const minBidMwInput = document.getElementById('afrrMinBidMw') as HTMLInputElement | null;
+  const minBidMw = Number(minBidMwInput?.value) || 1;
+  const hasMarketVolume = afrrYear <= 2023;
+  const excludeZeroVolume = hasMarketVolume;
+  const limitToMarketVolume = hasMarketVolume;
+
+  const solarYears = (await window.electronAPI.getSolarAvailableYears(60))
+    .map((year) => Number(year))
+    .filter((year) => Number.isInteger(year))
+    .sort((a, b) => a - b);
+
+  const solarYear = solarYears.length > 0 ? solarYears[solarYears.length - 1] : null;
+  if (solarYear === null) {
+    throw new Error('Ingen solprofil tilgjengelig for aFRR-beregning');
+  }
+
+  const [afrrRowsRaw, solarRowsRaw, spotRowsRaw] = await Promise.all([
+    window.electronAPI.loadAfrrData(afrrYear, {
+      biddingZone: 'NO1',
+      direction: 'down',
+      reserveType: 'afrr',
+      resolutionMin: 60,
+    }),
+    window.electronAPI.loadSolarData(solarYear, 60),
+    window.electronAPI.loadSpotData('NO1', afrrYear),
+  ]);
+
+  const afrrResult = calculateAfrrYearlyRevenue({
+    year: afrrYear,
+    afrrRows: Array.isArray(afrrRowsRaw) ? afrrRowsRaw : [],
+    solarRows: Array.isArray(solarRowsRaw) ? solarRowsRaw : [],
+    spotRows: Array.isArray(spotRowsRaw) ? spotRowsRaw : [],
+    direction: 'down',
+    minBidMw,
+    excludeZeroVolume,
+    limitToMarketVolume,
+  });
+
+  const monthlyByMonth = new Array<number>(12).fill(0);
+  afrrResult.monthly.forEach((row) => {
+    const index = parseYearMonthToIndex(row.month);
+    if (index !== null) {
+      monthlyByMonth[index] = row.afrrIncomeEur;
+    }
+  });
+
+  return {
+    totalEur: afrrResult.totalAfrrIncomeEur,
+    monthlyByMonth
+  };
+}
+
+async function calculateNodesYearlyForCombined(quantityMw: number): Promise<{
+  totalNok: number;
+  monthlyByMonth: number[];
+  tenderName: string;
+}> {
+  const tenders = await window.electronAPI.loadNodeTenders({});
+  const tenderRows = Array.isArray(tenders) ? tenders : [];
+  if (tenderRows.length === 0) {
+    throw new Error('Ingen Nodes-tendere tilgjengelig');
+  }
+
+  const tenderSelect = document.getElementById('nodesTender') as HTMLSelectElement | null;
+  const selectedIndex = Number(tenderSelect?.value);
+  const tender = tenderRows[selectedIndex] || tenderRows[0];
+  if (!tender) {
+    throw new Error('Kunne ikke velge en gyldig Nodes-tender');
+  }
+
+  const reservationPrice = Number(tender.reservationPriceNokMwH);
+  const periodStartTs = toTenderTimestampMs(tender.periodStartTs);
+  const periodEndTs = toTenderTimestampMs(tender.periodEndTs);
+  if (!Number.isFinite(reservationPrice) || reservationPrice <= 0) {
+    throw new Error('Nodes tender mangler gyldig reservasjonspris');
+  }
+  if (!periodStartTs || !periodEndTs || periodStartTs >= periodEndTs) {
+    throw new Error('Nodes tender mangler gyldig periode');
+  }
+
+  const nodesResult = calculateNodeYearlyIncome({
+    reservationPriceNokMwH: reservationPrice,
+    quantityMw,
+    periodStartTs,
+    periodEndTs,
+    activeDays: Array.isArray(tender.activeDays) ? tender.activeDays : [],
+    activeWindows: Array.isArray(tender.activeWindows) ? tender.activeWindows : [],
+  });
+
+  const monthlyByMonth = new Array<number>(12).fill(0);
+  nodesResult.monthly.forEach((row) => {
+    const index = MONTH_LABELS_NB.indexOf(row.month);
+    if (index >= 0) {
+      monthlyByMonth[index] = row.incomeNok;
+    }
+  });
+
+  return {
+    totalNok: nodesResult.totalIncomeNok,
+    monthlyByMonth,
+    tenderName: tender.name || 'Nodes-tender'
+  };
+}
+
+function updateYearlyCombinedMonthlyChart(monthly: YearlyCombinedMonthlyRow[]): void {
+  if (!Array.isArray(monthly) || monthly.length === 0) {
+    if (charts.yearlyCombinedMonthly) {
+      charts.yearlyCombinedMonthly.destroy();
+      charts.yearlyCombinedMonthly = null;
+    }
+    setChartState('yearlyCombinedMonthlyChart', 'empty', 'Ingen månedlige data.');
+    return;
+  }
+
+  const ctx = (document.getElementById('yearlyCombinedMonthlyChart') as HTMLCanvasElement).getContext('2d')!;
+  if (charts.yearlyCombinedMonthly) {
+    charts.yearlyCombinedMonthly.destroy();
+  }
+
+  charts.yearlyCombinedMonthly = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: monthly.map((row) => row.month),
+      datasets: [
+        {
+          label: 'FCR-N (EUR)',
+          data: monthly.map((row) => row.fcrEur),
+          backgroundColor: '#f3c640',
+          borderRadius: 4
+        },
+        {
+          label: 'aFRR (EUR)',
+          data: monthly.map((row) => row.afrrEur),
+          backgroundColor: '#4fcb73',
+          borderRadius: 4
+        },
+        {
+          label: 'Nodes (EUR-ekv)',
+          data: monthly.map((row) => row.nodesEur),
+          backgroundColor: '#60a5fa',
+          borderRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true
+        }
+      },
+      scales: {
+        x: {
+          stacked: true
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          ticks: {
+            callback: (value) => `€${Number(value).toLocaleString('nb-NO', { maximumFractionDigits: 0 })}`
+          }
+        }
+      }
+    }
+  });
+  setChartState('yearlyCombinedMonthlyChart', 'ready', '');
+}
+
+function updateYearlyCombinedSummaryTable(monthly: YearlyCombinedMonthlyRow[]): void {
+  if (!Array.isArray(monthly) || monthly.length === 0) {
+    elements.yearlyCombinedSummaryTable.innerHTML = '';
+    setTableState('yearlyCombinedSummaryTable', 'empty', 'Ingen månedlige rader.');
+    return;
+  }
+
+  elements.yearlyCombinedSummaryTable.innerHTML = monthly.map((row) => `
+    <tr>
+      <td>${row.month}</td>
+      <td>${formatEuro(Math.round(row.fcrEur))}</td>
+      <td>${formatEuro(Math.round(row.afrrEur))}</td>
+      <td>${formatNok(Math.round(row.nodesNok))}</td>
+      <td>${formatEuro(Math.round(row.nodesEur))}</td>
+      <td>${formatEuro(Math.round(row.totalEur))}</td>
+    </tr>
+  `).join('');
+  setTableState('yearlyCombinedSummaryTable', 'ready', '');
+}
+
+function renderYearlyCombinedResult(result: YearlyCombinedResult): void {
+  elements.yearlyCombinedTotalEur.textContent = formatEuro(Math.round(result.totalEur));
+  elements.yearlyCombinedFcrEur.textContent = formatEuro(Math.round(result.fcrEur));
+  elements.yearlyCombinedAfrrEur.textContent = formatEuro(Math.round(result.afrrEur));
+  elements.yearlyCombinedNodesNok.textContent = formatNok(Math.round(result.nodesNok));
+  elements.yearlyCombinedNodesEur.textContent = formatEuro(Math.round(result.nodesEur));
+  elements.yearlyCombinedMeta.textContent = `År ${result.fcrYear} for FCR-N/aFRR. Nodes: "${result.nodesTenderName}" (uendret på tvers av år).`;
+
+  updateYearlyCombinedMonthlyChart(result.monthly);
+  updateYearlyCombinedSummaryTable(result.monthly);
+}
+
+async function calculateYearlyCombined(): Promise<void> {
+  if (isYearlyCombinedCalculating) return;
+  isYearlyCombinedCalculating = true;
+
+  const calculateButton = document.getElementById('calculateYearlyCombinedBtn') as HTMLButtonElement | null;
+  if (calculateButton) calculateButton.disabled = true;
+
+  try {
+    const fcrYear = Number(elements.yearlyCombinedYear.value);
+    if (!Number.isInteger(fcrYear)) {
+      throw new Error('Velg et gyldig år for årskalkylen.');
+    }
+    const afrrYear = fcrYear;
+    const quantityMw = Number(elements.powerMw.value);
+    if (!Number.isFinite(quantityMw) || quantityMw <= 0) {
+      throw new Error('Ugyldig MW i batterikonfigurasjon.');
+    }
+
+    currentYearlyCombinedResult = null;
+    setYearlyCombinedVisualStates('loading', 'Beregner årlig kalkyle...');
+    showYearlyCombinedStatus('Beregner FCR-N...', 'info');
+    const fcrResult = await calculateFcrYearlyForCombined(fcrYear);
+
+    showYearlyCombinedStatus('Beregner aFRR...', 'info');
+    const afrrResult = await calculateAfrrYearlyForCombined(afrrYear);
+
+    showYearlyCombinedStatus('Beregner Nodes...', 'info');
+    const nodesResult = await calculateNodesYearlyForCombined(quantityMw);
+
+    const monthly: YearlyCombinedMonthlyRow[] = MONTH_LABELS_NB.map((month, index) => {
+      const fcrEur = fcrResult.monthlyByMonth[index] || 0;
+      const afrrEur = afrrResult.monthlyByMonth[index] || 0;
+      const nodesNok = nodesResult.monthlyByMonth[index] || 0;
+      const nodesEur = nodesNok / NODES_NOK_PER_EUR;
+      return {
+        month,
+        fcrEur,
+        afrrEur,
+        nodesNok,
+        nodesEur,
+        totalEur: fcrEur + afrrEur + nodesEur
+      };
+    });
+
+    const nodesEur = nodesResult.totalNok / NODES_NOK_PER_EUR;
+    currentYearlyCombinedResult = {
+      totalEur: fcrResult.totalEur + afrrResult.totalEur + nodesEur,
+      fcrEur: fcrResult.totalEur,
+      afrrEur: afrrResult.totalEur,
+      nodesNok: nodesResult.totalNok,
+      nodesEur,
+      fcrYear,
+      afrrYear,
+      nodesTenderName: nodesResult.tenderName,
+      monthly
+    };
+
+    renderYearlyCombinedResult(currentYearlyCombinedResult);
+    showYearlyCombinedStatus('Årskalkyle fullført.', 'success');
+  } catch (error) {
+    console.error('[combined-yearly] Calculation failed:', error);
+    const message = error instanceof Error ? error.message : 'Årskalkyle feilet.';
+    showYearlyCombinedStatus(message, 'warning');
+    setYearlyCombinedVisualStates('empty', 'Kunne ikke beregne årlig kalkyle.');
+  } finally {
+    isYearlyCombinedCalculating = false;
+    if (calculateButton) calculateButton.disabled = false;
+  }
+}
+
+async function exportYearlyCombinedCsv(): Promise<void> {
+  if (!currentYearlyCombinedResult) {
+    showYearlyCombinedStatus('Beregn årlig total før eksport.', 'warning');
+    return;
+  }
+
+  const csvContent = Papa.unparse(currentYearlyCombinedResult.monthly.map((row) => ({
+    maaned: row.month,
+    fcr_eur: row.fcrEur.toFixed(2),
+    afrr_eur: row.afrrEur.toFixed(2),
+    nodes_nok: row.nodesNok.toFixed(2),
+    nodes_eur_ekv: row.nodesEur.toFixed(2),
+    total_eur: row.totalEur.toFixed(2),
+  })));
+
+  await window.electronAPI.saveFile(csvContent, `aarskalkyle_kombinert_${currentYearlyCombinedResult.fcrYear}.csv`);
 }
 
 async function loadPriceData(year: number): Promise<void> {
