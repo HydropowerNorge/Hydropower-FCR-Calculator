@@ -2,6 +2,7 @@ import Chart from 'chart.js/auto';
 import Papa from 'papaparse';
 import { calculateAfrrYearlyRevenue } from './afrr';
 import type { AfrrYearlyResult, AfrrMonthlyRow } from './afrr';
+import { showStatusMessage } from './status-message';
 
 const MONTH_NAMES_NB_FULL = ['Januar', 'Februar', 'Mars', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Desember'];
 const HIDDEN_YEARS = new Set<number>([2021, 2026]);
@@ -109,9 +110,7 @@ export function createAfrrUI(): { init: () => Promise<void> } {
   }
 
   function showStatus(message: string, type = 'info'): void {
-    if (!el.statusMessage) return;
-    el.statusMessage.textContent = message;
-    el.statusMessage.className = `status-message ${type}`;
+    showStatusMessage(el.statusMessage, message, type);
   }
 
   async function timedFetch<T>(label: string, fetcher: () => Promise<T>): Promise<T> {

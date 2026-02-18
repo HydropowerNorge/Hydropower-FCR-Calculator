@@ -9,6 +9,7 @@ import { calculateAfrrYearlyRevenue } from './afrr';
 import { calculateNodeYearlyIncome } from './nodes';
 import { createAfrrUI } from './afrr-ui';
 import { createNodesUI } from './nodes-ui';
+import { showStatusMessage } from './status-message';
 
 console.log('[app] Modules imported successfully');
 console.log('[app] electronAPI available:', !!window.electronAPI);
@@ -257,8 +258,7 @@ function setYearlyCombinedVisualStates(state: string, message: string): void {
 }
 
 function showYearlyCombinedStatus(message: string, type = 'info'): void {
-  elements.yearlyCombinedStatusMessage.textContent = message;
-  elements.yearlyCombinedStatusMessage.className = `status-message ${type}`;
+  showStatusMessage(elements.yearlyCombinedStatusMessage, message, type);
 }
 
 function isYearlyCombinedNodesIncluded(): boolean {
@@ -300,7 +300,7 @@ async function runFcrSimulationInWorker(payload: Record<string, unknown>): Promi
 
       if (message.type === 'progress') {
         console.log('[app] Worker progress:', message.message);
-        showStatus(message.message, 'info');
+        showStatus(message.message, 'info', { autoHide: !isCalculating });
         return;
       }
 
@@ -1238,7 +1238,7 @@ async function calculate(): Promise<void> {
     const year = parseInt(elements.year.value);
     setFcrVisualStates('loading', 'Beregner visualiseringer...');
 
-    showStatus('Simulerer frekvens', 'info');
+    showStatus('Simulerer frekvens', 'info', { autoHide: false });
     await new Promise(r => setTimeout(r, 10));
 
     let workerResult: WorkerPayload;
@@ -1258,12 +1258,12 @@ async function calculate(): Promise<void> {
       console.warn('Worker simulation unavailable, falling back to main thread simulation:', err);
 
       const startTime = new Date(Date.UTC(year, 0, 1));
-      showStatus('Simulerer batteri', 'info');
+      showStatus('Simulerer batteri', 'info', { autoHide: false });
       await new Promise(r => setTimeout(r, 10));
 
       const localFreqData = FrequencySimulator.simulateFrequency(startTime, hours, 1, seed, profileName);
 
-      showStatus('Beregner inntekt', 'info');
+      showStatus('Beregner inntekt', 'info', { autoHide: false });
       await new Promise(r => setTimeout(r, 10));
 
       const socData = Calculator.simulateSocHourly(localFreqData, config);
@@ -1279,13 +1279,13 @@ async function calculate(): Promise<void> {
     const result: RevenueResult & { freqSummary?: FrequencySummary } = workerResult.result;
     result.freqSummary = workerResult.summary;
 
-    showStatus('Simulering fullført', 'success');
+    showStatus('Simulering fullført', 'success', { autoHide: false });
 
     currentResult = result;
     displayResults(result, true, true);
   } catch (err) {
     console.error('Calculation failed:', err);
-    showStatus('Beregning feilet. Prøv igjen.', 'warning');
+    showStatus('Beregning feilet. Prøv igjen.', 'warning', { autoHide: false });
     setFcrVisualStates('empty', 'Kunne ikke generere visualiseringer.');
   } finally {
     isCalculating = false;
@@ -1697,9 +1697,12 @@ async function exportPdf(): Promise<void> {
   }
 }
 
-function showStatus(message: string, type: string): void {
-  elements.statusMessage.textContent = message;
-  elements.statusMessage.className = `status-message ${type}`;
+function showStatus(
+  message: string,
+  type: string,
+  options: { autoHide?: boolean } = {}
+): void {
+  showStatusMessage(elements.statusMessage, message, type, options);
 }
 
 const popoverEl = document.getElementById('popover')!;

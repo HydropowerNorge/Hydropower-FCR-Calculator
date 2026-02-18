@@ -2,6 +2,7 @@ import Papa from 'papaparse';
 import { calculateNodeYearlyIncome } from './nodes';
 import type { NodeYearlyResult } from './nodes';
 import type { NodeTenderRow } from '../shared/electron-api';
+import { showStatusMessage } from './status-message';
 
 interface NodesElements {
   statusMessage: HTMLElement | null;
@@ -267,9 +268,7 @@ export function createNodesUI(): { init: () => Promise<void> } {
   }
 
   function showStatus(message: string, type = 'info'): void {
-    if (!el.statusMessage) return;
-    el.statusMessage.textContent = message;
-    el.statusMessage.className = `status-message ${type}`;
+    showStatusMessage(el.statusMessage, message, type);
   }
 
   function populateTenderSelect(): void {

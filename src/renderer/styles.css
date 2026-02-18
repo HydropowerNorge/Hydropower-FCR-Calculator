@@ -448,6 +448,18 @@ body {
   margin-bottom: 14px;
   font-size: 0.85rem;
   border: 1px solid transparent;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.status-message.is-fade-out {
+  opacity: 0;
+  transform: translateY(-2px);
+}
+
+.status-message.is-hidden {
+  display: none;
 }
 
 .status-message.success {
@@ -467,6 +479,22 @@ body {
   color: var(--text-primary);
   border-color: rgba(79, 203, 115, 0.26);
 }
+
+.market-context-box {
+  margin-bottom: 14px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  background: rgba(96, 165, 250, 0.13);
+  box-shadow: var(--shadow-card);
+}
+
+.market-context-box p {
+  font-size: 0.91rem;
+  color: var(--text-primary);
+  line-height: 1.45;
+}
+
 
 /* Metrics */
 .metrics-row {
