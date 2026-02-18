@@ -80,7 +80,7 @@ export const getAvailableYears = query({
           .eq("reserveType", reserveType)
           .eq("resolutionMin", resolutionMin),
       )
-      .collect();
+      .take(50);
 
     if (seriesRows.length > 0) {
       return seriesRows.map((row) => row.year);

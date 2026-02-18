@@ -52,6 +52,7 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
+    "@sentry/browser": "^10.39.0",
     "chart.js": "^4.4.7",
     "convex": "^1.31.7",
     "dotenv": "^17.3.1",
