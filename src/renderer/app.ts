@@ -46,7 +46,7 @@ interface PriceDataRow {
   volume: number;
 }
 
-type CombinedMarket = 'aFRR' | 'FCR-N' | 'NODES/Euroflex';
+type CombinedMarket = 'aFRR' | 'FCR-N' | 'Nodes';
 
 interface CombinedPriorityRow {
   block: string;
@@ -169,6 +169,12 @@ const combinedAnnualRevenue = {
   fcrStandaloneEur: 165_000,
 };
 
+const COMBINED_MARKET_COLORS: Record<CombinedMarket, string> = {
+  aFRR: '#4fcb73',
+  'FCR-N': '#f3c640',
+  Nodes: '#60a5fa'
+};
+
 const MONTH_LABELS_NB = ['Jan', 'Feb', 'Mar', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Des'];
 const MONTH_NAMES_NB_FULL = ['Januar', 'Februar', 'Mars', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Desember'];
 const NODES_NOK_PER_EUR = 11.5;
@@ -201,10 +207,10 @@ const combinedPriorityRows: CombinedPriorityRow[] = [
   },
   {
     block: '18:00-22:00',
-    market: 'NODES/Euroflex',
+    market: 'Nodes',
     valueEurMwHour: 52,
     reason: 'Lokal flaskehals kan gi høy fleksibilitetsverdi i enkeltperioder.',
-    consequence: 'Når NODES er best, må FCR-N/aFRR vike for samme kapasitet.'
+    consequence: 'Når Nodes er best, må FCR-N/aFRR vike for samme kapasitet.'
   },
   {
     block: '22:00-24:00',
@@ -766,14 +772,11 @@ function setupCombinedInnerTabs(): void {
 }
 
 function renderCombinedMetrics(): void {
-  const reserveTotal = combinedAnnualRevenue.afrrEur + combinedAnnualRevenue.fcrCombinedEur + combinedAnnualRevenue.nodesEur;
-  const fcrDifference = combinedAnnualRevenue.fcrStandaloneEur - combinedAnnualRevenue.fcrCombinedEur;
-
-  elements.combinedReserveTotal.textContent = `>= ${formatEuro(reserveTotal)}`;
-  elements.combinedAfrrRevenue.textContent = formatEuro(combinedAnnualRevenue.afrrEur);
-  elements.combinedFcrRevenue.textContent = formatEuro(combinedAnnualRevenue.fcrCombinedEur);
-  elements.combinedNodesRevenue.textContent = formatEuro(combinedAnnualRevenue.nodesEur);
-  elements.combinedDifferenceText.textContent = `Differanse: ${formatEuro(fcrDifference)} (fra ${formatEuro(combinedAnnualRevenue.fcrStandaloneEur)} til ${formatEuro(combinedAnnualRevenue.fcrCombinedEur)} i kombinert modell).`;
+  elements.combinedReserveTotal.textContent = 'Høyest verdi vinner';
+  elements.combinedAfrrRevenue.textContent = 'Flytt til aFRR';
+  elements.combinedFcrRevenue.textContent = 'Flytt til FCR-N';
+  elements.combinedNodesRevenue.textContent = 'Flytt til Nodes';
+  elements.combinedDifferenceText.textContent = 'Lavere andel i ett marked kan være riktig når totalen øker.';
 }
 
 function renderCombinedPriorityTable(): void {
@@ -813,50 +816,102 @@ function updateCombinedRatioSimulator(afrrSharePct: number): void {
   const remainingValue = total - afrrValue;
   const baseResidual = combinedAnnualRevenue.fcrCombinedEur + combinedAnnualRevenue.nodesEur;
   const fcrValue = Math.round(remainingValue * (combinedAnnualRevenue.fcrCombinedEur / baseResidual));
-  const nodesValue = total - afrrValue - fcrValue;
+  const fcrSharePct = Math.round((fcrValue / total) * 100);
+  const nodesSharePct = Math.max(0, 100 - safeSharePct - fcrSharePct);
 
   elements.combinedAfrrShareValue.textContent = `${safeSharePct}%`;
-  elements.combinedRatioTotal.textContent = formatEuro(total);
-  elements.combinedRatioAfrr.textContent = formatEuro(afrrValue);
-  elements.combinedRatioFcr.textContent = formatEuro(fcrValue);
-  elements.combinedRatioNodes.textContent = formatEuro(nodesValue);
+  elements.combinedRatioTotal.textContent = 'Robust';
+  elements.combinedRatioAfrr.textContent = `${safeSharePct}%`;
+  elements.combinedRatioFcr.textContent = `${fcrSharePct}%`;
+  elements.combinedRatioNodes.textContent = `${nodesSharePct}%`;
 
-  updateCombinedRatioChart(afrrValue, fcrValue, nodesValue);
+  updateCombinedRatioChart(safeSharePct, fcrSharePct, nodesSharePct);
 }
 
-function updateCombinedRatioChart(afrrValue: number, fcrValue: number, nodesValue: number): void {
+function updateCombinedRatioChart(afrrPct: number, fcrPct: number, nodesPct: number): void {
   const chartCanvas = document.getElementById('combinedRatioChart') as HTMLCanvasElement | null;
   if (!chartCanvas) return;
 
   const ctx = chartCanvas.getContext('2d');
   if (!ctx) return;
 
-  const dataset = [afrrValue, fcrValue, nodesValue];
-
   if (charts.combinedRatio) {
-    charts.combinedRatio.data.datasets[0].data = dataset;
+    charts.combinedRatio.data.datasets[0].data = [afrrPct];
+    charts.combinedRatio.data.datasets[1].data = [fcrPct];
+    charts.combinedRatio.data.datasets[2].data = [nodesPct];
     charts.combinedRatio.update();
     return;
   }
 
   charts.combinedRatio = new Chart(ctx, {
-    type: 'doughnut',
+    type: 'bar',
     data: {
-      labels: ['aFRR', 'FCR-N', 'NODES/Euroflex'],
-      datasets: [{
-        data: dataset,
-        backgroundColor: ['#4fcb73', '#f3c640', '#60a5fa'],
-        borderWidth: 0
-      }]
+      labels: ['Fordeling nå'],
+      datasets: [
+        {
+          label: 'aFRR',
+          data: [afrrPct],
+          backgroundColor: COMBINED_MARKET_COLORS.aFRR,
+          borderRadius: 6,
+          borderSkipped: false,
+          stack: 'distribution'
+        },
+        {
+          label: 'FCR-N',
+          data: [fcrPct],
+          backgroundColor: COMBINED_MARKET_COLORS['FCR-N'],
+          borderRadius: 6,
+          borderSkipped: false,
+          stack: 'distribution'
+        },
+        {
+          label: 'Nodes',
+          data: [nodesPct],
+          backgroundColor: COMBINED_MARKET_COLORS.Nodes,
+          borderRadius: 6,
+          borderSkipped: false,
+          stack: 'distribution'
+        }
+      ]
     },
     options: {
+      indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
+      scales: {
+        x: {
+          stacked: true,
+          min: 0,
+          max: 100,
+          title: {
+            display: true,
+            text: 'Andel av kapasitet (%)'
+          },
+          ticks: {
+            callback: (value) => `${Number(value)}%`
+          }
+        },
+        y: {
+          stacked: true,
+          grid: {
+            display: false
+          }
+        }
+      },
       plugins: {
         legend: {
           position: 'bottom',
           labels: {
             padding: 14
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const label = context.label || '';
+              const value = Number(context.raw) || 0;
+              return `${label}: ${value}%`;
+            }
           }
         }
       }
@@ -876,9 +931,8 @@ function updateCombinedPriorityChart(): void {
   }
 
   const labels = combinedPriorityRows.map(row => row.block);
-  const aFRRData = combinedPriorityRows.map(row => row.market === 'aFRR' ? row.valueEurMwHour : null);
-  const fcrData = combinedPriorityRows.map(row => row.market === 'FCR-N' ? row.valueEurMwHour : null);
-  const nodesData = combinedPriorityRows.map(row => row.market === 'NODES/Euroflex' ? row.valueEurMwHour : null);
+  const valueData = combinedPriorityRows.map((row) => row.valueEurMwHour);
+  const colorData = combinedPriorityRows.map((row) => COMBINED_MARKET_COLORS[row.market]);
 
   charts.combinedPriority = new Chart(ctx, {
     type: 'bar',
@@ -886,46 +940,58 @@ function updateCombinedPriorityChart(): void {
       labels,
       datasets: [
         {
-          label: 'aFRR valgt',
-          data: aFRRData,
-          backgroundColor: '#4fcb73',
-          borderRadius: 4
-        },
-        {
-          label: 'FCR-N valgt',
-          data: fcrData,
-          backgroundColor: '#f3c640',
-          borderRadius: 4
-        },
-        {
-          label: 'NODES/Euroflex valgt',
-          data: nodesData,
-          backgroundColor: '#60a5fa',
-          borderRadius: 4
+          label: 'Valgt marked per blokk',
+          data: valueData,
+          backgroundColor: colorData,
+          borderRadius: 6,
+          borderSkipped: false
         }
       ]
     },
     options: {
+      indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
       scales: {
-        y: {
+        x: {
           beginAtZero: true,
           title: {
             display: true,
-            text: 'Indikativ verdi (EUR/MW/h)'
+            text: 'Forventet verdiindeks (høyere er bedre)'
+          }
+        },
+        y: {
+          title: {
+            display: true,
+            text: 'Timeblokker'
           }
         }
       },
       plugins: {
+        legend: {
+          display: false
+        },
         tooltip: {
           callbacks: {
+            title: (items) => {
+              const first = items[0];
+              if (!first) return '';
+              const row = combinedPriorityRows[first.dataIndex];
+              if (!row) return first.label;
+              return `${row.block} - ${row.market}`;
+            },
+            label: (context) => `Verdiindeks: ${Number(context.raw)}`,
+            afterLabel: (context) => {
+              const row = combinedPriorityRows[context.dataIndex];
+              if (!row) return '';
+              return `Hvorfor: ${row.reason}`;
+            },
             footer: (items) => {
               const first = items[0];
               if (!first) return '';
               const row = combinedPriorityRows[first.dataIndex];
               if (!row) return '';
-              return 'Samme kapasitet kan ikke dobbelbookes i denne blokken.';
+              return `Konsekvens: ${row.consequence}`;
             }
           }
         }
