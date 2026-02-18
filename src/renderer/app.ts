@@ -236,18 +236,6 @@ function formatEuro(value: number): string {
   return `€${value.toLocaleString('nb-NO', { maximumFractionDigits: 0 })}`;
 }
 
-function formatSignedEuro(value: number): string {
-  const rounded = Math.round(value);
-  let sign = '';
-  if (rounded > 0) {
-    sign = '+';
-  } else if (rounded < 0) {
-    sign = '-';
-  }
-  const abs = Math.abs(rounded).toLocaleString('nb-NO', { maximumFractionDigits: 0 });
-  return `${sign}€${abs}`;
-}
-
 function toTenderTimestampMs(value: unknown): number | null {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return null;
@@ -1297,7 +1285,12 @@ function renderYearlyCombinedResult(result: YearlyCombinedResult): void {
   elements.yearlyCombinedAfrrEur.textContent = formatEuro(Math.round(result.afrrEur));
   elements.yearlyCombinedNodesEur.textContent = formatEuro(Math.round(result.nodesEur));
   const deltaVsConservative = effectiveTotalEur - CONSERVATIVE_TOTAL_EUR;
-  elements.yearlyCombinedMeta.textContent = `Resultatet for ${result.fcrYear} ville vært ${formatSignedEuro(deltaVsConservative)} over vårt konservative estimat, og dette uten Nodes og andre markeder vi har på gang.`;
+  const deltaAbsText = formatEuro(Math.abs(Math.round(deltaVsConservative)));
+  if (deltaVsConservative >= 0) {
+    elements.yearlyCombinedMeta.textContent = `Årskalkylen for ${result.fcrYear} ligger ${deltaAbsText} over vårt konservative estimat, før optimalisering og uten bidrag fra Nodes og andre markeder vi jobber med.`;
+  } else {
+    elements.yearlyCombinedMeta.textContent = `Årskalkylen for ${result.fcrYear} ligger ${deltaAbsText} under vårt konservative estimat, før optimalisering og uten bidrag fra Nodes og andre markeder vi jobber med.`;
+  }
 
   updateYearlyCombinedMonthlyChart(result.monthly, includeNodes);
   updateYearlyCombinedSummaryTable(result.monthly);
