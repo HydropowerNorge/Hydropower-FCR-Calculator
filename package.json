@@ -1,7 +1,7 @@
 {
   "name": "fcr-calculator",
   "productName": "Hydropower",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "FCR-N Battery Income Calculator",
   "author": "DrivstoffAppen AS",
   "main": ".vite/build/main.js",

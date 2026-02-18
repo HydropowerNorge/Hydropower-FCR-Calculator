@@ -6,25 +6,11 @@ import * as Calculator from './calculator';
 import type { FrequencySummary, HourlyRevenueRow, RevenueResult } from './calculator';
 import * as FrequencySimulator from './frequency';
 import { createAfrrUI } from './afrr-ui';
-import type { NodeTenderFilterOptions, NodeTenderRow } from '../shared/electron-api';
+import { createNodesUI } from './nodes-ui';
 
 console.log('[app] Modules imported successfully');
 console.log('[app] electronAPI available:', !!window.electronAPI);
 console.log('[app] electronAPI methods:', window.electronAPI ? Object.keys(window.electronAPI) : 'N/A');
-
-interface NormalizedNodeTenderRow {
-  name: string;
-  status?: string;
-  gridNode?: string;
-  market?: string;
-  quantityMw: number;
-  reservationPriceNokMwH: number | null;
-  activationPriceNokMwH: number | null;
-  periodStartTs: number | null;
-  periodEndTs: number | null;
-  activeDays: string[];
-  activeWindows: { start: string; end: string }[];
-}
 
 interface MonthlyAggregate {
   month: string;
@@ -48,8 +34,8 @@ interface PriceDataRow {
 
 let priceData: PriceDataRow[] = [];
 let currentResult: (RevenueResult & { freqSummary?: FrequencySummary }) | null = null;
-let nodeTenderRows: NormalizedNodeTenderRow[] = [];
 const afrrUI = createAfrrUI();
+const nodesUI = createNodesUI();
 const charts: {
   monthly: Chart | null;
   price: Chart | null;
@@ -88,19 +74,6 @@ const elements = {
   socSection: document.getElementById('socSection') as HTMLElement,
   freqSection: document.getElementById('freqSection') as HTMLElement,
   summaryTable: document.getElementById('summaryTable')!.querySelector('tbody') as HTMLTableSectionElement,
-
-  nodesDataset: document.getElementById('nodesDataset') as HTMLSelectElement | null,
-  nodesGridNode: document.getElementById('nodesGridNode') as HTMLSelectElement | null,
-  nodesMarket: document.getElementById('nodesMarket') as HTMLSelectElement | null,
-  refreshNodesBtn: document.getElementById('refreshNodesBtn') as HTMLButtonElement | null,
-  nodesFilterInfo: document.getElementById('nodesFilterInfo'),
-
-  nodesStatusMessage: document.getElementById('nodesStatusMessage'),
-  nodesTenderCount: document.getElementById('nodesTenderCount'),
-  nodesTotalMw: document.getElementById('nodesTotalMw'),
-  nodesAvgReservation: document.getElementById('nodesAvgReservation'),
-  nodesAvgActivation: document.getElementById('nodesAvgActivation'),
-  nodesTableBody: document.getElementById('nodesTableBody')
 };
 
 Chart.defaults.color = '#aaa';
@@ -221,251 +194,6 @@ function setFcrResultContainerVisible(visible: boolean): void {
   elements.resultsContainer.style.display = visible ? 'block' : 'none';
 }
 
-function showNodesStatus(message: string, type = 'info'): void {
-  if (!elements.nodesStatusMessage) return;
-  elements.nodesStatusMessage.textContent = message;
-  elements.nodesStatusMessage.className = `status-message ${type}`;
-}
-
-function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function formatDateRange(startTs: number | null, endTs: number | null): string {
-  if (!Number.isFinite(startTs) || !Number.isFinite(endTs)) return '-';
-  const start = new Date(startTs!).toLocaleDateString('nb-NO');
-  const end = new Date(endTs!).toLocaleDateString('nb-NO');
-  return `${start} - ${end}`;
-}
-
-function formatNokValue(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return '-';
-  return `NOK ${Math.round(value).toLocaleString('nb-NO')}`;
-}
-
-function formatSchedule(activeDays: string[], activeWindows: { start: string; end: string }[]): string {
-  const days = Array.isArray(activeDays) && activeDays.length > 0
-    ? activeDays.join(', ')
-    : 'Ingen dager';
-  const windows = Array.isArray(activeWindows) && activeWindows.length > 0
-    ? activeWindows
-      .map((w) => `${w.start}-${w.end}`)
-      .join(', ')
-    : 'Ingen vindu';
-  return `${days} | ${windows}`;
-}
-
-function setSelectOptions(
-  selectElement: HTMLSelectElement | null,
-  values: string[],
-  placeholderLabel = 'Alle',
-  preserveSelection = true,
-): void {
-  if (!selectElement) return;
-  const previousValue = selectElement.value;
-  selectElement.innerHTML = '';
-
-  const allOption = document.createElement('option');
-  allOption.value = '';
-  allOption.textContent = placeholderLabel;
-  selectElement.appendChild(allOption);
-
-  values.forEach((value) => {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = value;
-    selectElement.appendChild(option);
-  });
-
-  if (preserveSelection && previousValue && values.includes(previousValue)) {
-    selectElement.value = previousValue;
-  }
-}
-
-function createEmptyNodeFilterOptions(): NodeTenderFilterOptions {
-  return {
-    gridNodes: [],
-    markets: [],
-    statuses: [],
-    total: 0,
-  };
-}
-
-function buildNodeFilterOptionsFromRows(rows: NormalizedNodeTenderRow[]): NodeTenderFilterOptions {
-  const gridNodes = new Set<string>();
-  const markets = new Set<string>();
-  const statuses = new Set<string>();
-
-  rows.forEach((row) => {
-    if (row?.gridNode) gridNodes.add(String(row.gridNode));
-    if (row?.market) markets.add(String(row.market));
-    if (row?.status) statuses.add(String(row.status));
-  });
-
-  return {
-    gridNodes: Array.from(gridNodes).sort((a, b) => a.localeCompare(b)),
-    markets: Array.from(markets).sort((a, b) => a.localeCompare(b)),
-    statuses: Array.from(statuses).sort((a, b) => a.localeCompare(b)),
-    total: rows.length,
-  };
-}
-
-function updateNodesMetrics(rows: NormalizedNodeTenderRow[]): void {
-  const totalTenders = rows.length;
-  const totalMw = rows.reduce((sum, row) => sum + (Number(row.quantityMw) || 0), 0);
-
-  const reservationRows = rows.filter((row) => Number.isFinite(row.reservationPriceNokMwH));
-  const activationRows = rows.filter((row) => Number.isFinite(row.activationPriceNokMwH));
-  const avgReservation = reservationRows.length > 0
-    ? reservationRows.reduce((sum, row) => sum + row.reservationPriceNokMwH!, 0) / reservationRows.length
-    : null;
-  const avgActivation = activationRows.length > 0
-    ? activationRows.reduce((sum, row) => sum + row.activationPriceNokMwH!, 0) / activationRows.length
-    : null;
-
-  if (elements.nodesTenderCount) {
-    elements.nodesTenderCount.textContent = totalTenders.toLocaleString('nb-NO');
-  }
-  if (elements.nodesTotalMw) {
-    elements.nodesTotalMw.textContent = `${totalMw.toLocaleString('nb-NO', { maximumFractionDigits: 2 })} MW`;
-  }
-  if (elements.nodesAvgReservation) {
-    elements.nodesAvgReservation.textContent = formatNokValue(avgReservation);
-  }
-  if (elements.nodesAvgActivation) {
-    elements.nodesAvgActivation.textContent = formatNokValue(avgActivation);
-  }
-}
-
-function renderNodesTable(rows: NormalizedNodeTenderRow[]): void {
-  if (!elements.nodesTableBody) return;
-  if (!Array.isArray(rows) || rows.length === 0) {
-    elements.nodesTableBody.innerHTML = '';
-    setTableState('nodesTable', 'empty', 'Ingen nodetenderer for valgt filter.');
-    return;
-  }
-
-  const sortedRows = [...rows].sort((a, b) => (a.periodStartTs || 0) - (b.periodStartTs || 0));
-  elements.nodesTableBody.innerHTML = sortedRows.map((row) => {
-    const priceSummary = [
-      `Res: ${formatNokValue(row.reservationPriceNokMwH)}`,
-      `Akt: ${formatNokValue(row.activationPriceNokMwH)}`,
-    ].join('<br>');
-
-    return `
-      <tr>
-        <td>${escapeHtml(row.name)}</td>
-        <td>${escapeHtml(row.status || '-')}</td>
-        <td>${escapeHtml(row.gridNode || '-')}</td>
-        <td>${escapeHtml(row.market || '-')}</td>
-        <td>${escapeHtml(formatDateRange(row.periodStartTs, row.periodEndTs))}</td>
-        <td>${escapeHtml(formatSchedule(row.activeDays, row.activeWindows))}</td>
-        <td class="nodes-price-cell">${priceSummary}</td>
-        <td>${escapeHtml((Number(row.quantityMw) || 0).toLocaleString('nb-NO', { maximumFractionDigits: 2 }))}</td>
-      </tr>
-    `;
-  }).join('');
-
-  setTableState('nodesTable', 'ready', '');
-}
-
-async function loadNodeFilterOptions(dataset: string, keepSelections = true): Promise<void> {
-  if (!window.electronAPI?.loadNodeTenders) return;
-
-  let result = createEmptyNodeFilterOptions();
-
-  try {
-    const rows = await window.electronAPI.loadNodeTenders({ dataset });
-    const normalizedRows = (Array.isArray(rows) ? rows : []).map(normalizeNodeTenderRow);
-    result = buildNodeFilterOptionsFromRows(normalizedRows);
-  } catch (error) {
-    console.warn('Could not derive node filters from tenders:', error);
-  }
-
-  setSelectOptions(elements.nodesGridNode, result.gridNodes, 'Alle', keepSelections);
-  setSelectOptions(elements.nodesMarket, result.markets, 'Alle', keepSelections);
-
-  if (elements.nodesFilterInfo) {
-    const total = result.total || 0;
-    elements.nodesFilterInfo.textContent = `${total.toLocaleString('nb-NO')} tender(er) i datasettet`;
-  }
-}
-
-function normalizeNodeTenderRow(row: NodeTenderRow): NormalizedNodeTenderRow {
-  const quantityMw = Number(row?.quantityMw);
-  const reservationPriceNokMwH = Number(row?.reservationPriceNokMwH);
-  const activationPriceNokMwH = Number(row?.activationPriceNokMwH);
-  const periodStartTs = Number(row?.periodStartTs);
-  const periodEndTs = Number(row?.periodEndTs);
-
-  return {
-    ...row,
-    quantityMw: Number.isFinite(quantityMw) ? quantityMw : 0,
-    reservationPriceNokMwH: Number.isFinite(reservationPriceNokMwH) ? reservationPriceNokMwH : null,
-    activationPriceNokMwH: Number.isFinite(activationPriceNokMwH) ? activationPriceNokMwH : null,
-    periodStartTs: Number.isFinite(periodStartTs) ? periodStartTs : null,
-    periodEndTs: Number.isFinite(periodEndTs) ? periodEndTs : null,
-    activeDays: Array.isArray(row?.activeDays) ? row.activeDays : [],
-    activeWindows: Array.isArray(row?.activeWindows) ? row.activeWindows : [],
-  };
-}
-
-async function loadNodeTenderData(): Promise<void> {
-  if (!window.electronAPI?.loadNodeTenders) { console.log('[app] loadNodeTenders not available, skipping'); return; }
-
-  const dataset = elements.nodesDataset?.value || 'nodes_2026_pilot';
-  const gridNode = elements.nodesGridNode?.value || '';
-  const market = elements.nodesMarket?.value || '';
-
-  console.log('[app] Loading node tender data:', { dataset, gridNode, market });
-  showNodesStatus('Laster nodetenderer...', 'info');
-  setTableState('nodesTable', 'loading', 'Laster nodetenderer...');
-
-  try {
-    const rows = await window.electronAPI.loadNodeTenders({
-      dataset,
-      ...(gridNode ? { gridNode } : {}),
-      ...(market ? { market } : {}),
-    });
-
-    nodeTenderRows = (Array.isArray(rows) ? rows : []).map(normalizeNodeTenderRow);
-    console.log('[app] Node tenders loaded:', nodeTenderRows.length, 'rows');
-    updateNodesMetrics(nodeTenderRows);
-    renderNodesTable(nodeTenderRows);
-
-    if (nodeTenderRows.length === 0) {
-      showNodesStatus('Ingen nodetenderer funnet for valgt filter.', 'warning');
-    } else {
-      showNodesStatus(`Viser ${nodeTenderRows.length.toLocaleString('nb-NO')} nodetender(er).`, 'success');
-    }
-  } catch (error) {
-    console.error('Failed to load node tenders:', error);
-    nodeTenderRows = [];
-    updateNodesMetrics(nodeTenderRows);
-    renderNodesTable(nodeTenderRows);
-    showNodesStatus('Kunne ikke laste nodetenderer fra Convex.', 'warning');
-  }
-}
-
-async function initializeNodesModule(): Promise<void> {
-  if (!elements.nodesDataset) return;
-
-  try {
-    await loadNodeFilterOptions(elements.nodesDataset.value, false);
-    await loadNodeTenderData();
-  } catch (error) {
-    console.error('Failed to initialize nodes module:', error);
-    showNodesStatus('Kunne ikke laste nodetenderer fra Convex.', 'warning');
-    setTableState('nodesTable', 'empty', 'Kunne ikke laste data.');
-    updateNodesMetrics([]);
-  }
-}
-
 function setupTabs(): void {
   const tabBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.tab-btn'));
   const tabContents = Array.from(document.querySelectorAll<HTMLElement>('.tab-content'));
@@ -571,7 +299,7 @@ async function init(): Promise<void> {
   }
 
   console.log('[app] Initializing nodes module');
-  await initializeNodesModule();
+  await nodesUI.init();
   console.log('[app] Nodes module initialized');
 
   console.log('[app] init() complete — attaching event listeners');
@@ -583,42 +311,6 @@ async function init(): Promise<void> {
   document.getElementById('exportBtn')!.addEventListener('click', exportCsv);
   document.getElementById('exportXlsxBtn')!.addEventListener('click', exportXlsx);
   document.getElementById('exportPdfBtn')!.addEventListener('click', exportPdf);
-
-  if (elements.nodesDataset) {
-    elements.nodesDataset.addEventListener('change', async () => {
-      try {
-        await loadNodeFilterOptions(elements.nodesDataset!.value, false);
-        await loadNodeTenderData();
-      } catch (error) {
-        console.error('Failed to refresh nodes dataset selection:', error);
-        showNodesStatus('Kunne ikke laste nodetenderer for valgt datasett.', 'warning');
-      }
-    });
-  }
-
-  if (elements.nodesGridNode) {
-    elements.nodesGridNode.addEventListener('change', async () => {
-      await loadNodeTenderData();
-    });
-  }
-
-  if (elements.nodesMarket) {
-    elements.nodesMarket.addEventListener('change', async () => {
-      await loadNodeTenderData();
-    });
-  }
-
-  if (elements.refreshNodesBtn) {
-    elements.refreshNodesBtn.addEventListener('click', async () => {
-      try {
-        await loadNodeFilterOptions(elements.nodesDataset?.value || 'nodes_2026_pilot', true);
-        await loadNodeTenderData();
-      } catch (error) {
-        console.error('Failed to refresh node tender data:', error);
-        showNodesStatus('Kunne ikke oppdatere nodetenderer.', 'warning');
-      }
-    });
-  }
 }
 
 function setupSliders(): void {

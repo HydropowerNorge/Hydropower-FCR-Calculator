@@ -50,7 +50,7 @@
           aria-controls="nodesContent"
           aria-selected="false"
           data-hero-title="Nodes"
-          data-hero-description="Planlagt nodenivå-visning for lokasjon, begrensninger og ytelsesoversikt."
+          data-hero-description="Beregn årlig inntekt fra nodetendere basert på reservasjonspris, mengde og tidsplan."
         >Nodes</button>
         <button
           id="tab-combined"
@@ -140,33 +140,15 @@
 
       <div data-tab-config="nodes" style="display: none;">
         <section class="config-section collapsible">
-          <button class="collapsible-toggle" type="button"><h2>Nodedata</h2></button>
+          <button class="collapsible-toggle" type="button"><h2>Nodetender</h2></button>
           <div class="collapsible-body">
             <div class="input-group">
-              <label for="nodesDataset">Datasett</label>
-              <select id="nodesDataset">
-                <option value="nodes_2026_pilot">Pilot 2026</option>
-              </select>
+              <label for="nodesTender">Tender</label>
+              <select id="nodesTender"></select>
             </div>
-
-            <div class="input-group">
-              <label for="nodesGridNode">Grid node</label>
-              <select id="nodesGridNode">
-                <option value="">Alle</option>
-              </select>
-            </div>
-
-            <div class="input-group">
-              <label for="nodesMarket">Marked</label>
-              <select id="nodesMarket">
-                <option value="">Alle</option>
-              </select>
-            </div>
-
-            <p id="nodesFilterInfo" class="info-text">Laster nodedata...</p>
           </div>
         </section>
-        <button id="refreshNodesBtn" class="btn btn-secondary" type="button">Oppdater nodedata</button>
+        <button id="calculateNodesBtn" class="btn btn-primary" type="button">Beregn inntekt</button>
       </div>
 
       <div data-tab-config="combined" style="display: none;">
@@ -335,46 +317,41 @@
       </div>
 
       <div id="nodesContent" class="tab-content" data-tab-panel="nodes" role="tabpanel" aria-labelledby="tab-nodes">
-        <div id="nodesStatusMessage" class="status-message info">Laster nodedata...</div>
+        <div id="nodesStatusMessage" class="status-message info">Laster tendere...</div>
 
         <div class="metrics-row">
           <div class="metric-card">
-            <span class="metric-value" id="nodesTenderCount">-</span>
-            <span class="metric-label">Tenderer</span>
+            <span class="metric-value" id="nodesTotalIncome">-</span>
+            <span class="metric-label">Total inntekt (NOK)</span>
           </div>
           <div class="metric-card">
-            <span class="metric-value" id="nodesTotalMw">-</span>
-            <span class="metric-label">Samlet MW</span>
+            <span class="metric-value" id="nodesEligibleHours">-</span>
+            <span class="metric-label">Kvalifiserte timer</span>
           </div>
           <div class="metric-card">
-            <span class="metric-value" id="nodesAvgReservation">-</span>
-            <span class="metric-label">Reservasjon</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-value" id="nodesAvgActivation">-</span>
-            <span class="metric-label">Aktivering</span>
+            <span class="metric-value" id="nodesPriceNokMwH">-</span>
+            <span class="metric-label">Pris (NOK/MWh)</span>
           </div>
         </div>
 
+        <section class="export-section">
+          <button id="nodesExportCsvBtn" class="btn btn-secondary">Eksporter CSV</button>
+        </section>
+
         <section class="summary-section">
-          <h2>Nodetenderer</h2>
+          <h2>Månedlig oppsummering</h2>
           <div class="table-container" id="nodesTableContainer" data-state="loading">
             <table id="nodesTable">
               <thead>
                 <tr>
-                  <th>Navn</th>
-                  <th>Status</th>
-                  <th>Node</th>
-                  <th>Marked</th>
-                  <th>Periode</th>
-                  <th>Vindu</th>
-                  <th>Pris</th>
-                  <th>MW</th>
+                  <th>Måned</th>
+                  <th>Kvalifiserte timer</th>
+                  <th>Inntekt (NOK)</th>
                 </tr>
               </thead>
-              <tbody id="nodesTableBody"></tbody>
+              <tbody></tbody>
             </table>
-            <div class="visual-state">Laster nodedata...</div>
+            <div class="visual-state">Laster tendere...</div>
           </div>
         </section>
       </div>
