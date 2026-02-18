@@ -11,6 +11,9 @@
   },
   "scripts": {
     "start": "electron-forge start",
+    "web:dev": "vite --config vite.web.config.mjs",
+    "web:build": "vite build --config vite.web.config.mjs",
+    "web:preview": "vite preview --config vite.web.config.mjs",
     "convex:dev": "npx convex dev",
     "convex:dev:local": "CONVEX_AGENT_MODE=anonymous npx convex dev",
     "convex:deploy": "npx convex deploy",

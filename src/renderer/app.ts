@@ -11,6 +11,9 @@ import { createAfrrUI } from './afrr-ui';
 import { createNodesUI } from './nodes-ui';
 import { showStatusMessage } from './status-message';
 import { buildExcelFileBytes } from './excel-export';
+import { ensureRuntimeApi, isElectronRuntime } from './runtime-api';
+
+ensureRuntimeApi();
 
 console.log('[app] Modules imported successfully');
 console.log('[app] electronAPI available:', !!window.electronAPI);
@@ -695,7 +698,14 @@ async function init(): Promise<void> {
   });
 
   document.getElementById('calculateBtn')!.addEventListener('click', calculate);
-  document.getElementById('exportPdfBtn')!.addEventListener('click', exportPdf);
+  const exportPdfBtn = document.getElementById('exportPdfBtn') as HTMLButtonElement | null;
+  if (exportPdfBtn) {
+    if (isElectronRuntime()) {
+      exportPdfBtn.addEventListener('click', exportPdf);
+    } else {
+      exportPdfBtn.style.display = 'none';
+    }
+  }
   document.getElementById('calculateYearlyCombinedBtn')?.addEventListener('click', calculateYearlyCombined);
   elements.sidebarExportCsvBtn?.addEventListener('click', exportCsvForActiveTab);
   elements.sidebarExportExcelBtn?.addEventListener('click', exportExcelForActiveTab);
