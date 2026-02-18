@@ -334,41 +334,23 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
     totalHours: number;
     bidHours: number;
     avgAfrrPriceEurMw: number;
-    spotIncomeEur: number;
     afrrCapacityIncomeEur: number;
-    activationCostEur: number;
     totalIncomeEur: number;
-    controlTotalEur: number;
-    accumulatedAfrrCapacityEur: number;
-    yearlyAfrrCapacityEur: number;
-    yearlyTotalIncomeEur: number;
   }
 
   function buildAfrrExportRows(result: AfrrYearlyResult): AfrrExportRow[] {
-    let accumulatedAfrrIncomeEur = 0;
     const sortedRows = result.monthly
       .slice()
       .sort((a, b) => a.month.localeCompare(b.month));
 
-    return sortedRows.map((row) => {
-      accumulatedAfrrIncomeEur += row.afrrIncomeEur;
-      const controlTotalEur = row.spotIncomeEur + row.afrrIncomeEur - row.activationCostEur;
-
-      return {
-        month: formatYearMonthLabelNb(row.month),
-        totalHours: row.hours,
-        bidHours: row.bidHours,
-        avgAfrrPriceEurMw: row.avgAfrrPriceEurMw,
-        spotIncomeEur: row.spotIncomeEur,
-        afrrCapacityIncomeEur: row.afrrIncomeEur,
-        activationCostEur: row.activationCostEur,
-        totalIncomeEur: row.totalIncomeEur,
-        controlTotalEur,
-        accumulatedAfrrCapacityEur: accumulatedAfrrIncomeEur,
-        yearlyAfrrCapacityEur: result.totalAfrrIncomeEur,
-        yearlyTotalIncomeEur: result.totalIncomeEur,
-      };
-    });
+    return sortedRows.map((row) => ({
+      month: formatYearMonthLabelNb(row.month),
+      totalHours: row.hours,
+      bidHours: row.bidHours,
+      avgAfrrPriceEurMw: row.avgAfrrPriceEurMw,
+      afrrCapacityIncomeEur: row.afrrIncomeEur,
+      totalIncomeEur: row.totalIncomeEur,
+    }));
   }
 
   async function exportCsv(): Promise<void> {
@@ -380,14 +362,8 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
       'Timer totalt': row.totalHours,
       'Budtimer': row.bidHours,
       'Snitt aFRR-pris (EUR/MW)': row.avgAfrrPriceEurMw.toFixed(4),
-      'Spotinntekt (EUR)': row.spotIncomeEur.toFixed(2),
       'aFRR kapasitetsinntekt (EUR)': row.afrrCapacityIncomeEur.toFixed(2),
-      'Aktiveringskostnad (EUR)': row.activationCostEur.toFixed(2),
       'Sum inntekt (EUR)': row.totalIncomeEur.toFixed(2),
-      'Kontrollsum spot + aFRR - aktivering (EUR)': row.controlTotalEur.toFixed(2),
-      'Akkumulert aFRR-kapasitet (EUR)': row.accumulatedAfrrCapacityEur.toFixed(2),
-      'Årssum aFRR-kapasitet (EUR)': row.yearlyAfrrCapacityEur.toFixed(2),
-      'Årssum total inntekt (EUR)': row.yearlyTotalIncomeEur.toFixed(2),
     }));
 
     const csvContent = Papa.unparse(exportRows);
@@ -403,14 +379,8 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
       'Timer totalt': row.totalHours,
       'Budtimer': row.bidHours,
       'Snitt aFRR-pris (EUR/MW)': Number(row.avgAfrrPriceEurMw.toFixed(4)),
-      'Spotinntekt (EUR)': Number(row.spotIncomeEur.toFixed(2)),
       'aFRR kapasitetsinntekt (EUR)': Number(row.afrrCapacityIncomeEur.toFixed(2)),
-      'Aktiveringskostnad (EUR)': Number(row.activationCostEur.toFixed(2)),
       'Sum inntekt (EUR)': Number(row.totalIncomeEur.toFixed(2)),
-      'Kontrollsum spot + aFRR - aktivering (EUR)': Number(row.controlTotalEur.toFixed(2)),
-      'Akkumulert aFRR-kapasitet (EUR)': Number(row.accumulatedAfrrCapacityEur.toFixed(2)),
-      'Årssum aFRR-kapasitet (EUR)': Number(row.yearlyAfrrCapacityEur.toFixed(2)),
-      'Årssum total inntekt (EUR)': Number(row.yearlyTotalIncomeEur.toFixed(2)),
     }));
 
     const excelBytes = buildExcelFileBytes(excelRows, `aFRR ${result.year}`);
