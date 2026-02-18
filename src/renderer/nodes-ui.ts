@@ -185,7 +185,7 @@ export function createNodesUI(options: NodesUIOptions = {}): {
 
   function renderTenderInfo(tender: NodeTenderRow | null): void {
     if (!tender) {
-      if (el.tenderSummary) el.tenderSummary.textContent = 'Velg en tender for å se hva den betyr i praksis.';
+      if (el.tenderSummary) el.tenderSummary.textContent = 'Velg en tender for å se vilkår, volum og estimert inntekt.';
       if (el.tenderName) el.tenderName.textContent = '-';
       if (el.tenderMarket) el.tenderMarket.textContent = '-';
       if (el.tenderPeriod) el.tenderPeriod.textContent = '-';
@@ -222,15 +222,15 @@ export function createNodesUI(options: NodesUIOptions = {}): {
     }
     if (el.tenderPrice) {
       const reservationText = Number.isFinite(reservationPrice) && reservationPrice > 0
-        ? `Reservasjon ${formatNok(reservationPrice)}/MW/h`
-        : 'Reservasjonspris ikke oppgitt';
+        ? `Reservasjonspris: ${formatNok(reservationPrice)}/MW/h`
+        : 'Reservasjonspris: ikke oppgitt';
       const activationText = Number.isFinite(activationPrice) && activationPrice > 0
-        ? ` | Aktivering ${formatNok(activationPrice)}/MW/h`
+        ? ` | Aktiveringspris: ${formatNok(activationPrice)}/MW/h`
         : '';
       el.tenderPrice.textContent = `${reservationText}${activationText}`;
     }
     if (el.tenderVolume) {
-      el.tenderVolume.textContent = `Tender ${formatMw(tenderMw)} | Beregning ${formatMw(batteryMw)}`;
+      el.tenderVolume.textContent = `Tilbudt volum: ${formatMw(tenderMw)} | Brukt i kalkyle: ${formatMw(batteryMw)}`;
     }
     if (el.tenderHours) {
       el.tenderHours.textContent = hours.total > 0
@@ -240,9 +240,9 @@ export function createNodesUI(options: NodesUIOptions = {}): {
 
     if (el.tenderSummary) {
       const summaryPrefix = hours.total > 0
-        ? `${hours.eligible.toLocaleString('nb-NO')} av ${hours.total.toLocaleString('nb-NO')} timer er kvalifisert`
-        : 'Kvalifiserte timer beregnes fra periode, dager og tidsvinduer';
-      el.tenderSummary.textContent = `${summaryPrefix}. Inntekt = reservasjonspris × valgt MW × kvalifiserte timer.`;
+        ? `${hours.eligible.toLocaleString('nb-NO')} av ${hours.total.toLocaleString('nb-NO')} timer kvalifiserer.`
+        : 'Timer beregnes fra periode, dager og tidsvinduer.';
+      el.tenderSummary.textContent = `${summaryPrefix} Estimat: reservasjonspris × volum × kvalifiserte timer.`;
     }
   }
 
@@ -286,7 +286,7 @@ export function createNodesUI(options: NodesUIOptions = {}): {
     if (allTenders.length === 0) {
       const option = document.createElement('option');
       option.value = '';
-      option.textContent = 'Ingen tenderer tilgjengelig';
+      option.textContent = 'Ingen tendere tilgjengelig';
       el.tenderSelect.appendChild(option);
       return;
     }
