@@ -362,85 +362,158 @@
           <h3>Markedsvalg per time</h3>
           <p class="module-intro">
             Kapasitet kan flyttes mellom aFRR, FCR-N og NODES/Euroflex gjennom året.
-            Samme MW kan likevel bare allokeres til ett marked i samme time.
+            Enkeltmarkedene kan variere, men samlet reserveinntekt er konservativt estimert til minst €267 882.
           </p>
 
-          <section class="combined-qa-grid">
-            <article class="module-card combined-answer">
-              <h4>FCR-N og NODES/Euroflex samtidig?</h4>
-              <p>
-                Ja i løpet av året, men ikke med samme kapasitet i samme time.
-                Allokeringen gjøres time for time.
-              </p>
-            </article>
-            <article class="module-card combined-answer">
-              <h4>aFRR og FCR-N samtidig?</h4>
-              <p>
-                Prinsippet er det samme. Reservert kapasitet kan ikke dobbelbookes.
-                Markedet med best verdi i aktuell time prioriteres.
-              </p>
-            </article>
-          </section>
-
-          <div class="metrics-row combined-metrics">
-            <div class="metric-card">
-              <span class="metric-value" id="combinedReserveTotal">-</span>
-              <span class="metric-label">Sum reserveinntekt</span>
-            </div>
-            <div class="metric-card">
-              <span class="metric-value" id="combinedAfrrRevenue">-</span>
-              <span class="metric-label">aFRR</span>
-            </div>
-            <div class="metric-card">
-              <span class="metric-value" id="combinedFcrRevenue">-</span>
-              <span class="metric-label">FCR-N i kombinert</span>
-            </div>
-            <div class="metric-card">
-              <span class="metric-value" id="combinedNodesRevenue">-</span>
-              <span class="metric-label">NODES/Euroflex</span>
+          <div class="combined-inner-tabs-wrap">
+            <div class="combined-inner-tabs" role="tablist" aria-label="Kombinert visning">
+              <button
+                class="combined-inner-tab-btn active"
+                type="button"
+                data-combined-tab="overview"
+                role="tab"
+                aria-selected="true"
+                aria-controls="combinedTabOverview"
+              >Forklaring</button>
+              <button
+                class="combined-inner-tab-btn"
+                type="button"
+                data-combined-tab="ratio"
+                role="tab"
+                aria-selected="false"
+                aria-controls="combinedTabRatio"
+              >Ratio-simulator</button>
             </div>
           </div>
 
-          <section class="combined-insight-grid">
-            <article class="module-card">
-              <h4>Hvorfor er FCR-N €52 000 her, men €165 000 i eget ark?</h4>
-              <p>
-                €165 000 er et separat FCR-N-estimat med større allokering til FCR-N.
-                I kombinert drift prioriteres marked med høyest verdi time for time, og FCR-N-andelen blir lavere.
-              </p>
-              <p class="combined-diff" id="combinedDifferenceText">Differanse: -</p>
-            </article>
-            <article class="module-card">
-              <h4>Allokeringsregel</h4>
-              <p>
-                For hver time velges markedet med høyest forventet verdi gitt tilgjengelig kapasitet og markedskrav.
-                Derfor kan ikke inntekt fra markedene summeres uten å ta hensyn til overlapp.
-              </p>
-            </article>
+          <section
+            id="combinedTabOverview"
+            class="combined-inner-panel active"
+            data-combined-panel="overview"
+            role="tabpanel"
+            aria-hidden="false"
+          >
+            <section class="combined-qa-grid">
+              <article class="module-card combined-answer">
+                <h4>FCR-N og NODES/Euroflex samtidig?</h4>
+                <p>
+                  Ja i løpet av året, men ikke med samme kapasitet i samme time.
+                  Allokeringen gjøres time for time.
+                </p>
+              </article>
+              <article class="module-card combined-answer">
+                <h4>aFRR og FCR-N samtidig?</h4>
+                <p>
+                  Prinsippet er det samme. Reservert kapasitet kan ikke dobbelbookes.
+                  Markedet med best verdi i aktuell time prioriteres.
+                </p>
+              </article>
+            </section>
+
+            <div class="metrics-row combined-metrics">
+              <div class="metric-card">
+                <span class="metric-value" id="combinedReserveTotal">-</span>
+                <span class="metric-label">Konservativ minimumssum</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-value" id="combinedAfrrRevenue">-</span>
+                <span class="metric-label">aFRR</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-value" id="combinedFcrRevenue">-</span>
+                <span class="metric-label">FCR-N i kombinert</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-value" id="combinedNodesRevenue">-</span>
+                <span class="metric-label">NODES/Euroflex</span>
+              </div>
+            </div>
+
+            <section class="combined-insight-grid">
+              <article class="module-card">
+                <h4>Hvorfor er FCR-N €52 000 her, men €165 000 i eget ark?</h4>
+                <p>
+                  €165 000 er et separat FCR-N-estimat med større allokering til FCR-N.
+                  I kombinert drift prioriteres marked med høyest verdi time for time, og FCR-N-andelen blir lavere.
+                </p>
+                <p class="combined-diff" id="combinedDifferenceText">Differanse: -</p>
+              </article>
+              <article class="module-card">
+                <h4>Allokeringsregel</h4>
+                <p>
+                  For hver time velges markedet med høyest forventet verdi gitt tilgjengelig kapasitet og markedskrav.
+                  Fordelingen kan variere mellom markedene, mens totalen er satt konservativt.
+                </p>
+              </article>
+            </section>
+
+            <section class="chart-section">
+              <h2>Eksempeluke: valgt marked per timeblokk</h2>
+              <div class="chart-container">
+                <canvas id="combinedPriorityChart"></canvas>
+              </div>
+            </section>
+
+            <section class="summary-section">
+              <h2>Eksempel på allokering</h2>
+              <div class="table-container">
+                <table id="combinedPriorityTable">
+                  <thead>
+                    <tr>
+                      <th>Timeblokk</th>
+                      <th>Valgt marked</th>
+                      <th>Hvorfor</th>
+                      <th>Konsekvens</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </section>
           </section>
 
-          <section class="chart-section">
-            <h2>Eksempeluke: valgt marked per timeblokk</h2>
-            <div class="chart-container">
-              <canvas id="combinedPriorityChart"></canvas>
+          <section
+            id="combinedTabRatio"
+            class="combined-inner-panel"
+            data-combined-panel="ratio"
+            role="tabpanel"
+            aria-hidden="true"
+          >
+            <div class="module-card combined-slider-card">
+              <h4>Fast totalsum, variabel fordeling</h4>
+              <p class="combined-slider-lead">
+                Flytt slideren for å endre ratio mellom markedene. Totalen holdes konstant.
+              </p>
+              <label for="combinedAfrrShare">aFRR-andel: <span id="combinedAfrrShareValue">-</span></label>
+              <input type="range" id="combinedAfrrShare" min="10" max="95" step="1">
+              <p class="combined-slider-note">Resterende andel fordeles mellom FCR-N og NODES/Euroflex i samme forhold som grunnscenariet.</p>
             </div>
-          </section>
 
-          <section class="summary-section">
-            <h2>Eksempel på allokering</h2>
-            <div class="table-container">
-              <table id="combinedPriorityTable">
-                <thead>
-                  <tr>
-                    <th>Timeblokk</th>
-                    <th>Valgt marked</th>
-                    <th>Hvorfor</th>
-                    <th>Konsekvens</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
+            <div class="metrics-row combined-metrics combined-ratio-metrics">
+              <div class="metric-card">
+                <span class="metric-value" id="combinedRatioTotal">-</span>
+                <span class="metric-label">Total (fast)</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-value" id="combinedRatioAfrr">-</span>
+                <span class="metric-label">aFRR</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-value" id="combinedRatioFcr">-</span>
+                <span class="metric-label">FCR-N</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-value" id="combinedRatioNodes">-</span>
+                <span class="metric-label">NODES/Euroflex</span>
+              </div>
             </div>
+
+            <section class="chart-section">
+              <h2>Dynamisk fordeling</h2>
+              <div class="chart-container">
+                <canvas id="combinedRatioChart"></canvas>
+              </div>
+            </section>
           </section>
         </section>
       </div>

@@ -52,12 +52,14 @@ const charts: {
   soc: Chart | null;
   freq: Chart | null;
   combinedPriority: Chart | null;
+  combinedRatio: Chart | null;
 } = {
   monthly: null,
   price: null,
   soc: null,
   freq: null,
-  combinedPriority: null
+  combinedPriority: null,
+  combinedRatio: null
 };
 
 const elements = {
@@ -92,6 +94,12 @@ const elements = {
   combinedNodesRevenue: document.getElementById('combinedNodesRevenue')!,
   combinedDifferenceText: document.getElementById('combinedDifferenceText')!,
   combinedPriorityTable: document.getElementById('combinedPriorityTable')!.querySelector('tbody') as HTMLTableSectionElement,
+  combinedAfrrShare: document.getElementById('combinedAfrrShare') as HTMLInputElement,
+  combinedAfrrShareValue: document.getElementById('combinedAfrrShareValue')!,
+  combinedRatioTotal: document.getElementById('combinedRatioTotal')!,
+  combinedRatioAfrr: document.getElementById('combinedRatioAfrr')!,
+  combinedRatioFcr: document.getElementById('combinedRatioFcr')!,
+  combinedRatioNodes: document.getElementById('combinedRatioNodes')!,
 };
 
 Chart.defaults.color = '#aaa';
@@ -396,16 +404,53 @@ function setupSliders(): void {
 }
 
 function initCombinedView(): void {
+  setupCombinedInnerTabs();
   renderCombinedMetrics();
   renderCombinedPriorityTable();
   updateCombinedPriorityChart();
+  initCombinedRatioSimulator();
+}
+
+function setupCombinedInnerTabs(): void {
+  const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.combined-inner-tab-btn'));
+  const panels = Array.from(document.querySelectorAll<HTMLElement>('.combined-inner-panel'));
+  if (tabButtons.length === 0 || panels.length === 0) return;
+
+  const activate = (tab: string): void => {
+    tabButtons.forEach((button) => {
+      const isActive = button.dataset.combinedTab === tab;
+      button.classList.toggle('active', isActive);
+      button.setAttribute('aria-selected', String(isActive));
+      button.setAttribute('tabindex', isActive ? '0' : '-1');
+    });
+
+    panels.forEach((panel) => {
+      const isActive = panel.dataset.combinedPanel === tab;
+      panel.classList.toggle('active', isActive);
+      panel.setAttribute('aria-hidden', String(!isActive));
+    });
+  };
+
+  tabButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const tab = button.dataset.combinedTab;
+      if (!tab) return;
+      activate(tab);
+    });
+  });
+
+  const initialTab = tabButtons.find((button) => button.classList.contains('active'))?.dataset.combinedTab
+    || tabButtons[0]?.dataset.combinedTab;
+  if (initialTab) {
+    activate(initialTab);
+  }
 }
 
 function renderCombinedMetrics(): void {
   const reserveTotal = combinedAnnualRevenue.afrrEur + combinedAnnualRevenue.fcrCombinedEur + combinedAnnualRevenue.nodesEur;
   const fcrDifference = combinedAnnualRevenue.fcrStandaloneEur - combinedAnnualRevenue.fcrCombinedEur;
 
-  elements.combinedReserveTotal.textContent = formatEuro(reserveTotal);
+  elements.combinedReserveTotal.textContent = `>= ${formatEuro(reserveTotal)}`;
   elements.combinedAfrrRevenue.textContent = formatEuro(combinedAnnualRevenue.afrrEur);
   elements.combinedFcrRevenue.textContent = formatEuro(combinedAnnualRevenue.fcrCombinedEur);
   elements.combinedNodesRevenue.textContent = formatEuro(combinedAnnualRevenue.nodesEur);
@@ -421,6 +466,83 @@ function renderCombinedPriorityTable(): void {
       <td>${row.consequence}</td>
     </tr>
   `).join('');
+}
+
+function getCombinedReserveTotal(): number {
+  return combinedAnnualRevenue.afrrEur + combinedAnnualRevenue.fcrCombinedEur + combinedAnnualRevenue.nodesEur;
+}
+
+function initCombinedRatioSimulator(): void {
+  const total = getCombinedReserveTotal();
+  const defaultAfrrShare = Math.round((combinedAnnualRevenue.afrrEur / total) * 100);
+  elements.combinedAfrrShare.value = String(defaultAfrrShare);
+  updateCombinedRatioSimulator(defaultAfrrShare);
+
+  elements.combinedAfrrShare.addEventListener('input', () => {
+    const nextShare = Number(elements.combinedAfrrShare.value);
+    updateCombinedRatioSimulator(nextShare);
+  });
+}
+
+function updateCombinedRatioSimulator(afrrSharePct: number): void {
+  const total = getCombinedReserveTotal();
+  const minShare = Number(elements.combinedAfrrShare.min) || 0;
+  const maxShare = Number(elements.combinedAfrrShare.max) || 100;
+  const safeSharePct = Math.max(minShare, Math.min(maxShare, Math.round(afrrSharePct)));
+
+  const afrrValue = Math.round(total * (safeSharePct / 100));
+  const remainingValue = total - afrrValue;
+  const baseResidual = combinedAnnualRevenue.fcrCombinedEur + combinedAnnualRevenue.nodesEur;
+  const fcrValue = Math.round(remainingValue * (combinedAnnualRevenue.fcrCombinedEur / baseResidual));
+  const nodesValue = total - afrrValue - fcrValue;
+
+  elements.combinedAfrrShareValue.textContent = `${safeSharePct}%`;
+  elements.combinedRatioTotal.textContent = formatEuro(total);
+  elements.combinedRatioAfrr.textContent = formatEuro(afrrValue);
+  elements.combinedRatioFcr.textContent = formatEuro(fcrValue);
+  elements.combinedRatioNodes.textContent = formatEuro(nodesValue);
+
+  updateCombinedRatioChart(afrrValue, fcrValue, nodesValue);
+}
+
+function updateCombinedRatioChart(afrrValue: number, fcrValue: number, nodesValue: number): void {
+  const chartCanvas = document.getElementById('combinedRatioChart') as HTMLCanvasElement | null;
+  if (!chartCanvas) return;
+
+  const ctx = chartCanvas.getContext('2d');
+  if (!ctx) return;
+
+  const dataset = [afrrValue, fcrValue, nodesValue];
+
+  if (charts.combinedRatio) {
+    charts.combinedRatio.data.datasets[0].data = dataset;
+    charts.combinedRatio.update();
+    return;
+  }
+
+  charts.combinedRatio = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['aFRR', 'FCR-N', 'NODES/Euroflex'],
+      datasets: [{
+        data: dataset,
+        backgroundColor: ['#4fcb73', '#f3c640', '#60a5fa'],
+        borderWidth: 0
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            padding: 14
+          }
+        }
+      }
+    }
+  });
 }
 
 function updateCombinedPriorityChart(): void {

@@ -681,6 +681,50 @@ tr:hover td {
   line-height: 1.6;
 }
 
+.combined-inner-tabs-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 16px 0 18px;
+}
+
+.combined-inner-tabs {
+  display: inline-flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(61, 102, 115, 0.55);
+  background: rgba(11, 23, 29, 0.86);
+}
+
+.combined-inner-tab-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.combined-inner-tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.combined-inner-tab-btn.active {
+  color: #07260f;
+  background: linear-gradient(145deg, #4fcb73 0%, #37a75b 100%);
+}
+
+.combined-inner-panel {
+  display: none;
+}
+
+.combined-inner-panel.active {
+  display: block;
+}
+
 .combined-panel .chart-section,
 .combined-panel .summary-section {
   margin-top: 18px;
@@ -713,6 +757,39 @@ tr:hover td {
 
 .combined-metrics .metric-label {
   letter-spacing: 0.06em;
+}
+
+.combined-slider-card {
+  margin-top: 2px;
+}
+
+.combined-slider-card h4 {
+  margin-bottom: 6px;
+}
+
+.combined-slider-lead {
+  margin-bottom: 12px;
+}
+
+.combined-slider-card label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+#combinedAfrrShare {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.combined-slider-note {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.combined-ratio-metrics {
+  margin-top: 14px;
 }
 
 .combined-diff {
@@ -870,6 +947,10 @@ tr:hover td {
     padding: 20px;
   }
 
+  .combined-inner-tab-btn {
+    padding: 8px 12px;
+  }
+
   #combinedPriorityTable td:nth-child(3),
   #combinedPriorityTable td:nth-child(4) {
     min-width: 0;
@@ -911,6 +992,11 @@ tr:hover td {
 
   .combined-panel {
     padding: 16px;
+  }
+
+  .combined-inner-tabs-wrap {
+    margin-top: 12px;
+    margin-bottom: 14px;
   }
 
   .combined-note-panel {
