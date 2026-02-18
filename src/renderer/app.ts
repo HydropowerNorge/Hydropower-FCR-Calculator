@@ -131,7 +131,6 @@ const elements = {
   yearlyCombinedTotalEur: document.getElementById('yearlyCombinedTotalEur')!,
   yearlyCombinedFcrEur: document.getElementById('yearlyCombinedFcrEur')!,
   yearlyCombinedAfrrEur: document.getElementById('yearlyCombinedAfrrEur')!,
-  yearlyCombinedNodesNok: document.getElementById('yearlyCombinedNodesNok')!,
   yearlyCombinedNodesEur: document.getElementById('yearlyCombinedNodesEur')!,
   yearlyCombinedSummaryTable: document.getElementById('yearlyCombinedSummaryTable')!.querySelector('tbody') as HTMLTableSectionElement,
 };
@@ -153,6 +152,9 @@ const combinedAnnualRevenue = {
 
 const MONTH_LABELS_NB = ['Jan', 'Feb', 'Mar', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Des'];
 const NODES_NOK_PER_EUR = 11.5;
+const CONSERVATIVE_TOTAL_EUR = combinedAnnualRevenue.afrrEur
+  + combinedAnnualRevenue.fcrCombinedEur
+  + combinedAnnualRevenue.nodesEur;
 
 const combinedPriorityRows: CombinedPriorityRow[] = [
   {
@@ -196,8 +198,11 @@ function formatEuro(value: number): string {
   return `€${value.toLocaleString('nb-NO', { maximumFractionDigits: 0 })}`;
 }
 
-function formatNok(value: number): string {
-  return `NOK ${value.toLocaleString('nb-NO', { maximumFractionDigits: 0 })}`;
+function formatSignedEuro(value: number): string {
+  const rounded = Math.round(value);
+  const sign = rounded > 0 ? '+' : rounded < 0 ? '-' : '';
+  const abs = Math.abs(rounded).toLocaleString('nb-NO', { maximumFractionDigits: 0 });
+  return `${sign}€${abs}`;
 }
 
 function toTenderTimestampMs(value: unknown): number | null {
@@ -904,7 +909,7 @@ function updateYearlyCombinedMonthlyChart(monthly: YearlyCombinedMonthlyRow[]): 
           borderRadius: 4
         },
         {
-          label: 'Nodes (EUR-ekv)',
+          label: 'Nodes (EUR)',
           data: monthly.map((row) => row.nodesEur),
           backgroundColor: '#60a5fa',
           borderRadius: 4
@@ -948,7 +953,6 @@ function updateYearlyCombinedSummaryTable(monthly: YearlyCombinedMonthlyRow[]): 
       <td>${row.month}</td>
       <td>${formatEuro(Math.round(row.fcrEur))}</td>
       <td>${formatEuro(Math.round(row.afrrEur))}</td>
-      <td>${formatNok(Math.round(row.nodesNok))}</td>
       <td>${formatEuro(Math.round(row.nodesEur))}</td>
       <td>${formatEuro(Math.round(row.totalEur))}</td>
     </tr>
@@ -960,9 +964,9 @@ function renderYearlyCombinedResult(result: YearlyCombinedResult): void {
   elements.yearlyCombinedTotalEur.textContent = formatEuro(Math.round(result.totalEur));
   elements.yearlyCombinedFcrEur.textContent = formatEuro(Math.round(result.fcrEur));
   elements.yearlyCombinedAfrrEur.textContent = formatEuro(Math.round(result.afrrEur));
-  elements.yearlyCombinedNodesNok.textContent = formatNok(Math.round(result.nodesNok));
   elements.yearlyCombinedNodesEur.textContent = formatEuro(Math.round(result.nodesEur));
-  elements.yearlyCombinedMeta.textContent = `År ${result.fcrYear} for FCR-N/aFRR. Nodes: "${result.nodesTenderName}" (uendret på tvers av år).`;
+  const deltaVsConservative = result.totalEur - CONSERVATIVE_TOTAL_EUR;
+  elements.yearlyCombinedMeta.textContent = `År ${result.fcrYear} for FCR-N/aFRR. Nodes: "${result.nodesTenderName}" (uendret på tvers av år). Konservativ referanse ${formatEuro(CONSERVATIVE_TOTAL_EUR)}. Avvik: ${formatSignedEuro(deltaVsConservative)}.`;
 
   updateYearlyCombinedMonthlyChart(result.monthly);
   updateYearlyCombinedSummaryTable(result.monthly);
@@ -1026,7 +1030,7 @@ async function calculateYearlyCombined(): Promise<void> {
     };
 
     renderYearlyCombinedResult(currentYearlyCombinedResult);
-    showYearlyCombinedStatus('Årskalkyle fullført.', 'success');
+    showYearlyCombinedStatus('Årskalkyle fullført (rå beregning, uten normalisering).', 'success');
   } catch (error) {
     console.error('[combined-yearly] Calculation failed:', error);
     const message = error instanceof Error ? error.message : 'Årskalkyle feilet.';
@@ -1044,16 +1048,19 @@ async function exportYearlyCombinedCsv(): Promise<void> {
     return;
   }
 
-  const csvContent = Papa.unparse(currentYearlyCombinedResult.monthly.map((row) => ({
+  const result = currentYearlyCombinedResult;
+  const csvContent = Papa.unparse(result.monthly.map((row) => ({
     maaned: row.month,
     fcr_eur: row.fcrEur.toFixed(2),
     afrr_eur: row.afrrEur.toFixed(2),
-    nodes_nok: row.nodesNok.toFixed(2),
-    nodes_eur_ekv: row.nodesEur.toFixed(2),
+    nodes_eur: row.nodesEur.toFixed(2),
     total_eur: row.totalEur.toFixed(2),
+    aarlig_total_eur: result.totalEur.toFixed(2),
+    konservativ_referanse_eur: CONSERVATIVE_TOTAL_EUR.toFixed(2),
+    avvik_mot_referanse_eur: (result.totalEur - CONSERVATIVE_TOTAL_EUR).toFixed(2),
   })));
 
-  await window.electronAPI.saveFile(csvContent, `aarskalkyle_kombinert_${currentYearlyCombinedResult.fcrYear}.csv`);
+  await window.electronAPI.saveFile(csvContent, `aarskalkyle_kombinert_${result.fcrYear}.csv`);
 }
 
 async function loadPriceData(year: number): Promise<void> {
