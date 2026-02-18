@@ -292,6 +292,10 @@ body {
   color: var(--text-secondary);
 }
 
+.inline-loading[hidden] {
+  display: none !important;
+}
+
 .inline-loading-spinner {
   width: 11px;
   height: 11px;
