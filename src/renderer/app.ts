@@ -78,8 +78,8 @@ interface YearlyCombinedResult {
 
 let priceData: PriceDataRow[] = [];
 let currentResult: (RevenueResult & { freqSummary?: FrequencySummary }) | null = null;
-const afrrUI = createAfrrUI();
-const nodesUI = createNodesUI();
+const afrrUI = createAfrrUI({ onStateChange: () => updateSidebarCsvExportState() });
+const nodesUI = createNodesUI({ onStateChange: () => updateSidebarCsvExportState() });
 const charts: {
   monthly: Chart | null;
   price: Chart | null;
@@ -148,6 +148,7 @@ const elements = {
   yearlyCombinedNodesEur: document.getElementById('yearlyCombinedNodesEur')!,
   yearlyCombinedNodesCard: document.getElementById('yearlyCombinedNodesCard') as HTMLElement | null,
   yearlyCombinedSummaryTable: document.getElementById('yearlyCombinedSummaryTable')!.querySelector('tbody') as HTMLTableSectionElement,
+  sidebarExportCsvBtn: document.getElementById('sidebarExportCsvBtn') as HTMLButtonElement | null,
 };
 
 Chart.defaults.color = '#aaa';
@@ -257,8 +258,12 @@ function setYearlyCombinedVisualStates(state: string, message: string): void {
   setTableState('yearlyCombinedSummaryTable', state, message);
 }
 
-function showYearlyCombinedStatus(message: string, type = 'info'): void {
-  showStatusMessage(elements.yearlyCombinedStatusMessage, message, type);
+function showYearlyCombinedStatus(
+  message: string,
+  type = 'info',
+  options: { autoHide?: boolean } = { autoHide: false }
+): void {
+  showStatusMessage(elements.yearlyCombinedStatusMessage, message, type, options);
 }
 
 function isYearlyCombinedNodesIncluded(): boolean {
@@ -269,6 +274,68 @@ function applyYearlyCombinedNodesVisualState(includeNodes: boolean): void {
   const panel = document.getElementById('yearlyCombinedContent');
   if (!panel) return;
   panel.classList.toggle('nodes-optional-off', !includeNodes);
+}
+
+function getActiveMainTab(): string {
+  return document.querySelector<HTMLButtonElement>('.tab-btn.active')?.dataset.tab || '';
+}
+
+function canExportCsvForTab(tab: string): boolean {
+  if (tab === 'fcr') return currentResult !== null;
+  if (tab === 'afrr') return afrrUI.hasResult();
+  if (tab === 'nodes') return nodesUI.hasResult();
+  if (tab === 'yearlyCombined') return currentYearlyCombinedResult !== null;
+  return false;
+}
+
+function getCsvExportButtonLabel(tab: string): string {
+  if (tab === 'fcr') return 'Eksporter CSV (FCR-N)';
+  if (tab === 'afrr') return 'Eksporter CSV (aFRR)';
+  if (tab === 'nodes') return 'Eksporter CSV (Nodes)';
+  if (tab === 'yearlyCombined') return 'Eksporter CSV (Årskalkyle)';
+  return 'Eksporter CSV';
+}
+
+function updateSidebarCsvExportState(): void {
+  const button = elements.sidebarExportCsvBtn;
+  if (!button) return;
+  const activeTab = getActiveMainTab();
+  const exportSection = button.closest('.sidebar-export') as HTMLElement | null;
+  const shouldShow = activeTab === 'fcr'
+    || activeTab === 'afrr'
+    || activeTab === 'nodes'
+    || activeTab === 'yearlyCombined';
+  if (exportSection) {
+    exportSection.style.display = shouldShow ? '' : 'none';
+  }
+  if (!shouldShow) return;
+  button.textContent = getCsvExportButtonLabel(activeTab);
+  button.disabled = !canExportCsvForTab(activeTab);
+}
+
+async function exportCsvForActiveTab(): Promise<void> {
+  const button = elements.sidebarExportCsvBtn;
+  if (!button || button.disabled) return;
+
+  const activeTab = getActiveMainTab();
+  button.disabled = true;
+  const previousLabel = button.textContent;
+  button.textContent = 'Eksporterer CSV...';
+
+  try {
+    if (activeTab === 'fcr') {
+      await exportCsv();
+    } else if (activeTab === 'afrr') {
+      await afrrUI.exportCsv();
+    } else if (activeTab === 'nodes') {
+      await nodesUI.exportCsv();
+    } else if (activeTab === 'yearlyCombined') {
+      await exportYearlyCombinedCsv();
+    }
+  } finally {
+    button.textContent = previousLabel || 'Eksporter CSV';
+    updateSidebarCsvExportState();
+  }
 }
 
 async function runFcrSimulationInWorker(payload: Record<string, unknown>): Promise<WorkerPayload> {
@@ -460,6 +527,7 @@ function setupTabs(): void {
     updateConfigSectionsVisibility(tab);
     setBatteryConfigLocked(tab === 'fcr' || tab === 'yearlyCombined');
     applyHeroCopy(tab);
+    updateSidebarCsvExportState();
   }
 
   tabBtns.forEach((btn, index) => {
@@ -552,10 +620,10 @@ async function init(): Promise<void> {
   });
 
   document.getElementById('calculateBtn')!.addEventListener('click', calculate);
-  document.getElementById('exportBtn')!.addEventListener('click', exportCsv);
   document.getElementById('exportPdfBtn')!.addEventListener('click', exportPdf);
   document.getElementById('calculateYearlyCombinedBtn')?.addEventListener('click', calculateYearlyCombined);
-  document.getElementById('yearlyCombinedExportCsvBtn')?.addEventListener('click', exportYearlyCombinedCsv);
+  elements.sidebarExportCsvBtn?.addEventListener('click', exportCsvForActiveTab);
+  updateSidebarCsvExportState();
 }
 
 function setupSliders(): void {
@@ -1064,11 +1132,7 @@ function renderYearlyCombinedResult(result: YearlyCombinedResult): void {
   elements.yearlyCombinedAfrrEur.textContent = formatEuro(Math.round(result.afrrEur));
   elements.yearlyCombinedNodesEur.textContent = formatEuro(Math.round(result.nodesEur));
   const deltaVsConservative = effectiveTotalEur - CONSERVATIVE_TOTAL_EUR;
-  if (includeNodes) {
-    elements.yearlyCombinedMeta.textContent = `År ${result.fcrYear} for FCR-N/aFRR. Nodes: "${result.nodesTenderName}" (inkludert i total). Konservativ referanse ${formatEuro(CONSERVATIVE_TOTAL_EUR)}. Avvik: ${formatSignedEuro(deltaVsConservative)}.`;
-  } else {
-    elements.yearlyCombinedMeta.textContent = `År ${result.fcrYear} for FCR-N/aFRR. Nodes: "${result.nodesTenderName}" (opsjonell merinntekt, ikke inkludert i total). Konservativ referanse ${formatEuro(CONSERVATIVE_TOTAL_EUR)}. Avvik: ${formatSignedEuro(deltaVsConservative)}.`;
-  }
+  elements.yearlyCombinedMeta.textContent = `Resultatet for ${result.fcrYear} ville vært ${formatSignedEuro(deltaVsConservative)} over vårt konservative estimat, og dette uten Nodes og andre markeder vi har på gang.`;
 
   updateYearlyCombinedMonthlyChart(result.monthly, includeNodes);
   updateYearlyCombinedSummaryTable(result.monthly);
@@ -1093,14 +1157,15 @@ async function calculateYearlyCombined(): Promise<void> {
     }
 
     currentYearlyCombinedResult = null;
+    updateSidebarCsvExportState();
     setYearlyCombinedVisualStates('loading', 'Beregner årlig kalkyle...');
-    showYearlyCombinedStatus('Beregner FCR-N...', 'info');
+    showYearlyCombinedStatus('Beregner FCR-N (1/3)...', 'info');
     const fcrResult = await calculateFcrYearlyForCombined(fcrYear);
 
-    showYearlyCombinedStatus('Beregner aFRR...', 'info');
+    showYearlyCombinedStatus('Beregner aFRR (2/3)...', 'info');
     const afrrResult = await calculateAfrrYearlyForCombined(afrrYear);
 
-    showYearlyCombinedStatus('Beregner Nodes...', 'info');
+    showYearlyCombinedStatus('Beregner Nodes (3/3)...', 'info');
     const nodesResult = await calculateNodesYearlyForCombined(quantityMw);
 
     const monthly: YearlyCombinedMonthlyRow[] = MONTH_LABELS_NB.map((month, index) => {
@@ -1130,12 +1195,13 @@ async function calculateYearlyCombined(): Promise<void> {
       nodesTenderName: nodesResult.tenderName,
       monthly
     };
+    updateSidebarCsvExportState();
 
     renderYearlyCombinedResult(currentYearlyCombinedResult);
     if (isYearlyCombinedNodesIncluded()) {
-      showYearlyCombinedStatus('Årskalkyle fullført. Nodes er inkludert i total.', 'success');
+      showYearlyCombinedStatus('Fullført (3/3). Nodes er inkludert i total.', 'success', { autoHide: true });
     } else {
-      showYearlyCombinedStatus('Årskalkyle fullført. Nodes vises som opsjonell merinntekt.', 'success');
+      showYearlyCombinedStatus('Fullført (3/3).', 'success', { autoHide: true });
     }
   } catch (error) {
     console.error('[combined-yearly] Calculation failed:', error);
@@ -1145,6 +1211,7 @@ async function calculateYearlyCombined(): Promise<void> {
   } finally {
     isYearlyCombinedCalculating = false;
     if (calculateButton) calculateButton.disabled = false;
+    updateSidebarCsvExportState();
   }
 }
 
@@ -1179,6 +1246,8 @@ async function exportYearlyCombinedCsv(): Promise<void> {
 
 async function loadPriceData(year: number): Promise<void> {
   console.log('[app] loadPriceData() called for year:', year);
+  currentResult = null;
+  updateSidebarCsvExportState();
   setFcrResultContainerVisible(false);
   setFcrVisualStates('loading', 'Laster prisdata...');
   showStatus(`Laster prisdata for ${year}...`, 'info');
@@ -1282,6 +1351,7 @@ async function calculate(): Promise<void> {
     showStatus('Simulering fullført', 'success', { autoHide: false });
 
     currentResult = result;
+    updateSidebarCsvExportState();
     displayResults(result, true, true);
   } catch (err) {
     console.error('Calculation failed:', err);
@@ -1290,6 +1360,7 @@ async function calculate(): Promise<void> {
   } finally {
     isCalculating = false;
     if (calculateBtn) calculateBtn.disabled = false;
+    updateSidebarCsvExportState();
   }
 }
 

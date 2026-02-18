@@ -23,6 +23,10 @@ interface NodesElements {
   exportCsvBtn: HTMLButtonElement | null;
 }
 
+interface NodesUIOptions {
+  onStateChange?: () => void;
+}
+
 const DAY_LABELS: Record<string, string> = {
   Monday: 'Man',
   Tuesday: 'Tir',
@@ -145,7 +149,11 @@ function estimateTenderHours(tender: NodeTenderRow): { eligible: number; total: 
   }
 }
 
-export function createNodesUI(): { init: () => Promise<void> } {
+export function createNodesUI(options: NodesUIOptions = {}): {
+  init: () => Promise<void>;
+  exportCsv: () => Promise<void>;
+  hasResult: () => boolean;
+} {
   const el: NodesElements = {
     statusMessage: null,
     totalIncome: null,
@@ -364,6 +372,7 @@ export function createNodesUI(): { init: () => Promise<void> } {
 
       displayResults(currentResult);
       showStatus('Beregning fullført.', 'success');
+      options.onStateChange?.();
     } catch (error) {
       console.error('Node income calculation failed:', error);
       showStatus('Beregning feilet. Se konsoll for detaljer.', 'warning');
@@ -371,6 +380,7 @@ export function createNodesUI(): { init: () => Promise<void> } {
     } finally {
       isCalculating = false;
       if (el.calculateBtn) el.calculateBtn.disabled = false;
+      options.onStateChange?.();
     }
   }
 
@@ -470,8 +480,13 @@ export function createNodesUI(): { init: () => Promise<void> } {
       el.exportCsvBtn.addEventListener('click', exportCsv);
     }
 
+    options.onStateChange?.();
     console.log('[nodes-ui] init() complete');
   }
 
-  return { init };
+  return {
+    init,
+    exportCsv,
+    hasResult: () => currentResult !== null,
+  };
 }

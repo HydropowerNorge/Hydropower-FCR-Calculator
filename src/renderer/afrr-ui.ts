@@ -37,6 +37,10 @@ interface AfrrElements {
   exportCsvBtn: HTMLButtonElement | null;
 }
 
+interface AfrrUIOptions {
+  onStateChange?: () => void;
+}
+
 function normalizeYearList(values: unknown): number[] {
   return (Array.isArray(values) ? values : [])
     .map((year) => Number(year))
@@ -44,7 +48,11 @@ function normalizeYearList(values: unknown): number[] {
     .sort((a, b) => a - b);
 }
 
-export function createAfrrUI(): { init: () => Promise<void> } {
+export function createAfrrUI(options: AfrrUIOptions = {}): {
+  init: () => Promise<void>;
+  exportCsv: () => Promise<void>;
+  hasResult: () => boolean;
+} {
   const charts: {
     monthly: Chart | null;
   } = {
@@ -295,6 +303,7 @@ export function createAfrrUI(): { init: () => Promise<void> } {
       });
 
       displayResults(currentResult);
+      options.onStateChange?.();
       console.info(
         `[aFRR UI] === ${selectedYear} Summary ===\n` +
         `  Data: ${afrrRows.length} aFRR rows, ${solarRows.length} solar rows, ${spotRowsForYear.length} spot rows\n` +
@@ -314,6 +323,7 @@ export function createAfrrUI(): { init: () => Promise<void> } {
     } finally {
       isCalculating = false;
       if (el.calculateBtn) el.calculateBtn.disabled = false;
+      options.onStateChange?.();
     }
   }
 
@@ -380,7 +390,12 @@ export function createAfrrUI(): { init: () => Promise<void> } {
     if (el.exportCsvBtn) {
       el.exportCsvBtn.addEventListener('click', exportCsv);
     }
+    options.onStateChange?.();
   }
 
-  return { init };
+  return {
+    init,
+    exportCsv,
+    hasResult: () => currentResult !== null,
+  };
 }

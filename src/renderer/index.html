@@ -114,31 +114,35 @@
         <div class="collapsible-body">
           <div id="solarConfigVisual">
             <div class="input-group">
-              <label for="solarMwp">Installert effekt (MWp): <span id="solarMwpValue">9</span></label>
+              <label for="solarMwp">Installert effekt (MWp): <span id="solarMwpValue">9</span> <button class="info-btn" data-help="solarMwp">?</button></label>
               <input type="range" id="solarMwp" value="9" min="1" max="20" step="0.5" disabled aria-disabled="true">
-              <div class="help-text">Låst verdi for visning.</div>
+              <div class="help-text" id="help-solarMwp">Installert solkapasitet. Låst til 9 MWp i denne modellen.</div>
             </div>
             <div class="input-group">
-              <label for="solarOrientation">Orientering</label>
+              <label for="solarOrientation">Orientering <button class="info-btn" data-help="solarOrientation">?</button></label>
               <select id="solarOrientation" disabled aria-disabled="true">
                 <option selected>Øst/Vest</option>
               </select>
+              <div class="help-text" id="help-solarOrientation">Panelretning påvirker produksjonsprofil. Her er den låst til Øst/Vest.</div>
             </div>
             <div class="input-group">
-              <label for="solarTilt">Panelvinkel: <span id="solarTiltValue">20</span>°</label>
+              <label for="solarTilt">Panelvinkel: <span id="solarTiltValue">20</span>° <button class="info-btn" data-help="solarTilt">?</button></label>
               <input type="range" id="solarTilt" value="20" min="0" max="45" step="1" disabled aria-disabled="true">
+              <div class="help-text" id="help-solarTilt">Panelvinkel påvirker produksjon over døgnet. Her er den låst til 20°.</div>
             </div>
             <div class="input-group">
-              <label for="solarZone">Prisområde</label>
+              <label for="solarZone">Prisområde <button class="info-btn" data-help="solarZone">?</button></label>
               <select id="solarZone" disabled aria-disabled="true">
                 <option selected>NO1</option>
               </select>
+              <div class="help-text" id="help-solarZone">Prisområde for spotpris og markedsdata. Her brukes NO1.</div>
             </div>
             <div class="input-group">
-              <label for="solarProfile">Produksjonsprofil</label>
+              <label for="solarProfile">Produksjonsprofil <button class="info-btn" data-help="solarProfile">?</button></label>
               <select id="solarProfile" disabled aria-disabled="true">
                 <option selected>Historisk profil (låst)</option>
               </select>
+              <div class="help-text" id="help-solarProfile">Beregningen bruker historisk solprofil for valgt år.</div>
             </div>
           </div>
         </div>
@@ -202,8 +206,9 @@
           <button class="collapsible-toggle" type="button"><h2>aFRR-parametere</h2></button>
           <div class="collapsible-body">
             <div class="input-group">
-              <label for="afrrYear">aFRR år</label>
+              <label for="afrrYear">aFRR år <button class="info-btn" data-help="afrrYear">?</button></label>
               <select id="afrrYear"></select>
+              <div class="help-text" id="help-afrrYear">Velg året som brukes for aFRR-, sol- og spotdata i beregningen.</div>
             </div>
 
           </div>
@@ -246,6 +251,17 @@
             <p class="info-text"><strong>Hvorfor lavere FCR-N i kombinert modell?</strong><br>Fordi kapasitet også allokeres til aFRR/Nodes når det gir høyere verdi.</p>
           </div>
         </section>
+
+        <section class="config-section collapsible open">
+          <button class="collapsible-toggle" type="button"><h2>Kilder</h2></button>
+          <div class="collapsible-body">
+            <a class="source-link" href="https://transparency.entsoe.eu" target="_blank" rel="noopener noreferrer">ENTSO-E Transparency</a>
+            <a class="source-link" href="https://nodesmarket.com" target="_blank" rel="noopener noreferrer">Nodesmarket</a>
+            <a class="source-link" href="https://www.statnett.no/for-aktorer-i-kraftbransjen/systemansvaret/kraftmarkedet/reservemarkeder/reservemarkedskalkulator/" target="_blank" rel="noopener noreferrer">Statnett: Reservemarkedskalkulator</a>
+            <a class="source-link" href="https://www.statnett.no/for-aktorer-i-kraftbransjen/systemansvaret/kraftmarkedet/reservemarkeder/primarreserver/" target="_blank" rel="noopener noreferrer">Statnett: Primærreserver (FCR)</a>
+            <a class="source-link" href="https://www.statnett.no/for-aktorer-i-kraftbransjen/systemansvaret/kraftmarkedet/reservemarkeder/sekundarreserver/" target="_blank" rel="noopener noreferrer">Statnett: Sekundærreserver (aFRR)</a>
+          </div>
+        </section>
       </div>
 
       <div data-tab-config="yearlyCombined">
@@ -260,6 +276,10 @@
         </section>
         <button id="calculateYearlyCombinedBtn" class="btn btn-primary" type="button">Beregn årlig total</button>
       </div>
+
+      <section class="sidebar-export">
+        <button id="sidebarExportCsvBtn" class="btn btn-secondary" type="button" disabled>Eksporter CSV</button>
+      </section>
     </aside>
 
     <!-- Main Content -->
@@ -348,7 +368,6 @@
         <!-- Export -->
         <section class="export-section">
           <button id="exportPdfBtn" class="btn btn-accent">Eksporter PDF</button>
-          <button id="exportBtn" class="btn btn-secondary">Eksporter CSV</button>
         </section>
 
         <!-- Summary Table -->
@@ -380,28 +399,27 @@
         <div class="metrics-row">
           <div class="metric-card">
             <span class="metric-value" id="afrrRevenue">-</span>
-            <span class="metric-label">aFRR-inntekt</span>
+            <span class="metric-label">aFRR-inntekt <button class="info-btn" data-help="afrrRevenue">?</button></span>
+            <div class="help-text" id="help-afrrRevenue">Årlig kapasitetsinntekt fra aFRR basert på budbar solkapasitet.</div>
           </div>
           <div class="metric-card">
             <span class="metric-value" id="afrrBidHours">-</span>
-            <span class="metric-label">Budtimer</span>
+            <span class="metric-label">Budtimer <button class="info-btn" data-help="afrrBidHours">?</button></span>
+            <div class="help-text" id="help-afrrBidHours">Antall timer i året der anlegget kan by inn kapasitet i aFRR.</div>
           </div>
           <div class="metric-card">
             <span class="metric-value" id="afrrAvgPrice">-</span>
-            <span class="metric-label">Snitt aFRR-pris</span>
+            <span class="metric-label">Snitt aFRR-pris <button class="info-btn" data-help="afrrAvgPrice">?</button></span>
+            <div class="help-text" id="help-afrrAvgPrice">Gjennomsnittlig aFRR-pris i timer med bud.</div>
           </div>
         </div>
 
         <section class="chart-section">
-          <h2>Månedlig aFRR-inntekt</h2>
+          <h2>Månedlig aFRR-inntekt <button class="info-btn" data-help="afrrMonthlyChart">?</button></h2>
+          <div class="help-text" id="help-afrrMonthlyChart">Viser hvordan aFRR-inntekten fordeler seg måned for måned.</div>
           <div class="chart-container">
             <canvas id="afrrMonthlyChart"></canvas>
           </div>
-        </section>
-
-
-        <section class="export-section">
-          <button id="afrrExportCsvBtn" class="btn btn-secondary">Eksporter CSV</button>
         </section>
 
         <section class="summary-section">
@@ -477,11 +495,6 @@
             <span class="metric-label">Pris (NOK/MWh)</span>
           </div>
         </div>
-
-        <section class="export-section">
-          <button id="nodesExportCsvBtn" class="btn btn-secondary">Eksporter CSV</button>
-        </section>
-
         <section class="summary-section">
           <h2>Månedlig oppsummering</h2>
           <div class="table-container" id="nodesTableContainer" data-state="loading">
@@ -695,11 +708,6 @@
               <canvas id="yearlyCombinedMonthlyChart"></canvas>
             </div>
           </section>
-
-          <section class="export-section">
-            <button id="yearlyCombinedExportCsvBtn" class="btn btn-secondary" type="button">Eksporter CSV</button>
-          </section>
-
           <section class="summary-section">
             <h2>Månedlig oppsummering</h2>
             <div class="table-container">
