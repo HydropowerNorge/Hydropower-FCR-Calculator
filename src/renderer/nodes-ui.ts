@@ -32,6 +32,21 @@ const DAY_LABELS: Record<string, string> = {
   Sunday: 'Søn',
 };
 
+const MONTH_SEQUENCE: Array<{ key: string; label: string }> = [
+  { key: 'Jan', label: 'Januar' },
+  { key: 'Feb', label: 'Februar' },
+  { key: 'Mar', label: 'Mars' },
+  { key: 'Apr', label: 'April' },
+  { key: 'Mai', label: 'Mai' },
+  { key: 'Jun', label: 'Juni' },
+  { key: 'Jul', label: 'Juli' },
+  { key: 'Aug', label: 'August' },
+  { key: 'Sep', label: 'September' },
+  { key: 'Okt', label: 'Oktober' },
+  { key: 'Nov', label: 'November' },
+  { key: 'Des', label: 'Desember' },
+];
+
 function formatNok(value: number, digits = 0): string {
   if (!Number.isFinite(value)) return 'NOK 0';
   return `NOK ${value.toLocaleString('nb-NO', {
@@ -350,12 +365,28 @@ export function createNodesUI(): { init: () => Promise<void> } {
 
   async function exportCsv(): Promise<void> {
     if (!currentResult) return;
+    const result = currentResult;
 
-    const csvContent = Papa.unparse(currentResult.monthly.map((row) => ({
-      month: row.month,
-      eligible_hours: row.eligibleHours,
-      income_nok: row.incomeNok.toFixed(2),
-    })));
+    const rowsByMonth = new Map(result.monthly.map((row) => [row.month, row]));
+    const hourlyIncomeNok = result.priceNokMwH * result.quantityMw;
+    let accumulatedIncomeNok = 0;
+
+    const csvContent = Papa.unparse(MONTH_SEQUENCE.map((month) => {
+      const row = rowsByMonth.get(month.key);
+      const eligibleHours = row?.eligibleHours ?? 0;
+      const incomeNok = row?.incomeNok ?? 0;
+      accumulatedIncomeNok += incomeNok;
+      return {
+        'Måned': month.label,
+        'Kvalifiserte timer': eligibleHours,
+        'Reservasjonspris (NOK/MW/h)': result.priceNokMwH.toFixed(4),
+        'Volum (MW)': result.quantityMw.toFixed(4),
+        'Timeinntekt (NOK/h)': hourlyIncomeNok.toFixed(4),
+        'Inntekt Nodes (NOK)': incomeNok.toFixed(2),
+        'Akkumulert Nodes (NOK)': accumulatedIncomeNok.toFixed(2),
+        'Årssum Nodes (NOK)': result.totalIncomeNok.toFixed(2),
+      };
+    }));
 
     const tender = getSelectedTender();
     const tenderName = (tender?.name || 'nodes').replace(/\s+/g, '_');

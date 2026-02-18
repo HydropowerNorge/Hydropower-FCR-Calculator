@@ -21,6 +21,16 @@ interface MonthlyAggregate {
   avgPrice: number;
 }
 
+interface FcrMonthlyCsvAggregate {
+  monthKey: string;
+  monthLabel: string;
+  totalHours: number;
+  availableHours: number;
+  unavailableHours: number;
+  avgPriceEurMw: number;
+  revenueEur: number;
+}
+
 interface WorkerPayload {
   result: RevenueResult;
   summary: FrequencySummary;
@@ -154,6 +164,7 @@ const combinedAnnualRevenue = {
 };
 
 const MONTH_LABELS_NB = ['Jan', 'Feb', 'Mar', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Des'];
+const MONTH_NAMES_NB_FULL = ['Januar', 'Februar', 'Mars', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Desember'];
 const NODES_NOK_PER_EUR = 11.5;
 const CONSERVATIVE_TOTAL_EUR = combinedAnnualRevenue.afrrEur
   + combinedAnnualRevenue.fcrCombinedEur
@@ -219,6 +230,23 @@ function parseYearMonthToIndex(value: string): number | null {
   if (!match) return null;
   const month = Number(match[1]);
   return month >= 1 && month <= 12 ? month - 1 : null;
+}
+
+function formatYearMonthLabelNb(value: string): string {
+  const match = String(value).match(/^(\d{4})-(\d{2})$/);
+  if (!match) return value;
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  if (!Number.isInteger(year) || monthIndex < 0 || monthIndex >= MONTH_NAMES_NB_FULL.length) {
+    return value;
+  }
+  return `${MONTH_NAMES_NB_FULL[monthIndex]} ${year}`;
+}
+
+function formatShortMonthLabelNb(value: string): string {
+  const index = MONTH_LABELS_NB.indexOf(value);
+  if (index < 0 || index >= MONTH_NAMES_NB_FULL.length) return value;
+  return MONTH_NAMES_NB_FULL[index];
 }
 
 function setYearlyCombinedVisualStates(state: string, message: string): void {
@@ -1090,16 +1118,23 @@ async function exportYearlyCombinedCsv(): Promise<void> {
   }
 
   const result = currentYearlyCombinedResult;
-  const csvContent = Papa.unparse(result.monthly.map((row) => ({
-    maaned: row.month,
-    fcr_eur: row.fcrEur.toFixed(2),
-    afrr_eur: row.afrrEur.toFixed(2),
-    nodes_eur: row.nodesEur.toFixed(2),
-    total_eur: row.totalEur.toFixed(2),
-    aarlig_total_eur: result.totalEur.toFixed(2),
-    konservativ_referanse_eur: CONSERVATIVE_TOTAL_EUR.toFixed(2),
-    avvik_mot_referanse_eur: (result.totalEur - CONSERVATIVE_TOTAL_EUR).toFixed(2),
-  })));
+  let accumulatedTotalEur = 0;
+  const csvContent = Papa.unparse(result.monthly.map((row) => {
+    accumulatedTotalEur += row.totalEur;
+    return {
+      'Måned': formatShortMonthLabelNb(row.month),
+      'FCR-N (EUR)': row.fcrEur.toFixed(2),
+      'aFRR (EUR)': row.afrrEur.toFixed(2),
+      'Nodes/Euroflex (EUR)': row.nodesEur.toFixed(2),
+      'Sum reservemarkeder (EUR)': row.totalEur.toFixed(2),
+      'Akkumulert sum (EUR)': accumulatedTotalEur.toFixed(2),
+      'Årssum reservemarkeder (EUR)': result.totalEur.toFixed(2),
+      'Konservativ referanse (EUR)': CONSERVATIVE_TOTAL_EUR.toFixed(2),
+      'Avvik årssum mot referanse (EUR)': (result.totalEur - CONSERVATIVE_TOTAL_EUR).toFixed(2),
+      'År (FCR/aFRR)': result.fcrYear,
+      'Nodes-tender': result.nodesTenderName,
+    };
+  }));
 
   await window.electronAPI.saveFile(csvContent, `aarskalkyle_kombinert_${result.fcrYear}.csv`);
 }
@@ -1276,6 +1311,42 @@ function aggregateMonthly(hourlyData: HourlyRevenueRow[]): MonthlyAggregate[] {
     hours: data.hours,
     avgPrice: data.priceSum / data.hours
   }));
+}
+
+function aggregateFcrMonthlyForCsv(hourlyData: HourlyRevenueRow[]): FcrMonthlyCsvAggregate[] {
+  const byMonth = new Map<string, { revenue: number; totalHours: number; availableHours: number; priceSum: number }>();
+
+  for (const row of hourlyData) {
+    const date = new Date(row.timestamp);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+    if (!byMonth.has(monthKey)) {
+      byMonth.set(monthKey, {
+        revenue: 0,
+        totalHours: 0,
+        availableHours: 0,
+        priceSum: 0,
+      });
+    }
+
+    const month = byMonth.get(monthKey)!;
+    month.revenue += row.revenue;
+    month.totalHours += 1;
+    month.availableHours += row.available ? 1 : 0;
+    month.priceSum += row.price;
+  }
+
+  return Array.from(byMonth.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([monthKey, values]) => ({
+      monthKey,
+      monthLabel: formatYearMonthLabelNb(monthKey),
+      totalHours: values.totalHours,
+      availableHours: values.availableHours,
+      unavailableHours: Math.max(0, values.totalHours - values.availableHours),
+      avgPriceEurMw: values.totalHours > 0 ? values.priceSum / values.totalHours : 0,
+      revenueEur: values.revenue,
+    }));
 }
 
 function updateMonthlyChart(monthly: MonthlyAggregate[]): void {
@@ -1528,15 +1599,23 @@ function updateSummaryTable(monthly: MonthlyAggregate[]): void {
 
 async function exportCsv(): Promise<void> {
   if (!currentResult) return;
+  const result = currentResult;
 
-  const csvContent = Papa.unparse(currentResult.hourlyData.map(row => ({
-    tidspunkt: new Date(row.timestamp).toISOString(),
-    pris_eur_mw: row.price.toFixed(2),
-    tilgjengelig: row.available ? 1 : 0,
-    inntekt_eur: row.revenue.toFixed(2),
-    soc_start: row.socStart !== null ? row.socStart.toFixed(4) : '',
-    soc_slutt: row.socEnd !== null ? row.socEnd.toFixed(4) : ''
-  })));
+  const monthlyRows = aggregateFcrMonthlyForCsv(result.hourlyData);
+  let accumulatedRevenueEur = 0;
+  const csvContent = Papa.unparse(monthlyRows.map((row) => {
+    accumulatedRevenueEur += row.revenueEur;
+    return {
+      'Måned': row.monthLabel,
+      'Timer totalt': row.totalHours,
+      'Timer tilgjengelig': row.availableHours,
+      'Timer utilgjengelig': row.unavailableHours,
+      'Snittpris (EUR/MW)': row.avgPriceEurMw.toFixed(4),
+      'Inntekt FCR-N (EUR)': row.revenueEur.toFixed(2),
+      'Akkumulert FCR-N (EUR)': accumulatedRevenueEur.toFixed(2),
+      'Årssum FCR-N (EUR)': result.totalRevenue.toFixed(2),
+    };
+  }));
 
   const year = elements.year.value;
   await window.electronAPI.saveFile(csvContent, `fcr_inntekt_${year}.csv`);

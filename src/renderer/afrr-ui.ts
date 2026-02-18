@@ -3,12 +3,25 @@ import Papa from 'papaparse';
 import { calculateAfrrYearlyRevenue } from './afrr';
 import type { AfrrYearlyResult, AfrrMonthlyRow } from './afrr';
 
+const MONTH_NAMES_NB_FULL = ['Januar', 'Februar', 'Mars', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Desember'];
+
 function formatEur(value: number, digits = 0): string {
   if (!Number.isFinite(value)) return 'EUR 0';
   return `EUR ${value.toLocaleString('nb-NO', {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   })}`;
+}
+
+function formatYearMonthLabelNb(value: string): string {
+  const match = String(value).match(/^(\d{4})-(\d{2})$/);
+  if (!match) return value;
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  if (!Number.isInteger(year) || monthIndex < 0 || monthIndex >= MONTH_NAMES_NB_FULL.length) {
+    return value;
+  }
+  return `${MONTH_NAMES_NB_FULL[monthIndex]} ${year}`;
 }
 
 interface AfrrElements {
@@ -307,22 +320,33 @@ export function createAfrrUI(): { init: () => Promise<void> } {
 
   async function exportCsv(): Promise<void> {
     if (!currentResult) return;
+    const result = currentResult;
 
-    const csvContent = Papa.unparse(currentResult.hourlyData.map((row) => ({
-      timestamp_utc: new Date(row.timestamp).toISOString(),
-      solar_production_mw: row.solarProductionMw.toFixed(4),
-      afrr_capacity_mw: row.afrrCapacityMw.toFixed(0),
-      afrr_price_eur_mw: row.afrrPriceEurMw.toFixed(4),
-      spot_price_eur_mwh: row.spotPriceEurMwh.toFixed(4),
-      activated_capacity_mw: row.activatedCapacityMw.toFixed(4),
-      market_volume_mw: row.marketVolumeMw.toFixed(4),
-      spot_income_eur: row.spotIncomeEur.toFixed(2),
-      afrr_income_eur: row.afrrIncomeEur.toFixed(2),
-      activation_cost_eur: row.activationCostEur.toFixed(2),
-      total_income_eur: row.totalIncomeEur.toFixed(2),
-    })));
+    let accumulatedAfrrIncomeEur = 0;
+    const monthlyRows = result.monthly
+      .slice()
+      .sort((a, b) => a.month.localeCompare(b.month));
 
-    await window.electronAPI.saveFile(csvContent, `afrr_inntekt_${currentResult.year}.csv`);
+    const csvContent = Papa.unparse(monthlyRows.map((row) => {
+      accumulatedAfrrIncomeEur += row.afrrIncomeEur;
+      const controlledTotal = row.spotIncomeEur + row.afrrIncomeEur - row.activationCostEur;
+      return {
+        'Måned': formatYearMonthLabelNb(row.month),
+        'Timer totalt': row.hours,
+        'Budtimer': row.bidHours,
+        'Snitt aFRR-pris (EUR/MW)': row.avgAfrrPriceEurMw.toFixed(4),
+        'Spotinntekt (EUR)': row.spotIncomeEur.toFixed(2),
+        'aFRR kapasitetsinntekt (EUR)': row.afrrIncomeEur.toFixed(2),
+        'Aktiveringskostnad (EUR)': row.activationCostEur.toFixed(2),
+        'Sum inntekt (EUR)': row.totalIncomeEur.toFixed(2),
+        'Kontrollsum spot + aFRR - aktivering (EUR)': controlledTotal.toFixed(2),
+        'Akkumulert aFRR-kapasitet (EUR)': accumulatedAfrrIncomeEur.toFixed(2),
+        'Årssum aFRR-kapasitet (EUR)': result.totalAfrrIncomeEur.toFixed(2),
+        'Årssum total inntekt (EUR)': result.totalIncomeEur.toFixed(2),
+      };
+    }));
+
+    await window.electronAPI.saveFile(csvContent, `afrr_inntekt_${result.year}.csv`);
   }
 
   async function init(): Promise<void> {
