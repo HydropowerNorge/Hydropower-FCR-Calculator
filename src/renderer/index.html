@@ -225,11 +225,25 @@
       </div>
 
       <div data-tab-config="combined" style="display: none;">
-        <section class="config-section collapsible">
-          <button class="collapsible-toggle" type="button"><h2>Kombinert forklaring</h2></button>
+        <section class="config-section collapsible open">
+          <button class="collapsible-toggle" type="button"><h2>Hvordan marked velges</h2></button>
           <div class="collapsible-body">
-            <p class="info-text">Visningen forklarer hvorfor samme kapasitet ikke kan bindes i to markeder samtidig.</p>
-            <p class="info-text">Tallgrunnlag: aFRR €200 737, FCR-N €52 000 og NODES/Euroflex €15 145.</p>
+            <p class="info-text">Vi prioriterer markedet med høyest forventet verdi per MW i aktuell time.</p>
+          </div>
+        </section>
+
+        <section class="config-section collapsible open">
+          <button class="collapsible-toggle" type="button"><h2>Hvorfor tall varierer per marked</h2></button>
+          <div class="collapsible-body">
+            <p class="info-text">Markedsinntekter kan flytte seg mellom aFRR/FCR-N/Nodes, men totalen holdes konservativ.</p>
+          </div>
+        </section>
+
+        <section class="config-section collapsible open">
+          <button class="collapsible-toggle" type="button"><h2>Vanlige spørsmål</h2></button>
+          <div class="collapsible-body">
+            <p class="info-text"><strong>Kan dere delta i flere markeder?</strong><br>Ja, men ikke med samme kapasitet samtidig.</p>
+            <p class="info-text"><strong>Hvorfor lavere FCR-N i kombinert modell?</strong><br>Fordi kapasitet også allokeres til aFRR/Nodes når det gir høyere verdi.</p>
           </div>
         </section>
       </div>
@@ -331,7 +345,6 @@
         <section class="export-section">
           <button id="exportPdfBtn" class="btn btn-accent">Eksporter PDF</button>
           <button id="exportBtn" class="btn btn-secondary">Eksporter CSV</button>
-          <button id="exportXlsxBtn" class="btn btn-secondary">Eksporter Excel</button>
         </section>
 
         <!-- Summary Table -->

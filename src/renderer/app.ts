@@ -166,6 +166,7 @@ const combinedAnnualRevenue = {
 const MONTH_LABELS_NB = ['Jan', 'Feb', 'Mar', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Des'];
 const MONTH_NAMES_NB_FULL = ['Januar', 'Februar', 'Mars', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Desember'];
 const NODES_NOK_PER_EUR = 11.5;
+const HIDDEN_YEARS = new Set<number>([2021, 2026]);
 const CONSERVATIVE_TOTAL_EUR = combinedAnnualRevenue.afrrEur
   + combinedAnnualRevenue.fcrCombinedEur
   + combinedAnnualRevenue.nodesEur;
@@ -393,10 +394,11 @@ function setBatteryConfigLocked(locked: boolean): void {
 function updateConfigSectionsVisibility(tab: string): void {
   const isAfrrTab = tab === 'afrr';
   const isNodesTab = tab === 'nodes';
+  const isCombinedTab = tab === 'combined';
   const isYearlyCombinedTab = tab === 'yearlyCombined';
 
   if (elements.batteryConfigSection) {
-    elements.batteryConfigSection.style.display = (isAfrrTab || isNodesTab) ? 'none' : '';
+    elements.batteryConfigSection.style.display = (isAfrrTab || isNodesTab || isCombinedTab) ? 'none' : '';
   }
 
   if (elements.solarConfigSection) {
@@ -498,7 +500,7 @@ async function init(): Promise<void> {
   console.log('[app] Fetching available years from Convex');
   const years = (await window.electronAPI.getAvailableYears('NO1'))
     .map(y => Number(y))
-    .filter(y => Number.isFinite(y))
+    .filter(y => Number.isFinite(y) && !HIDDEN_YEARS.has(y))
     .sort((a, b) => a - b);
   console.log('[app] Available years:', years);
 
@@ -533,7 +535,6 @@ async function init(): Promise<void> {
 
   document.getElementById('calculateBtn')!.addEventListener('click', calculate);
   document.getElementById('exportBtn')!.addEventListener('click', exportCsv);
-  document.getElementById('exportXlsxBtn')!.addEventListener('click', exportXlsx);
   document.getElementById('exportPdfBtn')!.addEventListener('click', exportPdf);
   document.getElementById('calculateYearlyCombinedBtn')?.addEventListener('click', calculateYearlyCombined);
   document.getElementById('yearlyCombinedExportCsvBtn')?.addEventListener('click', exportYearlyCombinedCsv);
@@ -1613,30 +1614,6 @@ async function exportCsv(): Promise<void> {
 
   const year = elements.year.value;
   await window.electronAPI.saveFile(csvContent, `fcr_inntekt_${year}.csv`);
-}
-
-async function exportXlsx(): Promise<void> {
-  if (!currentResult) return;
-
-  const year = elements.year.value;
-  const monthly = aggregateMonthly(currentResult.hourlyData);
-
-  const exportData = {
-    hourlyData: currentResult.hourlyData,
-    monthly,
-    config: {
-      powerMw: parseFloat(elements.powerMw.value),
-      capacityMwh: parseFloat(elements.capacityMwh.value),
-      efficiency: parseInt(elements.efficiency.value),
-      socMin: parseInt(elements.socMin.value),
-      socMax: parseInt(elements.socMax.value),
-      year: parseInt(year),
-      totalHours: currentResult.totalHours,
-      availableHours: currentResult.availableHours
-    }
-  };
-
-  await window.electronAPI.saveXlsx(exportData, `fcr_inntekt_${year}.xlsx`);
 }
 
 async function exportPdf(): Promise<void> {

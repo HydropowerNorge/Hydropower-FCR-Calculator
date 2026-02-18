@@ -325,6 +325,10 @@ body {
   color: var(--text-secondary);
 }
 
+[data-tab-config="combined"] .info-text + .info-text {
+  margin-top: 6px;
+}
+
 .btn {
   width: 100%;
   padding: 11px 14px;

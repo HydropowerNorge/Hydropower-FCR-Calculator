@@ -67,28 +67,6 @@ export interface MonthlySummaryRow {
   avgPrice: number;
 }
 
-export interface ExcelExportData {
-  hourlyData: {
-    timestamp: number | string | Date;
-    price: number;
-    available: boolean;
-    revenue: number;
-    socStart: number | null;
-    socEnd: number | null;
-  }[];
-  monthly: MonthlySummaryRow[];
-  config: {
-    powerMw: number;
-    capacityMwh: number;
-    efficiency: number;
-    socMin: number;
-    socMax: number;
-    year: number;
-    totalHours: number;
-    availableHours: number;
-  };
-}
-
 export interface PdfExportData {
   chartImages: {
     monthly: string | null;
@@ -115,7 +93,6 @@ export interface PdfExportData {
 
 export interface ElectronAPI {
   saveFile(data: string, defaultName: string): Promise<string | null>;
-  saveXlsx(exportData: ExcelExportData, defaultName: string): Promise<string | null>;
   savePdf(pdfData: PdfExportData, defaultName: string): Promise<string | null>;
   loadPriceData(year: number, area?: string): Promise<FcrPriceRow[]>;
   getAvailableYears(area?: string): Promise<number[]>;

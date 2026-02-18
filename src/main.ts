@@ -9,7 +9,6 @@ import type {
 } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import ExcelJS from 'exceljs';
 import dotenv from 'dotenv';
 import { ConvexHttpClient } from 'convex/browser';
 import type { PdfExportData } from './shared/electron-api';
@@ -534,104 +533,6 @@ ipcMain.handle('file:save', async (_event: IpcMainInvokeEvent, data: unknown, de
     return filePath;
   }
   return null;
-});
-
-ipcMain.handle('file:saveXlsx', async (_event: IpcMainInvokeEvent, exportData: unknown, defaultName: unknown) => {
-  if (!exportData || typeof exportData !== 'object') {
-    return null;
-  }
-
-  const safeDefaultName = sanitizeDefaultName(defaultName, 'export.xlsx');
-  const { canceled, filePath } = await dialog.showSaveDialog({
-    defaultPath: safeDefaultName,
-    filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
-  });
-  if (canceled || !filePath) return null;
-
-  const data = exportData as Record<string, unknown>;
-  const workbook = new ExcelJS.Workbook();
-  const hourlyData = Array.isArray(data.hourlyData) ? data.hourlyData : [];
-  const monthly = Array.isArray(data.monthly) ? data.monthly : [];
-  const config = data.config && typeof data.config === 'object' ? data.config as Record<string, unknown> : {};
-
-  // Hourly Data sheet
-  const hourlySheet = workbook.addWorksheet('Timedata');
-  hourlySheet.getCell('A1').value = `FCR-N Inntektsanalyse - ${config.year} - ${config.powerMw} MW Batteri`;
-  hourlySheet.getCell('A1').font = { bold: true, size: 14 };
-
-  hourlySheet.getRow(2).values = ['Tidspunkt', 'FCR-N Pris (EUR/MW)', 'Tilgjengelig', 'Inntekt (EUR)', 'SOC Start (%)', 'SOC Slutt (%)'];
-  hourlySheet.getRow(2).font = { bold: true };
-
-  hourlyData.forEach((row: Record<string, unknown>, i: number) => {
-    hourlySheet.getRow(i + 3).values = [
-      new Date(row.timestamp as number),
-      row.price as number,
-      (row.available as boolean) ? 'Ja' : 'Nei',
-      row.revenue as number,
-      (row.socStart as number | null) !== null ? (row.socStart as number) * 100 : null,
-      (row.socEnd as number | null) !== null ? (row.socEnd as number) * 100 : null
-    ];
-  });
-
-  hourlySheet.getColumn(1).width = 20;
-  hourlySheet.getColumn(2).width = 18;
-  hourlySheet.getColumn(3).width = 14;
-  hourlySheet.getColumn(4).width = 14;
-  hourlySheet.getColumn(4).numFmt = '#,##0.00';
-  hourlySheet.getColumn(5).width = 14;
-  hourlySheet.getColumn(5).numFmt = '0.00';
-  hourlySheet.getColumn(6).width = 14;
-  hourlySheet.getColumn(6).numFmt = '0.00';
-
-  // Monthly Summary sheet
-  const monthlySheet = workbook.addWorksheet('Månedlig Oppsummering');
-  monthlySheet.getCell('A1').value = 'Månedlig Oppsummering';
-  monthlySheet.getCell('A1').font = { bold: true, size: 14 };
-
-  monthlySheet.getRow(2).values = ['Måned', 'Inntekt (EUR)', 'Timer', 'Snittpris (EUR/MW)'];
-  monthlySheet.getRow(2).font = { bold: true };
-
-  monthly.forEach((row: Record<string, unknown>, i: number) => {
-    monthlySheet.getRow(i + 3).values = [row.month as string, row.revenue as number, row.hours as number, row.avgPrice as number];
-  });
-
-  const totalRow = monthly.length + 3;
-  monthlySheet.getCell(`A${totalRow}`).value = 'TOTAL';
-  monthlySheet.getCell(`A${totalRow}`).font = { bold: true };
-  monthlySheet.getCell(`B${totalRow}`).value = { formula: `SUM(B3:B${totalRow - 1})` } as unknown as ExcelJS.CellFormulaValue;
-  monthlySheet.getCell(`C${totalRow}`).value = { formula: `SUM(C3:C${totalRow - 1})` } as unknown as ExcelJS.CellFormulaValue;
-  monthlySheet.getCell(`D${totalRow}`).value = { formula: `AVERAGE(D3:D${totalRow - 1})` } as unknown as ExcelJS.CellFormulaValue;
-
-  monthlySheet.getColumn(2).numFmt = '#,##0.00';
-  monthlySheet.getColumn(4).numFmt = '#,##0.00';
-
-  // Configuration sheet
-  const configSheet = workbook.addWorksheet('Konfigurasjon');
-  configSheet.getCell('A1').value = 'Batterikonfigurasjon';
-  configSheet.getCell('A1').font = { bold: true, size: 14 };
-
-  const configRows: [string, unknown][] = [
-    ['Effektkapasitet (MW)', config.powerMw],
-    ['Energikapasitet (MWh)', config.capacityMwh],
-    ['Virkningsgrad (%)', config.efficiency],
-    ['Min SOC (%)', config.socMin],
-    ['Maks SOC (%)', config.socMax],
-    ['År', config.year],
-    ['Total Inntekt (EUR)', { formula: `'Månedlig Oppsummering'!B${totalRow}` }],
-    ['Totalt Antall Timer', config.totalHours],
-    ['Tilgjengelige Timer', config.availableHours],
-    ['Tilgjengelighet (%)', { formula: 'B10/B9*100' }]
-  ];
-
-  configRows.forEach((row, i) => {
-    configSheet.getRow(i + 3).values = row as ExcelJS.CellValue[];
-  });
-
-  configSheet.getColumn(1).width = 25;
-  configSheet.getColumn(2).width = 15;
-
-  await workbook.xlsx.writeFile(filePath);
-  return filePath;
 });
 
 ipcMain.handle('file:savePdf', async (_event: IpcMainInvokeEvent, pdfData: unknown, defaultName: unknown) => {

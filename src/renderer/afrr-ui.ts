@@ -4,6 +4,7 @@ import { calculateAfrrYearlyRevenue } from './afrr';
 import type { AfrrYearlyResult, AfrrMonthlyRow } from './afrr';
 
 const MONTH_NAMES_NB_FULL = ['Januar', 'Februar', 'Mars', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Desember'];
+const HIDDEN_YEARS = new Set<number>([2021, 2026]);
 
 function formatEur(value: number, digits = 0): string {
   if (!Number.isFinite(value)) return 'EUR 0';
@@ -122,9 +123,7 @@ export function createAfrrUI(): { init: () => Promise<void> } {
     return result;
   }
 
-  const INCOMPLETE_YEARS: Record<number, string> = {
-    2024: 'Ufullstendige data',
-  };
+  const INCOMPLETE_YEARS: Record<number, string> = {};
 
   function populateSelect(selectEl: HTMLSelectElement | null, values: number[]): void {
     if (!selectEl) return;
@@ -155,7 +154,8 @@ export function createAfrrUI(): { init: () => Promise<void> } {
       window.electronAPI.getSolarAvailableYears(60),
     ]);
 
-    const afrrYears = normalizeYearList(afrrYearsRaw);
+    const afrrYears = normalizeYearList(afrrYearsRaw)
+      .filter((year) => !HIDDEN_YEARS.has(year));
     const solarYears = normalizeYearList(solarYearsRaw);
 
     console.log('[afrr-ui] aFRR years:', afrrYears, 'Solar years:', solarYears);
