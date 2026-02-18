@@ -98,6 +98,7 @@ const elements = {
   socMaxValue: document.getElementById('socMaxValue')!,
   batteryConfigSection: document.getElementById('batteryConfigSection') as HTMLElement | null,
   solarConfigSection: document.getElementById('solarConfigSection') as HTMLElement | null,
+  infrastructureConfigSection: document.getElementById('infrastructureConfigSection') as HTMLElement | null,
   year: document.getElementById('year') as HTMLSelectElement,
   simHours: document.getElementById('simHours') as HTMLInputElement,
   seed: document.getElementById('seed') as HTMLInputElement,
@@ -363,14 +364,19 @@ function setBatteryConfigLocked(locked: boolean): void {
 
 function updateConfigSectionsVisibility(tab: string): void {
   const isAfrrTab = tab === 'afrr';
+  const isNodesTab = tab === 'nodes';
   const isYearlyCombinedTab = tab === 'yearlyCombined';
 
   if (elements.batteryConfigSection) {
-    elements.batteryConfigSection.style.display = isAfrrTab ? 'none' : '';
+    elements.batteryConfigSection.style.display = (isAfrrTab || isNodesTab) ? 'none' : '';
   }
 
   if (elements.solarConfigSection) {
     elements.solarConfigSection.style.display = (isAfrrTab || isYearlyCombinedTab) ? '' : 'none';
+  }
+
+  if (elements.infrastructureConfigSection) {
+    elements.infrastructureConfigSection.style.display = isNodesTab ? '' : 'none';
   }
 }
 

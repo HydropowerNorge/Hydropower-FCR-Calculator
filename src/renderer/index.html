@@ -69,9 +69,9 @@
           role="tab"
           aria-controls="combinedContent"
           aria-selected="false"
-          data-hero-title="Kombinert"
+          data-hero-title="Forklaring"
           data-hero-description="Viser hvorfor batteriet må velge markedet med best verdi per time, og hvorfor FCR-N blir lavere i kombinert case."
-        >Kombinert</button>
+        >Forklaring</button>
       </nav>
 
       <section id="batteryConfigSection" class="config-section collapsible">
@@ -144,6 +144,39 @@
         </div>
       </section>
 
+      <section id="infrastructureConfigSection" class="config-section collapsible" style="display: none;">
+        <button class="collapsible-toggle" type="button"><h2>Infrastruktur</h2></button>
+        <div class="collapsible-body">
+          <div class="input-group">
+            <label for="infraNode">Knutepunkt</label>
+            <select id="infraNode" disabled aria-disabled="true">
+              <option selected>NO1 - Transformatorstasjon A</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label for="infraConnectionMw">Nettilknytning: <span id="infraConnectionMwValue">12</span> MW</label>
+            <input type="range" id="infraConnectionMw" value="12" min="5" max="20" step="0.5" disabled aria-disabled="true">
+          </div>
+          <div class="input-group">
+            <label for="infraVoltage">Spenningsnivå</label>
+            <select id="infraVoltage" disabled aria-disabled="true">
+              <option selected>22 kV</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label for="infraRedundancy">Redundans</label>
+            <select id="infraRedundancy" disabled aria-disabled="true">
+              <option selected>N-1</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label for="infraAvailability">Teknisk tilgjengelighet: <span id="infraAvailabilityValue">99</span>%</label>
+            <input type="range" id="infraAvailability" value="99" min="90" max="100" step="1" disabled aria-disabled="true">
+          </div>
+          <p class="help-text">Låst visning for Nodes. Beregningen bruker batterikonfigurasjon i bakgrunnen.</p>
+        </div>
+      </section>
+
       <!-- FCR-N data config -->
       <div data-tab-config="fcr" style="display: none;">
         <section class="config-section collapsible open">
@@ -179,7 +212,7 @@
       </div>
 
       <div data-tab-config="nodes" style="display: none;">
-        <section class="config-section collapsible">
+        <section class="config-section collapsible open">
           <button class="collapsible-toggle" type="button"><h2>Nodetender</h2></button>
           <div class="collapsible-body">
             <div class="input-group">
@@ -209,9 +242,6 @@
               <label for="yearlyCombinedYear">År for kalkyle</label>
               <select id="yearlyCombinedYear"></select>
             </div>
-            <p class="info-text">Beregner FCR-N, aFRR og Nodes med samme metode som i hver enkelt fane.</p>
-            <p class="info-text">Nodes holdes uendret på tvers av år.</p>
-            <p class="info-text">Nodes konverteres til EUR med fast kurs 11,5 NOK/EUR for samlet total.</p>
           </div>
         </section>
         <button id="calculateYearlyCombinedBtn" class="btn btn-primary" type="button">Beregn årlig total</button>
@@ -635,8 +665,6 @@
               <span class="metric-label">Nodes (EUR)</span>
             </div>
           </div>
-
-          <p class="yearly-combined-note">Kurs for Nodes-konvertering: 11,5 NOK/EUR.</p>
 
           <section class="chart-section">
             <h2>Månedlig fordeling (EUR)</h2>

@@ -310,6 +310,16 @@ body {
   cursor: not-allowed;
 }
 
+#infrastructureConfigSection input[disabled],
+#infrastructureConfigSection select[disabled] {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+#infrastructureConfigSection input[type='range'][disabled]::-webkit-slider-thumb {
+  cursor: not-allowed;
+}
+
 .info-text {
   font-size: 0.76rem;
   color: var(--text-secondary);
