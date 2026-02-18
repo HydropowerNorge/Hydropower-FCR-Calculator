@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
     paths:
       - package.json
   workflow_dispatch:
@@ -39,12 +41,16 @@ jobs:
           const { execSync } = require('node:child_process');
 
           const eventName = process.env.GITHUB_EVENT_NAME;
+          const refType = process.env.GITHUB_REF_TYPE;
+          const refName = process.env.GITHUB_REF_NAME;
           const currentVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version || '';
 
           let previousVersion = '';
           let shouldPublish = false;
 
           if (eventName === 'workflow_dispatch') {
+            shouldPublish = true;
+          } else if (eventName === 'push' && refType === 'tag' && /^v\d+\.\d+\.\d+/.test(String(refName || ''))) {
             shouldPublish = true;
           } else {
             try {
