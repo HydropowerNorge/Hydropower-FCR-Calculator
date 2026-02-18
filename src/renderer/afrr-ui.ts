@@ -4,6 +4,7 @@ import { calculateAfrrYearlyRevenue } from './afrr';
 import type { AfrrYearlyResult, AfrrMonthlyRow } from './afrr';
 import { showStatusMessage } from './status-message';
 import { buildExcelFileBytes } from './excel-export';
+import { roundValuesToTarget } from './rounding';
 
 const MONTH_NAMES_NB_FULL = ['Januar', 'Februar', 'Mars', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Desember'];
 const HIDDEN_YEARS = new Set<number>([2021, 2026]);
@@ -367,14 +368,23 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
   async function exportCsv(): Promise<void> {
     if (!currentResult) return;
     const result = currentResult;
+    const monthlyRows = buildAfrrExportRows(result);
+    const roundedCapacityIncome = roundValuesToTarget(
+      monthlyRows.map((row) => row.afrrCapacityIncomeEur),
+      result.totalAfrrIncomeEur,
+    );
+    const roundedTotalIncome = roundValuesToTarget(
+      monthlyRows.map((row) => row.totalIncomeEur),
+      result.totalIncomeEur,
+    );
 
-    const exportRows = buildAfrrExportRows(result).map((row) => ({
+    const exportRows = monthlyRows.map((row, index) => ({
       'Måned': row.month,
       'Timer totalt': row.totalHours,
       'Budtimer': row.bidHours,
-      'Snitt aFRR-pris (EUR/MW)': row.avgAfrrPriceEurMw.toFixed(4),
-      'aFRR kapasitetsinntekt (EUR)': row.afrrCapacityIncomeEur.toFixed(2),
-      'Sum inntekt (EUR)': row.totalIncomeEur.toFixed(2),
+      'Snitt aFRR-pris (EUR/MW)': Math.round(row.avgAfrrPriceEurMw),
+      'aFRR kapasitetsinntekt (EUR)': roundedCapacityIncome[index],
+      'Sum inntekt (EUR)': roundedTotalIncome[index],
     }));
 
     const csvContent = Papa.unparse(exportRows);
@@ -384,14 +394,23 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
   async function exportExcel(): Promise<void> {
     if (!currentResult) return;
     const result = currentResult;
+    const monthlyRows = buildAfrrExportRows(result);
+    const roundedCapacityIncome = roundValuesToTarget(
+      monthlyRows.map((row) => row.afrrCapacityIncomeEur),
+      result.totalAfrrIncomeEur,
+    );
+    const roundedTotalIncome = roundValuesToTarget(
+      monthlyRows.map((row) => row.totalIncomeEur),
+      result.totalIncomeEur,
+    );
 
-    const excelRows = buildAfrrExportRows(result).map((row) => ({
+    const excelRows = monthlyRows.map((row, index) => ({
       'Måned': row.month,
       'Timer totalt': row.totalHours,
       'Budtimer': row.bidHours,
-      'Snitt aFRR-pris (EUR/MW)': Number(row.avgAfrrPriceEurMw.toFixed(4)),
-      'aFRR kapasitetsinntekt (EUR)': Number(row.afrrCapacityIncomeEur.toFixed(2)),
-      'Sum inntekt (EUR)': Number(row.totalIncomeEur.toFixed(2)),
+      'Snitt aFRR-pris (EUR/MW)': Math.round(row.avgAfrrPriceEurMw),
+      'aFRR kapasitetsinntekt (EUR)': roundedCapacityIncome[index],
+      'Sum inntekt (EUR)': roundedTotalIncome[index],
     }));
 
     const excelBytes = buildExcelFileBytes(excelRows, `aFRR ${result.year}`);

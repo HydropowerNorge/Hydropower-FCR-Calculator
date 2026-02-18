@@ -4,6 +4,7 @@ import type { NodeYearlyResult } from './nodes';
 import type { NodeTenderRow } from '../shared/electron-api';
 import { showStatusMessage } from './status-message';
 import { buildExcelFileBytes } from './excel-export';
+import { roundValuesToTarget } from './rounding';
 
 interface NodesElements {
   statusMessage: HTMLElement | null;
@@ -424,17 +425,27 @@ export function createNodesUI(options: NodesUIOptions = {}): {
   async function exportCsv(): Promise<void> {
     if (!currentResult) return;
     const result = currentResult;
+    const monthlyRows = buildNodesMonthlyExportRows(result);
+    const roundedIncome = roundValuesToTarget(
+      monthlyRows.map((row) => row.incomeNok),
+      result.totalIncomeNok,
+    );
+    const roundedYearlyTotal = Math.round(result.totalIncomeNok);
+    let accumulatedRoundedIncome = 0;
 
-    const csvRows = buildNodesMonthlyExportRows(result).map((row) => ({
-      'Måned': row.monthLabel,
-      'Kvalifiserte timer': row.eligibleHours,
-      'Reservasjonspris (NOK/MW/h)': row.reservationPriceNokMwH.toFixed(4),
-      'Volum (MW)': row.quantityMw.toFixed(4),
-      'Timeinntekt (NOK/h)': row.hourlyIncomeNok.toFixed(4),
-      'Inntekt Nodes (NOK)': row.incomeNok.toFixed(2),
-      'Akkumulert Nodes (NOK)': row.accumulatedIncomeNok.toFixed(2),
-      'Årssum Nodes (NOK)': row.yearlyIncomeNok.toFixed(2),
-    }));
+    const csvRows = monthlyRows.map((row, index) => {
+      accumulatedRoundedIncome += roundedIncome[index];
+      return {
+        'Måned': row.monthLabel,
+        'Kvalifiserte timer': row.eligibleHours,
+        'Reservasjonspris (NOK/MW/h)': Math.round(row.reservationPriceNokMwH),
+        'Volum (MW)': Math.round(row.quantityMw),
+        'Timeinntekt (NOK/h)': Math.round(row.hourlyIncomeNok),
+        'Inntekt Nodes (NOK)': roundedIncome[index],
+        'Akkumulert Nodes (NOK)': accumulatedRoundedIncome,
+        'Årssum Nodes (NOK)': roundedYearlyTotal,
+      };
+    });
     const csvContent = Papa.unparse(csvRows);
 
     const tender = getSelectedTender();
@@ -445,17 +456,27 @@ export function createNodesUI(options: NodesUIOptions = {}): {
   async function exportExcel(): Promise<void> {
     if (!currentResult) return;
     const result = currentResult;
+    const monthlyRows = buildNodesMonthlyExportRows(result);
+    const roundedIncome = roundValuesToTarget(
+      monthlyRows.map((row) => row.incomeNok),
+      result.totalIncomeNok,
+    );
+    const roundedYearlyTotal = Math.round(result.totalIncomeNok);
+    let accumulatedRoundedIncome = 0;
 
-    const excelRows = buildNodesMonthlyExportRows(result).map((row) => ({
-      'Måned': row.monthLabel,
-      'Kvalifiserte timer': row.eligibleHours,
-      'Reservasjonspris (NOK/MW/h)': Number(row.reservationPriceNokMwH.toFixed(4)),
-      'Volum (MW)': Number(row.quantityMw.toFixed(4)),
-      'Timeinntekt (NOK/h)': Number(row.hourlyIncomeNok.toFixed(4)),
-      'Inntekt Nodes (NOK)': Number(row.incomeNok.toFixed(2)),
-      'Akkumulert Nodes (NOK)': Number(row.accumulatedIncomeNok.toFixed(2)),
-      'Årssum Nodes (NOK)': Number(row.yearlyIncomeNok.toFixed(2)),
-    }));
+    const excelRows = monthlyRows.map((row, index) => {
+      accumulatedRoundedIncome += roundedIncome[index];
+      return {
+        'Måned': row.monthLabel,
+        'Kvalifiserte timer': row.eligibleHours,
+        'Reservasjonspris (NOK/MW/h)': Math.round(row.reservationPriceNokMwH),
+        'Volum (MW)': Math.round(row.quantityMw),
+        'Timeinntekt (NOK/h)': Math.round(row.hourlyIncomeNok),
+        'Inntekt Nodes (NOK)': roundedIncome[index],
+        'Akkumulert Nodes (NOK)': accumulatedRoundedIncome,
+        'Årssum Nodes (NOK)': roundedYearlyTotal,
+      };
+    });
 
     const tender = getSelectedTender();
     const yearSuffix = getTenderYearSuffix(tender);

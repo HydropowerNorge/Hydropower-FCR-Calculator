@@ -73,6 +73,7 @@ body {
 .sidebar-header {
   margin-bottom: 22px;
   padding-top: 14px;
+  position: relative;
 }
 
 .brand-lockup {
@@ -116,6 +117,12 @@ body {
   margin-top: 2px;
   font-size: 0.74rem;
   color: var(--text-muted);
+}
+
+.mobile-sidebar-toggle,
+.mobile-sidebar-close,
+.mobile-sidebar-backdrop {
+  display: none;
 }
 
 /* Tab Navigation */
@@ -663,7 +670,9 @@ body {
 .table-container {
   border: 1px solid rgba(65, 108, 121, 0.54);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
   background: rgba(19, 37, 45, 0.95);
   position: relative;
   box-shadow: var(--shadow-card);
@@ -1151,22 +1160,165 @@ tr:hover td {
 }
 
 @media (max-width: 980px) {
+  body.mobile-sidebar-open {
+    overflow: hidden;
+    touch-action: none;
+  }
+
   .app-container {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
   }
 
   .sidebar {
-    border-right: none;
-    border-bottom: 1px solid rgba(63, 109, 122, 0.5);
-    max-height: 52vh;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(92vw, 360px);
+    height: 100dvh;
+    max-width: 360px;
+    z-index: 45;
+    border-right: 1px solid rgba(63, 109, 122, 0.5);
+    border-bottom: none;
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    max-height: none;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  body.mobile-sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .mobile-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    border: 0;
+    background: rgba(3, 9, 12, 0.58);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  body.mobile-sidebar-open .mobile-sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .main-content {
-    padding: 18px;
+    padding: 14px;
+    overflow: visible;
+  }
+
+  .sidebar-export {
+    position: static;
+    bottom: auto;
+    background: none;
+  }
+
+  .mobile-sidebar-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 10px;
+    min-height: 40px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(79, 203, 115, 0.45);
+    background: rgba(79, 203, 115, 0.14);
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .mobile-sidebar-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 10px;
+    right: 0;
+    min-height: 34px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(79, 203, 115, 0.35);
+    background: rgba(79, 203, 115, 0.12);
+    color: var(--text-primary);
+    font-size: 0.76rem;
+    font-weight: 650;
+    cursor: pointer;
   }
 
   .hero-banner {
-    min-height: 132px;
+    min-height: 126px;
+    margin-bottom: 14px;
+  }
+
+  .hero-content {
+    padding: 14px 16px;
+  }
+
+  .hero-content h2 {
+    font-size: 1.2rem;
+  }
+
+  .hero-content p {
+    font-size: 0.84rem;
+  }
+
+  .status-message {
+    font-size: 0.81rem;
+    padding: 10px 12px;
+  }
+
+  .market-context-box {
+    margin-bottom: 10px;
+    padding: 9px 11px;
+  }
+
+  .market-context-box p {
+    font-size: 0.84rem;
+  }
+
+  .metric-card {
+    padding: 12px;
+  }
+
+  .metric-value {
+    font-size: clamp(1.12rem, 4.8vw, 1.35rem);
+  }
+
+  .metric-label {
+    font-size: 0.63rem;
+  }
+
+  .module-panel {
+    padding: 16px;
+  }
+
+  .module-panel h3 {
+    font-size: 1.05rem;
+  }
+
+  .module-intro {
+    font-size: 0.84rem;
+  }
+
+  .module-card p {
+    font-size: 0.79rem;
+  }
+
+  .chart-container,
+  .chart-container-wide {
+    height: 230px;
+    padding: 12px;
   }
 
   .combined-qa-grid,
@@ -1206,8 +1358,21 @@ tr:hover td {
     grid-template-columns: 1fr;
   }
 
+  .tab-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tab-btn {
+    min-height: 44px;
+    padding: 10px 8px;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.2;
+  }
+
   .tab-btn-wide {
-    grid-column: span 1;
+    grid-column: span 2;
   }
 
   .export-section .btn {
@@ -1217,8 +1382,8 @@ tr:hover td {
 
   .chart-container,
   .chart-container-wide {
-    height: 240px;
-    padding: 12px;
+    height: 220px;
+    padding: 10px;
   }
 
   .module-panel {
@@ -1246,16 +1411,107 @@ tr:hover td {
     margin-bottom: 12px;
   }
 
+  .combined-inner-tabs {
+    width: 100%;
+    justify-content: space-between;
+    border-radius: 12px;
+  }
+
+  .combined-inner-tab-btn {
+    flex: 1;
+    min-height: 40px;
+    text-align: center;
+  }
+
   .combined-note-panel {
     padding: 14px 16px;
   }
 
   #combinedContent .chart-container {
-    height: 250px;
+    height: 230px;
   }
 
   th,
   td {
     padding: 9px;
+  }
+
+  .table-container table {
+    min-width: 560px;
+  }
+
+  #combinedPriorityTable,
+  #yearlyCombinedSummaryTable {
+    min-width: 760px;
+  }
+
+  .info-btn {
+    width: 22px;
+    height: 22px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-content {
+    padding: 10px;
+  }
+
+  .hero-content {
+    padding: 12px 13px;
+  }
+
+  .hero-content h2 {
+    font-size: 1.04rem;
+  }
+
+  .hero-content p {
+    font-size: 0.79rem;
+  }
+
+  .mobile-sidebar-toggle {
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .tab-btn {
+    min-height: 42px;
+    font-size: 0.77rem;
+    padding: 9px 6px;
+  }
+
+  .module-panel {
+    padding: 12px;
+  }
+
+  .chart-container,
+  .chart-container-wide {
+    height: 205px;
+  }
+
+  #combinedContent .chart-container {
+    height: 210px;
+  }
+
+  th,
+  td {
+    padding: 8px;
+  }
+
+  th {
+    font-size: 0.64rem;
+  }
+
+  td {
+    font-size: 0.78rem;
+  }
+
+  .table-container table {
+    min-width: 520px;
+  }
+
+  #combinedPriorityTable,
+  #yearlyCombinedSummaryTable {
+    min-width: 660px;
   }
 }

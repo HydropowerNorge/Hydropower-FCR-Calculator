@@ -2,7 +2,7 @@
 <html lang="no">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://js-de.sentry-cdn.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss: https://o4509797195776000.ingest.de.sentry.io https://pastel-snail-107.eu-west-1.convex.cloud">
   <script
     src="https://js-de.sentry-cdn.com/cdf47146f4bb285934efca67279ef081.min.js"
@@ -14,7 +14,7 @@
 <body>
   <div class="app-container">
     <!-- Sidebar -->
-    <aside class="sidebar">
+    <aside id="sidebarPanel" class="sidebar">
       <div class="sidebar-header">
         <div class="brand-lockup">
           <img class="brand-logo" src="assets/hydropower-logo.png" alt="Hydropower logo">
@@ -24,6 +24,7 @@
             <p id="appVersion" class="subtitle app-version">Versjon -</p>
           </div>
         </div>
+        <button id="mobileSidebarClose" class="mobile-sidebar-close" type="button" aria-label="Lukk sidepanel">Lukk</button>
       </div>
 
       <nav class="tab-nav" role="tablist" aria-label="Analysemoduler">
@@ -306,6 +307,7 @@
         <button id="sidebarExportExcelBtn" class="btn btn-secondary" type="button" disabled>Eksporter Excel</button>
       </section>
     </aside>
+    <button id="mobileSidebarBackdrop" class="mobile-sidebar-backdrop" type="button" aria-label="Lukk sidepanel"></button>
 
     <!-- Main Content -->
     <main class="main-content">
@@ -314,6 +316,13 @@
           <p class="hero-kicker">Hydropower</p>
           <h2 id="heroTitle">Årskalkyle</h2>
           <p id="heroDescription">Kombinerer FCR-N, aFRR og Nodes i én årlig inntektskalkyle med samme metoder som i hver enkelt modul.</p>
+          <button
+            id="mobileSidebarToggle"
+            class="mobile-sidebar-toggle"
+            type="button"
+            aria-controls="sidebarPanel"
+            aria-expanded="false"
+          >Meny</button>
         </div>
       </section>
 

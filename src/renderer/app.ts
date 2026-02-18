@@ -11,6 +11,7 @@ import { createAfrrUI } from './afrr-ui';
 import { createNodesUI } from './nodes-ui';
 import { showStatusMessage } from './status-message';
 import { buildExcelFileBytes } from './excel-export';
+import { roundValuesToTarget } from './rounding';
 import { ensureRuntimeApi, isElectronRuntime } from './runtime-api';
 
 ensureRuntimeApi();
@@ -104,6 +105,10 @@ const charts: {
 
 const elements = {
   appVersion: document.getElementById('appVersion') as HTMLElement | null,
+  sidebarPanel: document.getElementById('sidebarPanel') as HTMLElement | null,
+  mobileSidebarToggle: document.getElementById('mobileSidebarToggle') as HTMLButtonElement | null,
+  mobileSidebarClose: document.getElementById('mobileSidebarClose') as HTMLButtonElement | null,
+  mobileSidebarBackdrop: document.getElementById('mobileSidebarBackdrop') as HTMLButtonElement | null,
   powerMw: document.getElementById('powerMw') as HTMLInputElement,
   capacityMwh: document.getElementById('capacityMwh') as HTMLInputElement,
   efficiency: document.getElementById('efficiency') as HTMLInputElement,
@@ -225,6 +230,46 @@ const combinedPriorityRows: CombinedPriorityRow[] = [
     consequence: 'Ny allokering per timeblokk, fortsatt uten dobbelbooking.'
   }
 ];
+
+function isMobileViewport(): boolean {
+  return window.matchMedia('(max-width: 980px)').matches;
+}
+
+function setMobileSidebarOpen(isOpen: boolean): void {
+  const shouldOpen = isOpen && isMobileViewport();
+  document.body.classList.toggle('mobile-sidebar-open', shouldOpen);
+  if (elements.mobileSidebarToggle) {
+    elements.mobileSidebarToggle.setAttribute('aria-expanded', String(shouldOpen));
+  }
+}
+
+function setupMobileSidebar(): void {
+  if (!elements.mobileSidebarToggle) return;
+
+  const closeSidebar = (): void => setMobileSidebarOpen(false);
+
+  elements.mobileSidebarToggle.addEventListener('click', () => {
+    const isOpen = document.body.classList.contains('mobile-sidebar-open');
+    setMobileSidebarOpen(!isOpen);
+  });
+
+  elements.mobileSidebarClose?.addEventListener('click', closeSidebar);
+  elements.mobileSidebarBackdrop?.addEventListener('click', closeSidebar);
+
+  window.addEventListener('keydown', (event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      closeSidebar();
+    }
+  });
+
+  window.addEventListener('resize', () => {
+    if (!isMobileViewport()) {
+      closeSidebar();
+    }
+  });
+
+  closeSidebar();
+}
 
 async function loadAppVersionLabel(): Promise<void> {
   if (!elements.appVersion) return;
@@ -607,6 +652,9 @@ function setupTabs(): void {
     setBatteryConfigLocked(tab === 'fcr' || tab === 'yearlyCombined');
     applyHeroCopy(tab);
     updateSidebarCsvExportState();
+    if (isMobileViewport()) {
+      setMobileSidebarOpen(false);
+    }
   }
 
   tabBtns.forEach((btn, index) => {
@@ -658,6 +706,7 @@ async function init(): Promise<void> {
   console.log('[app] init() starting');
   await loadAppVersionLabel();
   setupTabs();
+  setupMobileSidebar();
   console.log('[app] Tabs set up');
 
   console.log('[app] Initializing aFRR UI');
@@ -1110,13 +1159,12 @@ async function calculateFcrYearlyForCombined(year: number): Promise<{ totalEur: 
   }
 
   const monthlyByMonth = new Array<number>(12).fill(0);
-  const monthly = aggregateMonthly(workerResult.result.hourlyData);
-  monthly.forEach((row) => {
-    const index = parseYearMonthToIndex(row.month);
-    if (index !== null) {
-      monthlyByMonth[index] = row.revenue;
+  for (const row of workerResult.result.hourlyData) {
+    const monthIndex = new Date(row.timestamp).getUTCMonth();
+    if (monthIndex >= 0 && monthIndex < 12) {
+      monthlyByMonth[monthIndex] += row.revenue;
     }
-  });
+  }
 
   return {
     totalEur: workerResult.result.totalRevenue,
@@ -1417,17 +1465,30 @@ async function calculateYearlyCombined(): Promise<void> {
 }
 
 function buildYearlyCombinedExportRows(result: YearlyCombinedResult, includeNodes: boolean): Array<Record<string, string | number>> {
+  const roundedFcr = roundValuesToTarget(
+    result.monthly.map((row) => row.fcrEur),
+    result.fcrEur,
+  );
+  const roundedAfrr = roundValuesToTarget(
+    result.monthly.map((row) => row.afrrEur),
+    result.afrrEur,
+  );
+  const roundedNodes = roundValuesToTarget(
+    result.monthly.map((row) => row.nodesEur),
+    result.nodesEur,
+  );
+
   let accumulatedTotalEur = 0;
-  return result.monthly.map((row) => {
-    const effectiveTotalEur = row.fcrEur + row.afrrEur + (includeNodes ? row.nodesEur : 0);
+  return result.monthly.map((row, index) => {
+    const effectiveTotalEur = roundedFcr[index] + roundedAfrr[index] + (includeNodes ? roundedNodes[index] : 0);
     accumulatedTotalEur += effectiveTotalEur;
     return {
       'Måned': formatShortMonthLabelNb(row.month),
-      'FCR-N (EUR)': Math.round(row.fcrEur),
-      'aFRR (EUR)': Math.round(row.afrrEur),
-      'Nodes/Euroflex (EUR)': Math.round(row.nodesEur),
-      'Sum reservemarkeder (EUR)': Math.round(effectiveTotalEur),
-      'Akkumulert sum (EUR)': Math.round(accumulatedTotalEur),
+      'FCR-N (EUR)': roundedFcr[index],
+      'aFRR (EUR)': roundedAfrr[index],
+      'Nodes/Euroflex (EUR)': roundedNodes[index],
+      'Sum reservemarkeder (EUR)': effectiveTotalEur,
+      'Akkumulert sum (EUR)': accumulatedTotalEur,
       'År (FCR/aFRR)': result.fcrYear,
     };
   });
@@ -1918,12 +1979,16 @@ function updateSummaryTable(monthly: MonthlyAggregate[]): void {
 
 function buildFcrExportRows(result: RevenueResult): Array<Record<string, string | number>> {
   const monthlyRows = aggregateFcrMonthlyForCsv(result.hourlyData);
-  return monthlyRows.map((row) => ({
+  const roundedRevenue = roundValuesToTarget(
+    monthlyRows.map((row) => row.revenueEur),
+    result.totalRevenue,
+  );
+  return monthlyRows.map((row, index) => ({
     'Måned': row.monthLabel,
     'Timer totalt': row.totalHours,
     'Timer deltagelse': row.availableHours,
     'Snittpris (EUR/MW)': Math.round(row.avgPriceEurMw),
-    'Inntekt FCR-N (EUR)': Math.round(row.revenueEur),
+    'Inntekt FCR-N (EUR)': roundedRevenue[index],
   }));
 }
 
