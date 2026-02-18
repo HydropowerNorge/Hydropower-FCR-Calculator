@@ -116,9 +116,11 @@ const elements = {
   solarConfigSection: document.getElementById('solarConfigSection') as HTMLElement | null,
   infrastructureConfigSection: document.getElementById('infrastructureConfigSection') as HTMLElement | null,
   year: document.getElementById('year') as HTMLSelectElement,
+  yearLoadingIndicator: document.getElementById('yearLoadingIndicator') as HTMLElement | null,
   simHours: document.getElementById('simHours') as HTMLInputElement,
   seed: document.getElementById('seed') as HTMLInputElement,
   yearlyCombinedYear: document.getElementById('yearlyCombinedYear') as HTMLSelectElement,
+  yearlyCombinedYearLoadingIndicator: document.getElementById('yearlyCombinedYearLoadingIndicator') as HTMLElement | null,
 
   loadingState: document.getElementById('loadingState')!,
   resultsContainer: document.getElementById('resultsContainer')!,
@@ -641,6 +643,17 @@ function populateYearSelect(selectEl: HTMLSelectElement, years: number[]): void 
   });
 }
 
+function setYearSelectorLoading(
+  selectEl: HTMLSelectElement,
+  indicatorEl: HTMLElement | null,
+  isLoading: boolean,
+): void {
+  selectEl.disabled = isLoading;
+  if (indicatorEl) {
+    indicatorEl.hidden = !isLoading;
+  }
+}
+
 async function init(): Promise<void> {
   console.log('[app] init() starting');
   await loadAppVersionLabel();
@@ -654,31 +667,51 @@ async function init(): Promise<void> {
   setFcrVisualStates('loading', 'Laster visualiseringer...');
   setupSliders();
 
-  console.log('[app] Fetching available years from Convex');
-  const years = (await window.electronAPI.getAvailableYears('NO1'))
-    .map(y => Number(y))
-    .filter(y => Number.isFinite(y) && !HIDDEN_YEARS.has(y))
-    .sort((a, b) => a - b);
-  console.log('[app] Available years:', years);
-
-  populateYearSelect(elements.year, years);
-  populateYearSelect(elements.yearlyCombinedYear, years);
-  applyYearlyCombinedNodesVisualState(false);
-
   let defaultYear: number | null = null;
-  if (years.length > 0) {
-    const preferredYear = 2025;
-    defaultYear = years.includes(preferredYear)
-      ? preferredYear
-      : years[years.length - 1];
-    elements.year.value = String(defaultYear);
-    elements.yearlyCombinedYear.value = String(defaultYear);
-    await loadPriceData(defaultYear);
-    setFcrVisualStates('empty', 'Trykk "Beregn inntekt" for å vise visualiseringer.');
-  } else {
+  setYearSelectorLoading(elements.year, elements.yearLoadingIndicator, true);
+  setYearSelectorLoading(
+    elements.yearlyCombinedYear,
+    elements.yearlyCombinedYearLoadingIndicator,
+    true,
+  );
+  try {
+    console.log('[app] Fetching available years from Convex');
+    const years = (await window.electronAPI.getAvailableYears('NO1'))
+      .map(y => Number(y))
+      .filter(y => Number.isFinite(y) && !HIDDEN_YEARS.has(y))
+      .sort((a, b) => a - b);
+    console.log('[app] Available years:', years);
+
+    populateYearSelect(elements.year, years);
+    populateYearSelect(elements.yearlyCombinedYear, years);
+    applyYearlyCombinedNodesVisualState(false);
+
+    if (years.length > 0) {
+      const preferredYear = 2025;
+      defaultYear = years.includes(preferredYear)
+        ? preferredYear
+        : years[years.length - 1];
+      elements.year.value = String(defaultYear);
+      elements.yearlyCombinedYear.value = String(defaultYear);
+      await loadPriceData(defaultYear);
+      setFcrVisualStates('empty', 'Trykk "Beregn inntekt" for å vise visualiseringer.');
+    } else {
+      setFcrResultContainerVisible(true);
+      showStatus('Ingen prisdata funnet i Convex for NO1.', 'warning');
+      setFcrVisualStates('empty', 'Ingen data tilgjengelig for visualisering.');
+    }
+  } catch (error) {
+    console.error('[app] Could not fetch available years:', error);
     setFcrResultContainerVisible(true);
-    showStatus('Ingen prisdata funnet i Convex for NO1.', 'warning');
+    showStatus('Kunne ikke laste årsliste fra datakilden.', 'warning');
     setFcrVisualStates('empty', 'Ingen data tilgjengelig for visualisering.');
+  } finally {
+    setYearSelectorLoading(elements.year, elements.yearLoadingIndicator, false);
+    setYearSelectorLoading(
+      elements.yearlyCombinedYear,
+      elements.yearlyCombinedYearLoadingIndicator,
+      false,
+    );
   }
 
   console.log('[app] Initializing nodes module');

@@ -190,6 +190,10 @@
             <div class="input-group">
               <label for="year">År <button class="info-btn" data-help="year">?</button></label>
               <select id="year"></select>
+              <div id="yearLoadingIndicator" class="inline-loading" hidden>
+                <span class="inline-loading-spinner" aria-hidden="true"></span>
+                <span>Laster år...</span>
+              </div>
               <div class="help-text" id="help-year">Hvilket år prisdata skal hentes fra. Prisene varierer fra år til år.</div>
             </div>
           </div>
@@ -209,6 +213,10 @@
             <div class="input-group">
               <label for="afrrYear">aFRR år <button class="info-btn" data-help="afrrYear">?</button></label>
               <select id="afrrYear"></select>
+              <div id="afrrYearLoadingIndicator" class="inline-loading" hidden>
+                <span class="inline-loading-spinner" aria-hidden="true"></span>
+                <span>Laster år...</span>
+              </div>
               <div class="help-text" id="help-afrrYear">Velg året som brukes for aFRR-, sol- og spotdata i beregningen.</div>
             </div>
 
@@ -279,6 +287,10 @@
             <div class="input-group">
               <label for="yearlyCombinedYear">År for kalkyle</label>
               <select id="yearlyCombinedYear"></select>
+              <div id="yearlyCombinedYearLoadingIndicator" class="inline-loading" hidden>
+                <span class="inline-loading-spinner" aria-hidden="true"></span>
+                <span>Laster år...</span>
+              </div>
             </div>
           </div>
         </section>

@@ -34,6 +34,7 @@ interface AfrrElements {
   avgPrice: HTMLElement | null;
   summaryTable: HTMLTableSectionElement | null;
   year: HTMLSelectElement | null;
+  yearLoadingIndicator: HTMLElement | null;
   calculateBtn: HTMLButtonElement | null;
   exportCsvBtn: HTMLButtonElement | null;
 }
@@ -68,6 +69,7 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
     avgPrice: null,
     summaryTable: null,
     year: null,
+    yearLoadingIndicator: null,
     calculateBtn: null,
     exportCsvBtn: null,
   };
@@ -149,6 +151,15 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
       }
       selectEl.appendChild(option);
     });
+  }
+
+  function setYearLoadingState(isLoading: boolean): void {
+    if (el.year) {
+      el.year.disabled = isLoading;
+    }
+    if (el.yearLoadingIndicator) {
+      el.yearLoadingIndicator.hidden = !isLoading;
+    }
   }
 
   async function loadStaticInputs(): Promise<void> {
@@ -396,11 +407,28 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
     el.summaryTable = document.getElementById('afrrSummaryTable')?.querySelector('tbody') ?? null;
 
     el.year = document.getElementById('afrrYear') as HTMLSelectElement | null;
+    el.yearLoadingIndicator = document.getElementById('afrrYearLoadingIndicator');
     el.calculateBtn = document.getElementById('calculateAfrrBtn') as HTMLButtonElement | null;
     el.exportCsvBtn = document.getElementById('afrrExportCsvBtn') as HTMLButtonElement | null;
 
     setAllVisualStates('loading', 'Laster aFRR-data...');
-    await loadStaticInputs();
+    setYearLoadingState(true);
+    let staticInputsLoaded = false;
+    try {
+      await loadStaticInputs();
+      staticInputsLoaded = true;
+    } catch (error) {
+      console.error('[afrr-ui] Could not load static inputs:', error);
+      showStatus('Kunne ikke laste årsliste for aFRR.', 'warning');
+      setAllVisualStates('empty', 'Ingen aFRR-data tilgjengelig.');
+    } finally {
+      setYearLoadingState(false);
+    }
+    if (!staticInputsLoaded) {
+      options.onStateChange?.();
+      return;
+    }
+
     if (!el.year || el.year.options.length === 0) {
       showStatus('Ingen aFRR-år tilgjengelig.', 'warning');
       setAllVisualStates('empty', 'Ingen aFRR-data tilgjengelig.');
