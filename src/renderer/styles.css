@@ -112,6 +112,12 @@ body {
   font-size: 0.83rem;
 }
 
+.app-version {
+  margin-top: 2px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
 /* Tab Navigation */
 .tab-nav {
   display: grid;

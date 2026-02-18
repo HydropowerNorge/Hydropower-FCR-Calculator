@@ -73,6 +73,16 @@ function toFiniteNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function pickFirstPositive(...values: Array<number | null | undefined>): number {
+  for (const value of values) {
+    if (value !== null && value !== undefined && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+
+  return 0;
+}
+
 function getHoursInYear(year: number): number {
   const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
   return isLeapYear ? 8784 : 8760;
@@ -189,13 +199,11 @@ export function calculateAfrrYearlyRevenue({
     // aFRR capacity price (EUR/MW)
     const mktPrice = toFiniteNumber(afrr?.marketPriceEurMw);
     const ctrPrice = toFiniteNumber(afrr?.contractedPriceEurMw);
-    const afrrPriceEurMw = (mktPrice !== null && mktPrice > 0) ? mktPrice
-      : (ctrPrice !== null && ctrPrice > 0) ? ctrPrice : 0;
+    const afrrPriceEurMw = pickFirstPositive(mktPrice, ctrPrice);
 
     const mktVolume = toFiniteNumber(afrr?.marketVolumeMw);
     const ctrVolume = toFiniteNumber(afrr?.contractedQuantityMw);
-    const marketVolumeMw = (mktVolume !== null && mktVolume > 0) ? mktVolume
-      : (ctrVolume !== null && ctrVolume > 0) ? ctrVolume : 0;
+    const marketVolumeMw = pickFirstPositive(mktVolume, ctrVolume);
     const marketActivatedMw = toFiniteNumber(afrr?.marketActivatedVolumeMw) ?? 0;
 
     // Bid sizing

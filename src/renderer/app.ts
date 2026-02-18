@@ -100,6 +100,7 @@ const charts: {
 };
 
 const elements = {
+  appVersion: document.getElementById('appVersion') as HTMLElement | null,
   powerMw: document.getElementById('powerMw') as HTMLInputElement,
   capacityMwh: document.getElementById('capacityMwh') as HTMLInputElement,
   efficiency: document.getElementById('efficiency') as HTMLInputElement,
@@ -214,13 +215,29 @@ const combinedPriorityRows: CombinedPriorityRow[] = [
   }
 ];
 
+async function loadAppVersionLabel(): Promise<void> {
+  if (!elements.appVersion) return;
+  try {
+    const version = await window.electronAPI.getAppVersion();
+    elements.appVersion.textContent = `Versjon ${version}`;
+  } catch (error) {
+    console.warn('[app] Could not load app version:', error);
+    elements.appVersion.textContent = 'Versjon ukjent';
+  }
+}
+
 function formatEuro(value: number): string {
   return `€${value.toLocaleString('nb-NO', { maximumFractionDigits: 0 })}`;
 }
 
 function formatSignedEuro(value: number): string {
   const rounded = Math.round(value);
-  const sign = rounded > 0 ? '+' : rounded < 0 ? '-' : '';
+  let sign = '';
+  if (rounded > 0) {
+    sign = '+';
+  } else if (rounded < 0) {
+    sign = '-';
+  }
   const abs = Math.abs(rounded).toLocaleString('nb-NO', { maximumFractionDigits: 0 });
   return `${sign}€${abs}`;
 }
@@ -282,28 +299,61 @@ function getActiveMainTab(): string {
   return document.querySelector<HTMLButtonElement>('.tab-btn.active')?.dataset.tab || '';
 }
 
-function canExportCsvForTab(tab: string): boolean {
-  if (tab === 'fcr') return currentResult !== null;
-  if (tab === 'afrr') return afrrUI.hasResult();
-  if (tab === 'nodes') return nodesUI.hasResult();
-  if (tab === 'yearlyCombined') return currentYearlyCombinedResult !== null;
-  return false;
+type ExportableMainTab = 'fcr' | 'afrr' | 'nodes' | 'yearlyCombined';
+
+interface SidebarExportConfig {
+  csvLabel: string;
+  excelLabel: string;
+  canExport: () => boolean;
+  exportCsv: () => Promise<void>;
+  exportExcel: () => Promise<void>;
 }
 
-function getCsvExportButtonLabel(tab: string): string {
-  if (tab === 'fcr') return 'Eksporter CSV (FCR-N)';
-  if (tab === 'afrr') return 'Eksporter CSV (aFRR)';
-  if (tab === 'nodes') return 'Eksporter CSV (Nodes)';
-  if (tab === 'yearlyCombined') return 'Eksporter CSV (Årskalkyle)';
-  return 'Eksporter CSV';
+const SIDEBAR_EXPORT_CONFIGS: Record<ExportableMainTab, SidebarExportConfig> = {
+  fcr: {
+    csvLabel: 'Eksporter CSV (FCR-N)',
+    excelLabel: 'Eksporter Excel (FCR-N)',
+    canExport: (): boolean => currentResult !== null,
+    exportCsv,
+    exportExcel,
+  },
+  afrr: {
+    csvLabel: 'Eksporter CSV (aFRR)',
+    excelLabel: 'Eksporter Excel (aFRR)',
+    canExport: (): boolean => afrrUI.hasResult(),
+    exportCsv: (): Promise<void> => afrrUI.exportCsv(),
+    exportExcel: (): Promise<void> => afrrUI.exportExcel(),
+  },
+  nodes: {
+    csvLabel: 'Eksporter CSV (Nodes)',
+    excelLabel: 'Eksporter Excel (Nodes)',
+    canExport: (): boolean => nodesUI.hasResult(),
+    exportCsv: (): Promise<void> => nodesUI.exportCsv(),
+    exportExcel: (): Promise<void> => nodesUI.exportExcel(),
+  },
+  yearlyCombined: {
+    csvLabel: 'Eksporter CSV (Årskalkyle)',
+    excelLabel: 'Eksporter Excel (Årskalkyle)',
+    canExport: (): boolean => currentYearlyCombinedResult !== null,
+    exportCsv: exportYearlyCombinedCsv,
+    exportExcel: exportYearlyCombinedExcel,
+  },
+};
+
+function getSidebarExportConfig(tab: string): SidebarExportConfig | null {
+  if (tab in SIDEBAR_EXPORT_CONFIGS) {
+    return SIDEBAR_EXPORT_CONFIGS[tab as ExportableMainTab];
+  }
+  return null;
 }
 
-function getExcelExportButtonLabel(tab: string): string {
-  if (tab === 'fcr') return 'Eksporter Excel (FCR-N)';
-  if (tab === 'afrr') return 'Eksporter Excel (aFRR)';
-  if (tab === 'nodes') return 'Eksporter Excel (Nodes)';
-  if (tab === 'yearlyCombined') return 'Eksporter Excel (Årskalkyle)';
-  return 'Eksporter Excel';
+function setSidebarExportButtonsDisabled(disabled: boolean): void {
+  if (elements.sidebarExportCsvBtn) {
+    elements.sidebarExportCsvBtn.disabled = disabled;
+  }
+  if (elements.sidebarExportExcelBtn) {
+    elements.sidebarExportExcelBtn.disabled = disabled;
+  }
 }
 
 function updateSidebarCsvExportState(): void {
@@ -312,25 +362,39 @@ function updateSidebarCsvExportState(): void {
   if (!csvButton && !excelButton) return;
 
   const activeTab = getActiveMainTab();
+  const exportConfig = getSidebarExportConfig(activeTab);
   const anchorButton = csvButton || excelButton;
   const exportSection = anchorButton?.closest('.sidebar-export') as HTMLElement | null;
-  const shouldShow = activeTab === 'fcr'
-    || activeTab === 'afrr'
-    || activeTab === 'nodes'
-    || activeTab === 'yearlyCombined';
   if (exportSection) {
-    exportSection.style.display = shouldShow ? '' : 'none';
+    exportSection.style.display = exportConfig ? '' : 'none';
   }
-  if (!shouldShow) return;
+  if (!exportConfig) return;
 
-  const canExport = canExportCsvForTab(activeTab);
+  const canExport = exportConfig.canExport();
   if (csvButton) {
-    csvButton.textContent = getCsvExportButtonLabel(activeTab);
+    csvButton.textContent = exportConfig.csvLabel;
     csvButton.disabled = !canExport;
   }
   if (excelButton) {
-    excelButton.textContent = getExcelExportButtonLabel(activeTab);
+    excelButton.textContent = exportConfig.excelLabel;
     excelButton.disabled = !canExport;
+  }
+}
+
+async function runSidebarExport(
+  button: HTMLButtonElement,
+  busyLabel: string,
+  fallbackIdleLabel: string,
+  action: () => Promise<void>,
+): Promise<void> {
+  const previousLabel = button.textContent;
+  setSidebarExportButtonsDisabled(true);
+  button.textContent = busyLabel;
+  try {
+    await action();
+  } finally {
+    button.textContent = previousLabel || fallbackIdleLabel;
+    updateSidebarCsvExportState();
   }
 }
 
@@ -338,52 +402,20 @@ async function exportCsvForActiveTab(): Promise<void> {
   const csvButton = elements.sidebarExportCsvBtn;
   if (!csvButton || csvButton.disabled) return;
 
-  const activeTab = getActiveMainTab();
-  const previousLabel = csvButton.textContent;
-  if (elements.sidebarExportCsvBtn) elements.sidebarExportCsvBtn.disabled = true;
-  if (elements.sidebarExportExcelBtn) elements.sidebarExportExcelBtn.disabled = true;
-  csvButton.textContent = 'Eksporterer CSV...';
+  const exportConfig = getSidebarExportConfig(getActiveMainTab());
+  if (!exportConfig) return;
 
-  try {
-    if (activeTab === 'fcr') {
-      await exportCsv();
-    } else if (activeTab === 'afrr') {
-      await afrrUI.exportCsv();
-    } else if (activeTab === 'nodes') {
-      await nodesUI.exportCsv();
-    } else if (activeTab === 'yearlyCombined') {
-      await exportYearlyCombinedCsv();
-    }
-  } finally {
-    csvButton.textContent = previousLabel || 'Eksporter CSV';
-    updateSidebarCsvExportState();
-  }
+  await runSidebarExport(csvButton, 'Eksporterer CSV...', 'Eksporter CSV', exportConfig.exportCsv);
 }
 
 async function exportExcelForActiveTab(): Promise<void> {
   const excelButton = elements.sidebarExportExcelBtn;
   if (!excelButton || excelButton.disabled) return;
 
-  const activeTab = getActiveMainTab();
-  const previousLabel = excelButton.textContent;
-  if (elements.sidebarExportCsvBtn) elements.sidebarExportCsvBtn.disabled = true;
-  if (elements.sidebarExportExcelBtn) elements.sidebarExportExcelBtn.disabled = true;
-  excelButton.textContent = 'Eksporterer Excel...';
+  const exportConfig = getSidebarExportConfig(getActiveMainTab());
+  if (!exportConfig) return;
 
-  try {
-    if (activeTab === 'fcr') {
-      await exportExcel();
-    } else if (activeTab === 'afrr') {
-      await afrrUI.exportExcel();
-    } else if (activeTab === 'nodes') {
-      await nodesUI.exportExcel();
-    } else if (activeTab === 'yearlyCombined') {
-      await exportYearlyCombinedExcel();
-    }
-  } finally {
-    excelButton.textContent = previousLabel || 'Eksporter Excel';
-    updateSidebarCsvExportState();
-  }
+  await runSidebarExport(excelButton, 'Eksporterer Excel...', 'Eksporter Excel', exportConfig.exportExcel);
 }
 
 async function runFcrSimulationInWorker(payload: Record<string, unknown>): Promise<WorkerPayload> {
@@ -614,6 +646,7 @@ function populateYearSelect(selectEl: HTMLSelectElement, years: number[]): void 
 
 async function init(): Promise<void> {
   console.log('[app] init() starting');
+  await loadAppVersionLabel();
   setupTabs();
   console.log('[app] Tabs set up');
 
@@ -901,6 +934,35 @@ function updateCombinedPriorityChart(): void {
   });
 }
 
+interface BatteryConfigValues {
+  powerMw: number;
+  capacityMwh: number;
+  efficiency: number;
+  socMin: number;
+  socMax: number;
+}
+
+function getBatteryConfigValuesFromInputs(): BatteryConfigValues {
+  return {
+    powerMw: parseFloat(elements.powerMw.value),
+    capacityMwh: parseFloat(elements.capacityMwh.value),
+    efficiency: parseInt(elements.efficiency.value, 10) / 100,
+    socMin: parseInt(elements.socMin.value, 10) / 100,
+    socMax: parseInt(elements.socMax.value, 10) / 100,
+  };
+}
+
+function createBatteryConfigFromInputs(): Calculator.BatteryConfig {
+  const values = getBatteryConfigValuesFromInputs();
+  return new Calculator.BatteryConfig(
+    values.powerMw,
+    values.capacityMwh,
+    values.efficiency,
+    values.socMin,
+    values.socMax
+  );
+}
+
 async function calculateFcrYearlyForCombined(year: number): Promise<{ totalEur: number; monthlyByMonth: number[] }> {
   const rows = await window.electronAPI.loadPriceData(year, 'NO1');
   const localPriceData = (Array.isArray(rows) ? rows : [])
@@ -917,20 +979,8 @@ async function calculateFcrYearlyForCombined(year: number): Promise<{ totalEur: 
     throw new Error(`Ingen FCR-prisdata funnet for ${year}`);
   }
 
-  const configValues = {
-    powerMw: parseFloat(elements.powerMw.value),
-    capacityMwh: parseFloat(elements.capacityMwh.value),
-    efficiency: parseInt(elements.efficiency.value, 10) / 100,
-    socMin: parseInt(elements.socMin.value, 10) / 100,
-    socMax: parseInt(elements.socMax.value, 10) / 100
-  };
-  const config = new Calculator.BatteryConfig(
-    configValues.powerMw,
-    configValues.capacityMwh,
-    configValues.efficiency,
-    configValues.socMin,
-    configValues.socMax
-  );
+  const configValues = getBatteryConfigValuesFromInputs();
+  const config = createBatteryConfigFromInputs();
 
   const profileName = (document.querySelector('input[name="profile"]') as HTMLInputElement).value;
   const hours = parseInt(elements.simHours.value, 10);
@@ -1355,21 +1405,8 @@ async function calculate(): Promise<void> {
   if (calculateBtn) calculateBtn.disabled = true;
 
   try {
-    const configValues = {
-      powerMw: parseFloat(elements.powerMw.value),
-      capacityMwh: parseFloat(elements.capacityMwh.value),
-      efficiency: parseInt(elements.efficiency.value) / 100,
-      socMin: parseInt(elements.socMin.value) / 100,
-      socMax: parseInt(elements.socMax.value) / 100
-    };
-
-    const config = new Calculator.BatteryConfig(
-      configValues.powerMw,
-      configValues.capacityMwh,
-      configValues.efficiency,
-      configValues.socMin,
-      configValues.socMax
-    );
+    const configValues = getBatteryConfigValuesFromInputs();
+    const config = createBatteryConfigFromInputs();
 
     const profileName = (document.querySelector('input[name="profile"]') as HTMLInputElement).value;
     const hours = parseInt(elements.simHours.value);

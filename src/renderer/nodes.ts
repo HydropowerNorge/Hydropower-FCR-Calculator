@@ -86,15 +86,9 @@ export function calculateNodeYearlyIncome(params: NodeIncomeParams): NodeYearlyR
     const date = new Date(ts);
     const { dayName, hour, monthIndex } = getOsloComponents(date);
 
-    let eligible = true;
-
-    if (hasDayFilter && !activeDays.includes(dayName)) {
-      eligible = false;
-    }
-
-    if (eligible && hasWindowFilter && !isHourInWindows(hour, activeWindows)) {
-      eligible = false;
-    }
+    const matchesDayFilter = !hasDayFilter || activeDays.includes(dayName);
+    const matchesWindowFilter = !hasWindowFilter || isHourInWindows(hour, activeWindows);
+    const eligible = matchesDayFilter && matchesWindowFilter;
 
     if (eligible) {
       monthlyHours[monthIndex] += 1;

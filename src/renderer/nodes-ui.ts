@@ -386,30 +386,56 @@ export function createNodesUI(options: NodesUIOptions = {}): {
     }
   }
 
-  async function exportCsv(): Promise<void> {
-    if (!currentResult) return;
-    const result = currentResult;
+  interface NodesMonthlyExportRow {
+    monthLabel: string;
+    eligibleHours: number;
+    reservationPriceNokMwH: number;
+    quantityMw: number;
+    hourlyIncomeNok: number;
+    incomeNok: number;
+    accumulatedIncomeNok: number;
+    yearlyIncomeNok: number;
+  }
 
+  function buildNodesMonthlyExportRows(result: NodeYearlyResult): NodesMonthlyExportRow[] {
     const rowsByMonth = new Map(result.monthly.map((row) => [row.month, row]));
     const hourlyIncomeNok = result.priceNokMwH * result.quantityMw;
     let accumulatedIncomeNok = 0;
 
-    const csvContent = Papa.unparse(MONTH_SEQUENCE.map((month) => {
+    return MONTH_SEQUENCE.map((month) => {
       const row = rowsByMonth.get(month.key);
       const eligibleHours = row?.eligibleHours ?? 0;
       const incomeNok = row?.incomeNok ?? 0;
       accumulatedIncomeNok += incomeNok;
+
       return {
-        'Måned': month.label,
-        'Kvalifiserte timer': eligibleHours,
-        'Reservasjonspris (NOK/MW/h)': result.priceNokMwH.toFixed(4),
-        'Volum (MW)': result.quantityMw.toFixed(4),
-        'Timeinntekt (NOK/h)': hourlyIncomeNok.toFixed(4),
-        'Inntekt Nodes (NOK)': incomeNok.toFixed(2),
-        'Akkumulert Nodes (NOK)': accumulatedIncomeNok.toFixed(2),
-        'Årssum Nodes (NOK)': result.totalIncomeNok.toFixed(2),
+        monthLabel: month.label,
+        eligibleHours,
+        reservationPriceNokMwH: result.priceNokMwH,
+        quantityMw: result.quantityMw,
+        hourlyIncomeNok,
+        incomeNok,
+        accumulatedIncomeNok,
+        yearlyIncomeNok: result.totalIncomeNok,
       };
+    });
+  }
+
+  async function exportCsv(): Promise<void> {
+    if (!currentResult) return;
+    const result = currentResult;
+
+    const csvRows = buildNodesMonthlyExportRows(result).map((row) => ({
+      'Måned': row.monthLabel,
+      'Kvalifiserte timer': row.eligibleHours,
+      'Reservasjonspris (NOK/MW/h)': row.reservationPriceNokMwH.toFixed(4),
+      'Volum (MW)': row.quantityMw.toFixed(4),
+      'Timeinntekt (NOK/h)': row.hourlyIncomeNok.toFixed(4),
+      'Inntekt Nodes (NOK)': row.incomeNok.toFixed(2),
+      'Akkumulert Nodes (NOK)': row.accumulatedIncomeNok.toFixed(2),
+      'Årssum Nodes (NOK)': row.yearlyIncomeNok.toFixed(2),
     }));
+    const csvContent = Papa.unparse(csvRows);
 
     const tender = getSelectedTender();
     const yearSuffix = getTenderYearSuffix(tender);
@@ -420,26 +446,16 @@ export function createNodesUI(options: NodesUIOptions = {}): {
     if (!currentResult) return;
     const result = currentResult;
 
-    const rowsByMonth = new Map(result.monthly.map((row) => [row.month, row]));
-    const hourlyIncomeNok = result.priceNokMwH * result.quantityMw;
-    let accumulatedIncomeNok = 0;
-
-    const excelRows = MONTH_SEQUENCE.map((month) => {
-      const row = rowsByMonth.get(month.key);
-      const eligibleHours = row?.eligibleHours ?? 0;
-      const incomeNok = row?.incomeNok ?? 0;
-      accumulatedIncomeNok += incomeNok;
-      return {
-        'Måned': month.label,
-        'Kvalifiserte timer': eligibleHours,
-        'Reservasjonspris (NOK/MW/h)': Number(result.priceNokMwH.toFixed(4)),
-        'Volum (MW)': Number(result.quantityMw.toFixed(4)),
-        'Timeinntekt (NOK/h)': Number(hourlyIncomeNok.toFixed(4)),
-        'Inntekt Nodes (NOK)': Number(incomeNok.toFixed(2)),
-        'Akkumulert Nodes (NOK)': Number(accumulatedIncomeNok.toFixed(2)),
-        'Årssum Nodes (NOK)': Number(result.totalIncomeNok.toFixed(2)),
-      };
-    });
+    const excelRows = buildNodesMonthlyExportRows(result).map((row) => ({
+      'Måned': row.monthLabel,
+      'Kvalifiserte timer': row.eligibleHours,
+      'Reservasjonspris (NOK/MW/h)': Number(row.reservationPriceNokMwH.toFixed(4)),
+      'Volum (MW)': Number(row.quantityMw.toFixed(4)),
+      'Timeinntekt (NOK/h)': Number(row.hourlyIncomeNok.toFixed(4)),
+      'Inntekt Nodes (NOK)': Number(row.incomeNok.toFixed(2)),
+      'Akkumulert Nodes (NOK)': Number(row.accumulatedIncomeNok.toFixed(2)),
+      'Årssum Nodes (NOK)': Number(row.yearlyIncomeNok.toFixed(2)),
+    }));
 
     const tender = getSelectedTender();
     const yearSuffix = getTenderYearSuffix(tender);

@@ -92,6 +92,7 @@ export interface PdfExportData {
 }
 
 export interface ElectronAPI {
+  getAppVersion(): Promise<string>;
   saveFile(data: string, defaultName: string): Promise<string | null>;
   saveExcel(data: number[], defaultName: string): Promise<string | null>;
   savePdf(pdfData: PdfExportData, defaultName: string): Promise<string | null>;

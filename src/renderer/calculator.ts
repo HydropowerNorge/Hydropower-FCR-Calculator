@@ -75,6 +75,15 @@ function applyRoundTripEfficiency(deltaEnergy: number, sqrtEfficiency: number): 
   return deltaEnergy * sqrtEfficiency;
 }
 
+function calculateAverage(values: number[]): number {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  const sum = values.reduce((accumulator, value) => accumulator + value, 0);
+  return sum / values.length;
+}
+
 // Calculate FCR-N power activation based on frequency
 // FCR-N activates linearly in 49.9-50.1 Hz band:
 // - At 49.9 Hz: full discharge (+powerMw)
@@ -246,9 +255,7 @@ export function calculateRevenue(
   }
 
   const totalHours = priceData.length;
-  const avgPrice = totalHours > 0
-    ? priceData.reduce((sum, r) => sum + r.price, 0) / totalHours
-    : 0;
+  const avgPrice = calculateAverage(priceData.map((row) => row.price));
 
   return {
     hourlyData: hourlyResults,

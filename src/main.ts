@@ -13,6 +13,9 @@ import dotenv from 'dotenv';
 import { ConvexHttpClient } from 'convex/browser';
 import type { PdfExportData } from './shared/electron-api';
 
+const APP_DISPLAY_NAME = 'Hydropower';
+app.setName(APP_DISPLAY_NAME);
+
 console.log('[main] Process starting', {
   platform: process.platform,
   arch: process.arch,
@@ -216,11 +219,11 @@ function buildApplicationMenuTemplate(): MenuItemConstructorOptions[] {
   ];
 }
 
-function installApplicationMenu() {
+function installApplicationMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(buildApplicationMenuTemplate()));
 }
 
-function setManualUpdateCheckInProgress(inProgress: boolean) {
+function setManualUpdateCheckInProgress(inProgress: boolean): void {
   manualUpdateCheckInProgress = inProgress;
   installApplicationMenu();
 }
@@ -305,10 +308,7 @@ async function checkForUpdatesFromMenu(): Promise<void> {
   }
 
   if (!autoUpdatesConfigured) {
-    const detail = autoUpdateConfigurationIssue
-      ?? (lastAutoUpdateErrorMessage
-        ? buildAutoUpdateErrorDetail(lastAutoUpdateErrorMessage)
-        : undefined);
+    const detail = getAutoUpdateConfigurationDetail();
     await showUpdateCheckFailure('Auto-update is not configured correctly for this app.', detail);
     return;
   }
@@ -322,7 +322,19 @@ async function checkForUpdatesFromMenu(): Promise<void> {
   }
 }
 
-function resolveGitHubUpdateSource() {
+function getAutoUpdateConfigurationDetail(): string | undefined {
+  if (autoUpdateConfigurationIssue) {
+    return autoUpdateConfigurationIssue;
+  }
+
+  if (lastAutoUpdateErrorMessage) {
+    return buildAutoUpdateErrorDetail(lastAutoUpdateErrorMessage);
+  }
+
+  return undefined;
+}
+
+function resolveGitHubUpdateSource(): { repo: string; host: string } {
   const repo = (process.env.ELECTRON_AUTO_UPDATE_REPO || DEFAULT_AUTO_UPDATE_REPO).trim();
   const host = (process.env.ELECTRON_AUTO_UPDATE_HOST || DEFAULT_AUTO_UPDATE_HOST)
     .trim()
@@ -442,6 +454,17 @@ function sanitizeDefaultName(defaultName: unknown, fallbackName: string): string
   return path.basename(defaultName.trim());
 }
 
+async function selectSavePath(
+  defaultPath: string,
+  filters: Array<{ name: string; extensions: string[] }>,
+): Promise<string | null> {
+  const { canceled, filePath } = await dialog.showSaveDialog({ defaultPath, filters });
+  if (canceled || !filePath) {
+    return null;
+  }
+  return filePath;
+}
+
 function normalizeByteArray(data: unknown): Uint8Array | null {
   if (data instanceof Uint8Array) return data;
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
@@ -535,35 +558,39 @@ function createWindow(): void {
   }
 }
 
+ipcMain.handle('app:getVersion', () => app.getVersion());
+
 ipcMain.handle('file:save', async (_event: IpcMainInvokeEvent, data: unknown, defaultName: unknown) => {
   const safeDefaultName = sanitizeDefaultName(defaultName, 'export.csv');
-  const { canceled, filePath } = await dialog.showSaveDialog({
-    defaultPath: safeDefaultName,
-    filters: [{ name: 'CSV Files', extensions: ['csv'] }]
-  });
-  if (!canceled && filePath) {
-    const csvContent = typeof data === 'string' ? data : String(data ?? '');
-    await fs.promises.writeFile(filePath, csvContent, 'utf-8');
-    return filePath;
+  const filePath = await selectSavePath(safeDefaultName, [
+    { name: 'CSV Files', extensions: ['csv'] }
+  ]);
+  if (!filePath) {
+    return null;
   }
-  return null;
+
+  const csvContent = typeof data === 'string' ? data : String(data ?? '');
+  await fs.promises.writeFile(filePath, csvContent, 'utf-8');
+  return filePath;
 });
 
 ipcMain.handle('file:saveExcel', async (_event: IpcMainInvokeEvent, data: unknown, defaultName: unknown) => {
   const safeDefaultName = sanitizeDefaultName(defaultName, 'export.xlsx');
-  const { canceled, filePath } = await dialog.showSaveDialog({
-    defaultPath: safeDefaultName,
-    filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
-  });
+  const filePath = await selectSavePath(safeDefaultName, [
+    { name: 'Excel Files', extensions: ['xlsx'] }
+  ]);
 
-  if (!canceled && filePath) {
-    const bytes = normalizeByteArray(data);
-    if (!bytes) return null;
-    await fs.promises.writeFile(filePath, Buffer.from(bytes));
-    return filePath;
+  if (!filePath) {
+    return null;
   }
 
-  return null;
+  const bytes = normalizeByteArray(data);
+  if (!bytes) {
+    return null;
+  }
+
+  await fs.promises.writeFile(filePath, Buffer.from(bytes));
+  return filePath;
 });
 
 ipcMain.handle('file:savePdf', async (_event: IpcMainInvokeEvent, pdfData: unknown, defaultName: unknown) => {
@@ -572,11 +599,12 @@ ipcMain.handle('file:savePdf', async (_event: IpcMainInvokeEvent, pdfData: unkno
   }
 
   const safeDefaultName = sanitizeDefaultName(defaultName, 'report.pdf');
-  const { canceled, filePath } = await dialog.showSaveDialog({
-    defaultPath: safeDefaultName,
-    filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
-  });
-  if (canceled || !filePath) return null;
+  const filePath = await selectSavePath(safeDefaultName, [
+    { name: 'PDF Files', extensions: ['pdf'] }
+  ]);
+  if (!filePath) {
+    return null;
+  }
 
   console.log('[main] Building PDF HTML');
   const html = buildPdfHtml(pdfData as PdfExportData);
@@ -897,6 +925,19 @@ interface PaginationOptions {
   logEveryPage?: boolean;
 }
 
+async function runWithFallback<T>(
+  operation: () => Promise<T>,
+  fallbackFactory: () => T,
+  errorMessage: string,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    console.error(errorMessage, error);
+    return fallbackFactory();
+  }
+}
+
 async function runConvexQuery(functionName: string, args: Record<string, unknown> = {}): Promise<unknown> {
   const client = getConvexClient();
   return client.query(functionName as never, args as never);
@@ -976,41 +1017,36 @@ ipcMain.handle('data:loadPriceData', async (_event: IpcMainInvokeEvent, year: un
   }
 
   const safeArea = sanitizeAreaCode(area, 'NO1');
-  try {
-    return await runPaginatedConvexQuery('prices:getPriceDataPage', {
+  return runWithFallback(
+    () => runPaginatedConvexQuery('prices:getPriceDataPage', {
       year: safeYear,
       area: safeArea,
-    });
-  } catch (err) {
-    console.error('Failed to load price data from Convex:', err);
-    return [];
-  }
+    }),
+    (): unknown[] => [],
+    'Failed to load price data from Convex:'
+  );
 });
 
 ipcMain.handle('data:getAvailableYears', async (_event: IpcMainInvokeEvent, area: unknown = 'NO1') => {
   const safeArea = sanitizeAreaCode(area, 'NO1');
-  try {
-    return await runConvexQuery('prices:getAvailableYears', {
-      area: safeArea,
-    });
-  } catch (err) {
-    console.error('Failed to fetch available years from Convex:', err);
-    return [];
-  }
+  return runWithFallback(
+    () => runConvexQuery('prices:getAvailableYears', { area: safeArea }),
+    (): unknown[] => [],
+    'Failed to fetch available years from Convex:'
+  );
 });
 
 ipcMain.handle('data:loadSpotData', async (_event: IpcMainInvokeEvent, biddingZone: unknown = 'NO1', year: unknown = null) => {
   const safeBiddingZone = sanitizeAreaCode(biddingZone, 'NO1');
   const safeYear = sanitizeYear(year);
-  try {
-    return await runPaginatedConvexQuery('spot:getSpotDataPage', {
+  return runWithFallback(
+    () => runPaginatedConvexQuery('spot:getSpotDataPage', {
       biddingZone: safeBiddingZone,
       ...(safeYear !== null ? { year: safeYear } : {}),
-    });
-  } catch (err) {
-    console.error('Failed to load spot data from Convex:', err);
-    return [];
-  }
+    }),
+    (): unknown[] => [],
+    'Failed to load spot data from Convex:'
+  );
 });
 
 ipcMain.handle('data:loadAfrrData', async (_event: IpcMainInvokeEvent, year: unknown, filters: Record<string, unknown> = {}) => {
@@ -1077,27 +1113,23 @@ ipcMain.handle('data:loadSolarData', async (_event: IpcMainInvokeEvent, year: un
   }
 
   const safeResolutionMinutes = sanitizeResolutionMinutes(resolutionMinutes, 60);
-  try {
-    return await runPaginatedConvexQuery('solar:getSolarDataPage', {
+  return runWithFallback(
+    () => runPaginatedConvexQuery('solar:getSolarDataPage', {
       year: safeYear,
       resolutionMinutes: safeResolutionMinutes,
-    });
-  } catch (err) {
-    console.error('Failed to load solar data from Convex:', err);
-    return [];
-  }
+    }),
+    (): unknown[] => [],
+    'Failed to load solar data from Convex:'
+  );
 });
 
 ipcMain.handle('data:getSolarAvailableYears', async (_event: IpcMainInvokeEvent, resolutionMinutes: unknown = 60) => {
   const safeResolutionMinutes = sanitizeResolutionMinutes(resolutionMinutes, 60);
-  try {
-    return await runConvexQuery('solar:getAvailableYears', {
-      resolutionMinutes: safeResolutionMinutes,
-    });
-  } catch (err) {
-    console.error('Failed to fetch solar years from Convex:', err);
-    return [];
-  }
+  return runWithFallback(
+    () => runConvexQuery('solar:getAvailableYears', { resolutionMinutes: safeResolutionMinutes }),
+    (): unknown[] => [],
+    'Failed to fetch solar years from Convex:'
+  );
 });
 
 ipcMain.handle('data:loadNodeTenders', async (_event: IpcMainInvokeEvent, filters: Record<string, unknown> = {}) => {
@@ -1105,33 +1137,29 @@ ipcMain.handle('data:loadNodeTenders', async (_event: IpcMainInvokeEvent, filter
   const gridNode = sanitizeLookupValue(filters?.gridNode, 120);
   const market = sanitizeLookupValue(filters?.market, 120);
 
-  try {
-    return await runPaginatedConvexQuery('nodes:getNodeTendersPage', {
+  return runWithFallback(
+    () => runPaginatedConvexQuery('nodes:getNodeTendersPage', {
       dataset,
       ...(gridNode ? { gridNode } : {}),
       ...(market ? { market } : {}),
-    });
-  } catch (err) {
-    console.error('Failed to load node tender data from Convex:', err);
-    return [];
-  }
+    }),
+    (): unknown[] => [],
+    'Failed to load node tender data from Convex:'
+  );
 });
 
 ipcMain.handle('data:getNodeTenderFilters', async (_event: IpcMainInvokeEvent, dataset: unknown = 'nodes_2026_pilot') => {
   const safeDataset = sanitizeLookupValue(dataset, 80) || 'nodes_2026_pilot';
-  try {
-    return await runConvexQuery('nodes:getNodeFilterOptions', {
-      dataset: safeDataset,
-    });
-  } catch (err) {
-    console.error('Failed to load node tender filter options from Convex:', err);
-    return {
+  return runWithFallback(
+    () => runConvexQuery('nodes:getNodeFilterOptions', { dataset: safeDataset }),
+    () => ({
       gridNodes: [],
       markets: [],
       statuses: [],
       total: 0,
-    };
-  }
+    }),
+    'Failed to load node tender filter options from Convex:'
+  );
 });
 
 app.whenReady().then(() => {

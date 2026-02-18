@@ -329,32 +329,66 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
     }
   }
 
+  interface AfrrExportRow {
+    month: string;
+    totalHours: number;
+    bidHours: number;
+    avgAfrrPriceEurMw: number;
+    spotIncomeEur: number;
+    afrrCapacityIncomeEur: number;
+    activationCostEur: number;
+    totalIncomeEur: number;
+    controlTotalEur: number;
+    accumulatedAfrrCapacityEur: number;
+    yearlyAfrrCapacityEur: number;
+    yearlyTotalIncomeEur: number;
+  }
+
+  function buildAfrrExportRows(result: AfrrYearlyResult): AfrrExportRow[] {
+    let accumulatedAfrrIncomeEur = 0;
+    const sortedRows = result.monthly
+      .slice()
+      .sort((a, b) => a.month.localeCompare(b.month));
+
+    return sortedRows.map((row) => {
+      accumulatedAfrrIncomeEur += row.afrrIncomeEur;
+      const controlTotalEur = row.spotIncomeEur + row.afrrIncomeEur - row.activationCostEur;
+
+      return {
+        month: formatYearMonthLabelNb(row.month),
+        totalHours: row.hours,
+        bidHours: row.bidHours,
+        avgAfrrPriceEurMw: row.avgAfrrPriceEurMw,
+        spotIncomeEur: row.spotIncomeEur,
+        afrrCapacityIncomeEur: row.afrrIncomeEur,
+        activationCostEur: row.activationCostEur,
+        totalIncomeEur: row.totalIncomeEur,
+        controlTotalEur,
+        accumulatedAfrrCapacityEur: accumulatedAfrrIncomeEur,
+        yearlyAfrrCapacityEur: result.totalAfrrIncomeEur,
+        yearlyTotalIncomeEur: result.totalIncomeEur,
+      };
+    });
+  }
+
   async function exportCsv(): Promise<void> {
     if (!currentResult) return;
     const result = currentResult;
 
-    let accumulatedAfrrIncomeEur = 0;
-    const exportRows = result.monthly
-      .slice()
-      .sort((a, b) => a.month.localeCompare(b.month))
-      .map((row) => {
-        accumulatedAfrrIncomeEur += row.afrrIncomeEur;
-        const controlledTotal = row.spotIncomeEur + row.afrrIncomeEur - row.activationCostEur;
-        return {
-          'Måned': formatYearMonthLabelNb(row.month),
-          'Timer totalt': row.hours,
-          'Budtimer': row.bidHours,
-          'Snitt aFRR-pris (EUR/MW)': row.avgAfrrPriceEurMw.toFixed(4),
-          'Spotinntekt (EUR)': row.spotIncomeEur.toFixed(2),
-          'aFRR kapasitetsinntekt (EUR)': row.afrrIncomeEur.toFixed(2),
-          'Aktiveringskostnad (EUR)': row.activationCostEur.toFixed(2),
-          'Sum inntekt (EUR)': row.totalIncomeEur.toFixed(2),
-          'Kontrollsum spot + aFRR - aktivering (EUR)': controlledTotal.toFixed(2),
-          'Akkumulert aFRR-kapasitet (EUR)': accumulatedAfrrIncomeEur.toFixed(2),
-          'Årssum aFRR-kapasitet (EUR)': result.totalAfrrIncomeEur.toFixed(2),
-          'Årssum total inntekt (EUR)': result.totalIncomeEur.toFixed(2),
-        };
-      });
+    const exportRows = buildAfrrExportRows(result).map((row) => ({
+      'Måned': row.month,
+      'Timer totalt': row.totalHours,
+      'Budtimer': row.bidHours,
+      'Snitt aFRR-pris (EUR/MW)': row.avgAfrrPriceEurMw.toFixed(4),
+      'Spotinntekt (EUR)': row.spotIncomeEur.toFixed(2),
+      'aFRR kapasitetsinntekt (EUR)': row.afrrCapacityIncomeEur.toFixed(2),
+      'Aktiveringskostnad (EUR)': row.activationCostEur.toFixed(2),
+      'Sum inntekt (EUR)': row.totalIncomeEur.toFixed(2),
+      'Kontrollsum spot + aFRR - aktivering (EUR)': row.controlTotalEur.toFixed(2),
+      'Akkumulert aFRR-kapasitet (EUR)': row.accumulatedAfrrCapacityEur.toFixed(2),
+      'Årssum aFRR-kapasitet (EUR)': row.yearlyAfrrCapacityEur.toFixed(2),
+      'Årssum total inntekt (EUR)': row.yearlyTotalIncomeEur.toFixed(2),
+    }));
 
     const csvContent = Papa.unparse(exportRows);
     await window.electronAPI.saveFile(csvContent, `afrr_inntekt_${result.year}.csv`);
@@ -364,29 +398,20 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
     if (!currentResult) return;
     const result = currentResult;
 
-    let accumulatedAfrrIncomeEur = 0;
-    const monthlyRows = result.monthly
-      .slice()
-      .sort((a, b) => a.month.localeCompare(b.month));
-
-    const excelRows = monthlyRows.map((row) => {
-      accumulatedAfrrIncomeEur += row.afrrIncomeEur;
-      const controlledTotal = row.spotIncomeEur + row.afrrIncomeEur - row.activationCostEur;
-      return {
-        'Måned': formatYearMonthLabelNb(row.month),
-        'Timer totalt': row.hours,
-        'Budtimer': row.bidHours,
-        'Snitt aFRR-pris (EUR/MW)': Number(row.avgAfrrPriceEurMw.toFixed(4)),
-        'Spotinntekt (EUR)': Number(row.spotIncomeEur.toFixed(2)),
-        'aFRR kapasitetsinntekt (EUR)': Number(row.afrrIncomeEur.toFixed(2)),
-        'Aktiveringskostnad (EUR)': Number(row.activationCostEur.toFixed(2)),
-        'Sum inntekt (EUR)': Number(row.totalIncomeEur.toFixed(2)),
-        'Kontrollsum spot + aFRR - aktivering (EUR)': Number(controlledTotal.toFixed(2)),
-        'Akkumulert aFRR-kapasitet (EUR)': Number(accumulatedAfrrIncomeEur.toFixed(2)),
-        'Årssum aFRR-kapasitet (EUR)': Number(result.totalAfrrIncomeEur.toFixed(2)),
-        'Årssum total inntekt (EUR)': Number(result.totalIncomeEur.toFixed(2)),
-      };
-    });
+    const excelRows = buildAfrrExportRows(result).map((row) => ({
+      'Måned': row.month,
+      'Timer totalt': row.totalHours,
+      'Budtimer': row.bidHours,
+      'Snitt aFRR-pris (EUR/MW)': Number(row.avgAfrrPriceEurMw.toFixed(4)),
+      'Spotinntekt (EUR)': Number(row.spotIncomeEur.toFixed(2)),
+      'aFRR kapasitetsinntekt (EUR)': Number(row.afrrCapacityIncomeEur.toFixed(2)),
+      'Aktiveringskostnad (EUR)': Number(row.activationCostEur.toFixed(2)),
+      'Sum inntekt (EUR)': Number(row.totalIncomeEur.toFixed(2)),
+      'Kontrollsum spot + aFRR - aktivering (EUR)': Number(row.controlTotalEur.toFixed(2)),
+      'Akkumulert aFRR-kapasitet (EUR)': Number(row.accumulatedAfrrCapacityEur.toFixed(2)),
+      'Årssum aFRR-kapasitet (EUR)': Number(row.yearlyAfrrCapacityEur.toFixed(2)),
+      'Årssum total inntekt (EUR)': Number(row.yearlyTotalIncomeEur.toFixed(2)),
+    }));
 
     const excelBytes = buildExcelFileBytes(excelRows, `aFRR ${result.year}`);
     await window.electronAPI.saveExcel(excelBytes, `afrr_inntekt_${result.year}.xlsx`);

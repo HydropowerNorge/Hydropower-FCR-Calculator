@@ -28,7 +28,7 @@ Typical local dev: run `npm run convex:dev` in one terminal, `npm start` in anot
 Three-tier: Electron main process ↔ renderer (IPC via preload bridge) ↔ Convex backend (HTTP).
 
 ### Main Process (`src/main.ts`)
-Single file (~1090 lines). Handles window management, auto-update (`update-electron-app` via GitHub Releases), IPC handlers for file I/O (CSV/XLSX/PDF export via ExcelJS), and Convex HTTP queries for loading price/spot data. Loads env from `.env`/`.env.local` with dotenv. Note: `exceljs` must stay externalized in `vite.main.config.mjs` — it has dynamic requires that Vite/Rollup cannot resolve.
+Single file (~1170 lines). Handles window management, auto-update (`update-electron-app` via GitHub Releases), IPC handlers for file I/O (CSV/XLSX/PDF export), app metadata IPC (`app:getVersion`), and Convex HTTP queries for loading price/spot data. Loads env from `.env`/`.env.local` with dotenv.
 
 ### Preload (`src/preload.ts`)
 Context-isolated bridge exposing `window.electronAPI` with safe IPC methods. Renderer has no direct Node.js access. The `ElectronAPI` interface is defined in `src/shared/electron-api.d.ts`.
@@ -42,10 +42,10 @@ Vanilla TypeScript + HTML/CSS (no framework). Key modules:
 - **`afrr-ui.ts`** — UI for aFRR module (charts, CSV export, summary table)
 - **`simulation-worker.ts`** — Web Worker for offloading heavy FCR computation
 
-Charts rendered with Chart.js; CSV parsing with PapaParse.
+Charts rendered with Chart.js; CSV parsing with PapaParse; Excel exports built with `xlsx` (`excel-export.ts`).
 
 ### Shared Types (`src/shared/`)
-- **`electron-api.d.ts`** — Central type definitions for the IPC bridge: `ElectronAPI` interface, data row types (`FcrPriceRow`, `SpotPriceRow`, `AfrrMarketRow`, `SolarProductionRow`, `NodeTenderRow`), export data types (`ExcelExportData`, `PdfExportData`), and the `Window` augmentation so renderer code can use `window.electronAPI` without casts.
+- **`electron-api.d.ts`** — Central type definitions for the IPC bridge: `ElectronAPI` interface, data row types (`FcrPriceRow`, `SpotPriceRow`, `AfrrMarketRow`, `SolarProductionRow`, `NodeTenderRow`), PDF export type (`PdfExportData`), and the `Window` augmentation so renderer code can use `window.electronAPI` without casts.
 
 ### Convex Backend (`convex/`)
 TypeScript. Tables: `fcrPrices`, `spotPrices`, `afrrMarket`, `afrrSeries`, `solarProduction`, `solarSeries`, `nodeTenders`. All queries use pagination for full-year datasets. Schema in `convex/schema.ts`, queries in `convex/prices.ts`, `convex/spot.ts`, `convex/solar.ts`, `convex/afrr.ts`, `convex/nodes.ts`, ingestion in `convex/ingest.ts`.
@@ -69,13 +69,11 @@ The Convex backend (`convex/`) has its own TypeScript toolchain and is not cover
 
 Electron Forge with Vite plugin (3 configs: main, preload, renderer). Vite transpiles `.ts` via esbuild — no separate compile step needed. Makers: ZIP (macOS/Linux), Squirrel (Windows), DMG (macOS). Release triggered by version bump in `package.json` on `main` — CI builds for macOS (arm64), Windows (x64 + arm64), Linux (x64).
 
-**Important:** `exceljs` must be externalized in `vite.main.config.mjs` (`rollupOptions.external: ['exceljs']`). It has dynamic requires that break when bundled by Vite.
-
 ## Key Patterns
 
 - All Convex data loading happens in the main process with pagination, then sent to renderer via IPC
 - Frequency simulation uses seeded RNG for reproducible results
 - Web Worker isolates simulation compute from UI thread
-- UI uses a tabbed interface: FCR-N, aFRR, Nodes, Kombinert
+- UI uses a tabbed interface: Årskalkyle, FCR-N, aFRR, Nodes, Forklaring
 - IPC types are centralized in `src/shared/electron-api.d.ts` — update this file when adding/changing IPC channels
 - When adding new IPC methods: update `electron-api.d.ts` interface, `preload.ts` bridge, and `main.ts` handler

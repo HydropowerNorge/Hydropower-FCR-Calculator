@@ -81,6 +81,36 @@ function postWorkerMessage(message: WorkerOutgoingMessage): void {
   self.postMessage(message);
 }
 
+function postProgress(message: string): void {
+  postWorkerMessage({ type: 'progress', message } satisfies WorkerOutgoingMessage);
+}
+
+function normalizeSimulationPayload(payload: Partial<SimulatePayload>): {
+  year: number;
+  hours: number;
+  seed: number;
+  profileName: string;
+  priceData: { timestamp: number; price: number }[];
+  config: SimulatePayload['config'];
+} {
+  const configValues = payload.config || createDefaultConfigValues();
+
+  return {
+    year: toFiniteNumber(payload.year, new Date().getUTCFullYear()),
+    hours: Math.max(0, Math.floor(toFiniteNumber(payload.hours, 0))),
+    seed: Math.floor(toFiniteNumber(payload.seed, 42)),
+    profileName: typeof payload.profileName === 'string' ? payload.profileName : 'medium',
+    priceData: normalizePriceData(payload.priceData),
+    config: {
+      powerMw: toFiniteNumber(configValues.powerMw, 1),
+      capacityMwh: toFiniteNumber(configValues.capacityMwh, 2),
+      efficiency: toFiniteNumber(configValues.efficiency, 0.9),
+      socMin: toFiniteNumber(configValues.socMin, 0.2),
+      socMax: toFiniteNumber(configValues.socMax, 0.8),
+    },
+  };
+}
+
 declare const self: DedicatedWorkerGlobalScope;
 
 console.log('[worker] Simulation worker loaded');
@@ -91,35 +121,28 @@ self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
   if (!message || message.type !== 'simulate-fcr') return;
 
   try {
-    const payload = message.payload || ({} as SimulatePayload);
-    const year = toFiniteNumber(payload.year, new Date().getUTCFullYear());
-    const hours = Math.max(0, Math.floor(toFiniteNumber(payload.hours, 0)));
-    const seed = Math.floor(toFiniteNumber(payload.seed, 42));
-    const profileName = typeof payload.profileName === 'string' ? payload.profileName : 'medium';
-    const priceData = normalizePriceData(payload.priceData);
+    const payload = normalizeSimulationPayload(message.payload || {});
+    const { year, hours, seed, profileName, priceData } = payload;
     console.log('[worker] Simulation params:', { year, hours, seed, profileName, priceRows: priceData.length });
 
-    const configValues = payload.config || createDefaultConfigValues();
+    const configValues = payload.config;
     const config = new BatteryConfig(
-      toFiniteNumber(configValues.powerMw, 1),
-      toFiniteNumber(configValues.capacityMwh, 2),
-      toFiniteNumber(configValues.efficiency, 0.9),
-      toFiniteNumber(configValues.socMin, 0.2),
-      toFiniteNumber(configValues.socMax, 0.8)
+      configValues.powerMw,
+      configValues.capacityMwh,
+      configValues.efficiency,
+      configValues.socMin,
+      configValues.socMax
     );
 
-    postWorkerMessage({
-      type: 'progress',
-      message: 'Simulerer frekvens'
-    } satisfies WorkerOutgoingMessage);
+    postProgress('Simulerer frekvens');
 
     const startTime = new Date(Date.UTC(year, 0, 1));
     const freqData = simulateFrequency(startTime, hours, 1, seed, profileName);
 
-    postWorkerMessage({ type: 'progress', message: 'Simulerer batteri' } satisfies WorkerOutgoingMessage);
+    postProgress('Simulerer batteri');
     const socData = simulateSocHourly(freqData, config);
 
-    postWorkerMessage({ type: 'progress', message: 'Beregner inntekt' } satisfies WorkerOutgoingMessage);
+    postProgress('Beregner inntekt');
     const priceDataWithDates = toPriceDataWithDates(priceData);
     const result = calculateRevenue(priceDataWithDates, socData, config);
 
