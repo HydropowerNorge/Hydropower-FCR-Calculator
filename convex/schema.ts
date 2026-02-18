@@ -134,4 +134,10 @@ export default defineSchema({
       "market",
       "periodStartTs",
     ]),
+
+  appUsage: defineTable({
+    hardwareId: v.string(),
+    firstOpenTs: v.number(),
+    lastOpenTs: v.number(),
+  }).index("by_hardwareId", ["hardwareId"]),
 });

@@ -876,7 +876,7 @@ tr:hover td {
 .combined-inner-tabs-wrap {
   display: flex;
   justify-content: center;
-  margin: 16px 0 18px;
+  margin: 6px 0 12px;
 }
 
 .combined-inner-tabs {
@@ -1203,8 +1203,8 @@ tr:hover td {
   }
 
   .combined-inner-tabs-wrap {
-    margin-top: 12px;
-    margin-bottom: 14px;
+    margin-top: 4px;
+    margin-bottom: 12px;
   }
 
   .combined-note-panel {

@@ -7,7 +7,9 @@ import type {
   MessageBoxReturnValue,
   MenuItemConstructorOptions,
 } from 'electron';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import dotenv from 'dotenv';
 import { ConvexHttpClient } from 'convex/browser';
@@ -74,6 +76,8 @@ const SAFE_CODE_PATTERN = /^[A-Z0-9_-]{2,12}$/;
 const UPDATE_MENU_ITEM_ID = 'check-for-updates';
 const DEFAULT_AUTO_UPDATE_REPO = 'HydropowerNorge/Hydropower-FCR-Calculator';
 const DEFAULT_AUTO_UPDATE_HOST = 'https://update.electronjs.org';
+const HARDWARE_ID_PREFIX = 'hw_';
+const HARDWARE_ID_HASH_LENGTH = 32;
 
 let autoUpdatesConfigured = false;
 let autoUpdateListenersAttached = false;
@@ -895,6 +899,7 @@ function euroFmt(value: number): string {
 
 let convexClient: ConvexHttpClient | null = null;
 let convexUrl: string | null = null;
+let cachedHardwareId: string | null = null;
 
 function getConvexClient(): ConvexHttpClient {
   const configuredUrl = process.env.CONVEX_URL;
@@ -941,6 +946,73 @@ async function runWithFallback<T>(
 async function runConvexQuery(functionName: string, args: Record<string, unknown> = {}): Promise<unknown> {
   const client = getConvexClient();
   return client.query(functionName as never, args as never);
+}
+
+async function runConvexMutation(functionName: string, args: Record<string, unknown> = {}): Promise<unknown> {
+  const client = getConvexClient();
+  return client.mutation(functionName as never, args as never);
+}
+
+function isValidMacAddress(value: string): boolean {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 && normalized !== '00:00:00:00:00:00';
+}
+
+function collectHardwareFingerprintSignals(): string[] {
+  const signals: string[] = [
+    os.platform(),
+    os.arch(),
+    os.machine(),
+    os.release(),
+    os.hostname(),
+    process.env.COMPUTERNAME || '',
+  ];
+
+  const networkInterfaces = os.networkInterfaces();
+  const macAddresses = Object.values(networkInterfaces)
+    .flatMap((entries) => entries ?? [])
+    .filter((entry) => !!entry && entry.internal === false && isValidMacAddress(entry.mac))
+    .map((entry) => entry.mac.toLowerCase())
+    .sort((a, b) => a.localeCompare(b));
+
+  return [...signals, ...macAddresses];
+}
+
+function getHardwareId(): string {
+  if (cachedHardwareId) {
+    return cachedHardwareId;
+  }
+
+  const fingerprint = collectHardwareFingerprintSignals().join('|');
+  const digest = createHash('sha256').update(fingerprint).digest('hex');
+  cachedHardwareId = `${HARDWARE_ID_PREFIX}${digest.slice(0, HARDWARE_ID_HASH_LENGTH)}`;
+  return cachedHardwareId;
+}
+
+function toMaskedHardwareId(hardwareId: string): string {
+  if (hardwareId.length <= 12) {
+    return hardwareId;
+  }
+  return `${hardwareId.slice(0, 12)}…`;
+}
+
+async function registerAppOpenUsage(): Promise<void> {
+  const openedAtTs = Date.now();
+  const hardwareId = getHardwareId();
+
+  try {
+    await runConvexMutation('usage:registerOpen', {
+      hardwareId,
+      openedAtTs,
+    });
+    console.info('[main] Registered app open usage', {
+      hardwareId: toMaskedHardwareId(hardwareId),
+      openedAtTs,
+    });
+  } catch (error) {
+    console.warn('[main] Failed to register app open usage:', toErrorMessage(error));
+  }
 }
 
 async function runPaginatedConvexQuery(
@@ -1165,6 +1237,7 @@ ipcMain.handle('data:getNodeTenderFilters', async (_event: IpcMainInvokeEvent, d
 app.whenReady().then(() => {
   console.log('[main] App ready event fired');
   initializeAutoUpdates();
+  void registerAppOpenUsage();
   installApplicationMenu();
   createWindow();
 
