@@ -28,17 +28,21 @@ export const getAvailableYears = query({
   },
   handler: async (ctx, args) => {
     const area = resolveArea(args.area);
-    const rows = await ctx.db
-      .query("fcrPrices")
-      .withIndex("by_area_timestamp", (q) => q.eq("area", area))
-      .collect();
+    const years: number[] = [];
 
-    const years = new Set<number>();
-    for (const row of rows) {
-      years.add(row.year);
+    // Probe candidate years (2020–2030) using the indexed query so we
+    // only read 1 row per year instead of scanning the entire table.
+    for (let y = 2020; y <= 2030; y++) {
+      const row = await ctx.db
+        .query("fcrPrices")
+        .withIndex("by_year_area_timestamp", (q) =>
+          q.eq("year", y).eq("area", area),
+        )
+        .first();
+      if (row) years.push(y);
     }
 
-    return Array.from(years).sort((a, b) => a - b);
+    return years;
   },
 });
 
