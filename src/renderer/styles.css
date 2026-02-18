@@ -287,6 +287,29 @@ body {
   cursor: pointer;
 }
 
+.config-section.is-locked .input-group input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.config-section.is-locked .input-group label {
+  color: var(--text-secondary);
+}
+
+#solarConfigVisual input[type='range'][disabled] {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+#solarConfigVisual input[type='range'][disabled]::-webkit-slider-thumb {
+  cursor: not-allowed;
+}
+
+#solarConfigVisual select[disabled] {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
 .info-text {
   font-size: 0.76rem;
   color: var(--text-secondary);

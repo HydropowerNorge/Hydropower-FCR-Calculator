@@ -96,6 +96,10 @@ const elements = {
   socMinValue: document.getElementById('socMinValue')!,
   socMax: document.getElementById('socMax') as HTMLInputElement,
   socMaxValue: document.getElementById('socMaxValue')!,
+  batteryConfigSection: document.getElementById('batteryConfigSection') as HTMLElement | null,
+  batteryConfigHeading: document.getElementById('batteryConfigHeading') as HTMLElement | null,
+  batteryConfigFields: document.getElementById('batteryConfigFields') as HTMLElement | null,
+  solarConfigVisual: document.getElementById('solarConfigVisual') as HTMLElement | null,
   year: document.getElementById('year') as HTMLSelectElement,
   simHours: document.getElementById('simHours') as HTMLInputElement,
   seed: document.getElementById('seed') as HTMLInputElement,
@@ -340,6 +344,41 @@ function setFcrResultContainerVisible(visible: boolean): void {
   elements.resultsContainer.style.display = visible ? 'block' : 'none';
 }
 
+function setBatteryConfigLocked(locked: boolean): void {
+  const batteryInputs = [
+    elements.powerMw,
+    elements.capacityMwh,
+    elements.efficiency,
+    elements.socMin,
+    elements.socMax
+  ];
+
+  batteryInputs.forEach((input) => {
+    input.disabled = locked;
+    input.setAttribute('aria-disabled', String(locked));
+  });
+
+  if (elements.batteryConfigSection) {
+    elements.batteryConfigSection.classList.toggle('is-locked', locked);
+  }
+}
+
+function updateBatteryConfigPresentation(tab: string): void {
+  const isAfrrTab = tab === 'afrr';
+
+  if (elements.batteryConfigHeading) {
+    elements.batteryConfigHeading.textContent = isAfrrTab ? 'Solkonfigurasjon' : 'Batterikonfigurasjon';
+  }
+
+  if (elements.batteryConfigFields) {
+    elements.batteryConfigFields.style.display = isAfrrTab ? 'none' : '';
+  }
+
+  if (elements.solarConfigVisual) {
+    elements.solarConfigVisual.style.display = isAfrrTab ? 'block' : 'none';
+  }
+}
+
 function setupTabs(): void {
   const tabBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.tab-btn'));
   const tabContents = Array.from(document.querySelectorAll<HTMLElement>('.tab-content'));
@@ -376,6 +415,8 @@ function setupTabs(): void {
       config.style.display = config.dataset.tabConfig === tab ? '' : 'none';
     });
 
+    updateBatteryConfigPresentation(tab);
+    setBatteryConfigLocked(tab === 'fcr');
     applyHeroCopy(tab);
   }
 

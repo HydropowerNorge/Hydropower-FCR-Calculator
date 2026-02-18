@@ -74,9 +74,10 @@
         >Kombinert</button>
       </nav>
 
-      <section class="config-section collapsible">
-        <button class="collapsible-toggle" type="button"><h2>Batterikonfigurasjon</h2></button>
+      <section id="batteryConfigSection" class="config-section collapsible">
+        <button class="collapsible-toggle" type="button"><h2 id="batteryConfigHeading">Batterikonfigurasjon</h2></button>
         <div class="collapsible-body">
+          <div id="batteryConfigFields">
           <div class="input-group">
             <label for="powerMw">Effektkapasitet (MW) <button class="info-btn" data-help="powerMw">?</button></label>
             <input type="number" id="powerMw" value="1.0" min="0.1" max="100" step="0.1">
@@ -106,6 +107,38 @@
             <input type="range" id="socMax" value="80" min="50" max="100">
             <div class="help-text" id="help-socMax">Høyeste tillatte ladenivå. 80% betyr at batteriet aldri lades helt fullt - det forlenger levetiden.</div>
           </div>
+          </div>
+
+          <div id="solarConfigVisual" style="display: none;">
+            <div class="input-group">
+              <label for="solarMwp">Installert effekt (MWp): <span id="solarMwpValue">9</span></label>
+              <input type="range" id="solarMwp" value="9" min="1" max="20" step="0.5" disabled aria-disabled="true">
+              <div class="help-text">Låst verdi for aFRR-visning.</div>
+            </div>
+            <div class="input-group">
+              <label for="solarOrientation">Orientering</label>
+              <select id="solarOrientation" disabled aria-disabled="true">
+                <option selected>Øst/Vest</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label for="solarTilt">Panelvinkel: <span id="solarTiltValue">20</span>°</label>
+              <input type="range" id="solarTilt" value="20" min="0" max="45" step="1" disabled aria-disabled="true">
+            </div>
+            <div class="input-group">
+              <label for="solarZone">Prisområde</label>
+              <select id="solarZone" disabled aria-disabled="true">
+                <option selected>NO1</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label for="solarProfile">Produksjonsprofil</label>
+              <select id="solarProfile" disabled aria-disabled="true">
+                <option selected>Historisk profil (låst)</option>
+              </select>
+            </div>
+          </div>
+
         </div>
       </section>
 
