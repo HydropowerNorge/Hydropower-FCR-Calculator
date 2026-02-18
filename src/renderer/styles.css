@@ -573,6 +573,55 @@ tr:hover td {
   white-space: nowrap;
 }
 
+.nodes-tender-overview {
+  margin-bottom: 14px;
+  padding: 14px 15px;
+  border: 1px solid rgba(65, 108, 121, 0.52);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(24, 44, 52, 0.9) 0%, rgba(18, 34, 41, 0.95) 100%);
+  box-shadow: var(--shadow-card);
+}
+
+.nodes-tender-overview h2 {
+  font-size: 0.96rem;
+  margin-bottom: 4px;
+}
+
+.nodes-tender-summary {
+  font-size: 0.83rem;
+  color: var(--text-secondary);
+  margin-bottom: 11px;
+}
+
+.nodes-tender-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 9px;
+}
+
+.nodes-tender-card {
+  border: 1px solid rgba(59, 101, 114, 0.5);
+  border-radius: 10px;
+  background: rgba(13, 27, 33, 0.82);
+  padding: 10px 11px;
+}
+
+.nodes-tender-label {
+  display: block;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.nodes-tender-value {
+  display: block;
+  font-size: 0.83rem;
+  color: var(--text-primary);
+  line-height: 1.45;
+}
+
 .visual-state {
   position: absolute;
   inset: 0;
@@ -988,6 +1037,14 @@ tr:hover td {
 
   .module-panel {
     padding: 16px;
+  }
+
+  .nodes-tender-overview {
+    padding: 12px;
+  }
+
+  .nodes-tender-grid {
+    grid-template-columns: 1fr;
   }
 
   .combined-panel {

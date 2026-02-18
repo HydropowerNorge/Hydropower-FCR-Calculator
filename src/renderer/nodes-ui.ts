@@ -8,11 +8,29 @@ interface NodesElements {
   totalIncome: HTMLElement | null;
   eligibleHours: HTMLElement | null;
   priceNokMwH: HTMLElement | null;
+  tenderSummary: HTMLElement | null;
+  tenderName: HTMLElement | null;
+  tenderMarket: HTMLElement | null;
+  tenderPeriod: HTMLElement | null;
+  tenderSchedule: HTMLElement | null;
+  tenderPrice: HTMLElement | null;
+  tenderVolume: HTMLElement | null;
+  tenderHours: HTMLElement | null;
   summaryTable: HTMLTableSectionElement | null;
   tenderSelect: HTMLSelectElement | null;
   calculateBtn: HTMLButtonElement | null;
   exportCsvBtn: HTMLButtonElement | null;
 }
+
+const DAY_LABELS: Record<string, string> = {
+  Monday: 'Man',
+  Tuesday: 'Tir',
+  Wednesday: 'Ons',
+  Thursday: 'Tor',
+  Friday: 'Fre',
+  Saturday: 'Lør',
+  Sunday: 'Søn',
+};
 
 function formatNok(value: number, digits = 0): string {
   if (!Number.isFinite(value)) return 'NOK 0';
@@ -22,12 +40,97 @@ function formatNok(value: number, digits = 0): string {
   })}`;
 }
 
+function formatMw(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '-';
+  return `${value.toLocaleString('nb-NO', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })} MW`;
+}
+
+function normalizeTimestamp(value: unknown): number | null {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return numeric < 1_000_000_000_000 ? Math.round(numeric * 1000) : Math.round(numeric);
+}
+
+function formatDateTime(ts: number | null): string {
+  if (!ts) return 'Ikke oppgitt';
+  return new Intl.DateTimeFormat('nb-NO', {
+    timeZone: 'Europe/Oslo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(ts));
+}
+
+function formatDays(activeDays: string[]): string {
+  if (activeDays.length === 0) return 'Alle dager';
+  const weekday = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  if (weekday.every((day) => activeDays.includes(day)) && activeDays.length === 5) {
+    return 'Mandag-fredag';
+  }
+  if (activeDays.length === 7) {
+    return 'Alle dager';
+  }
+  return activeDays
+    .map((day) => DAY_LABELS[day] || day)
+    .join(', ');
+}
+
+function formatWindows(activeWindows: { start: string; end: string }[]): string {
+  if (activeWindows.length === 0) return 'Hele døgnet';
+  return activeWindows
+    .map((window) => `${window.start}-${window.end}`)
+    .join(', ');
+}
+
+function estimateTenderHours(tender: NodeTenderRow): { eligible: number; total: number } {
+  const periodStartTs = normalizeTimestamp(tender.periodStartTs);
+  const periodEndTs = normalizeTimestamp(tender.periodEndTs);
+  if (!periodStartTs || !periodEndTs || periodStartTs >= periodEndTs) {
+    return { eligible: 0, total: 0 };
+  }
+
+  let totalHours = 0;
+  for (let ts = periodStartTs; ts < periodEndTs; ts += 3_600_000) {
+    totalHours += 1;
+  }
+
+  try {
+    const preview = calculateNodeYearlyIncome({
+      reservationPriceNokMwH: 1,
+      quantityMw: 1,
+      periodStartTs,
+      periodEndTs,
+      activeDays: Array.isArray(tender.activeDays) ? tender.activeDays : [],
+      activeWindows: Array.isArray(tender.activeWindows) ? tender.activeWindows : [],
+    });
+    return {
+      eligible: preview.totalEligibleHours,
+      total: totalHours,
+    };
+  } catch {
+    return { eligible: 0, total: totalHours };
+  }
+}
+
 export function createNodesUI(): { init: () => Promise<void> } {
   const el: NodesElements = {
     statusMessage: null,
     totalIncome: null,
     eligibleHours: null,
     priceNokMwH: null,
+    tenderSummary: null,
+    tenderName: null,
+    tenderMarket: null,
+    tenderPeriod: null,
+    tenderSchedule: null,
+    tenderPrice: null,
+    tenderVolume: null,
+    tenderHours: null,
     summaryTable: null,
     tenderSelect: null,
     calculateBtn: null,
@@ -37,6 +140,75 @@ export function createNodesUI(): { init: () => Promise<void> } {
   let currentResult: NodeYearlyResult | null = null;
   let isCalculating = false;
   let allTenders: NodeTenderRow[] = [];
+
+  function getSelectedTender(): NodeTenderRow | null {
+    if (!el.tenderSelect) return null;
+    const selectedIndex = Number(el.tenderSelect.value);
+    return allTenders[selectedIndex] || null;
+  }
+
+  function renderTenderInfo(tender: NodeTenderRow | null): void {
+    if (!tender) {
+      if (el.tenderSummary) el.tenderSummary.textContent = 'Velg en tender for å se hva den betyr i praksis.';
+      if (el.tenderName) el.tenderName.textContent = '-';
+      if (el.tenderMarket) el.tenderMarket.textContent = '-';
+      if (el.tenderPeriod) el.tenderPeriod.textContent = '-';
+      if (el.tenderSchedule) el.tenderSchedule.textContent = '-';
+      if (el.tenderPrice) el.tenderPrice.textContent = '-';
+      if (el.tenderVolume) el.tenderVolume.textContent = '-';
+      if (el.tenderHours) el.tenderHours.textContent = '-';
+      return;
+    }
+
+    const periodStartTs = normalizeTimestamp(tender.periodStartTs);
+    const periodEndTs = normalizeTimestamp(tender.periodEndTs);
+    const activeDays = Array.isArray(tender.activeDays) ? tender.activeDays : [];
+    const activeWindows = Array.isArray(tender.activeWindows) ? tender.activeWindows : [];
+    const marketText = [tender.market, tender.gridNode].filter(Boolean).join(' / ') || 'Ikke oppgitt';
+    const reservationPrice = Number(tender.reservationPriceNokMwH);
+    const activationPrice = Number(tender.activationPriceNokMwH);
+    const tenderMw = Number(tender.quantityMw);
+    const powerMwInput = document.getElementById('powerMw') as HTMLInputElement | null;
+    const batteryMw = Number(powerMwInput?.value);
+    const hours = estimateTenderHours(tender);
+
+    if (el.tenderName) {
+      el.tenderName.textContent = tender.name || 'Uten navn';
+    }
+    if (el.tenderMarket) {
+      el.tenderMarket.textContent = marketText;
+    }
+    if (el.tenderPeriod) {
+      el.tenderPeriod.textContent = `${formatDateTime(periodStartTs)} til ${formatDateTime(periodEndTs)}`;
+    }
+    if (el.tenderSchedule) {
+      el.tenderSchedule.textContent = `${formatDays(activeDays)}, ${formatWindows(activeWindows)}`;
+    }
+    if (el.tenderPrice) {
+      const reservationText = Number.isFinite(reservationPrice) && reservationPrice > 0
+        ? `Reservasjon ${formatNok(reservationPrice)}/MW/h`
+        : 'Reservasjonspris ikke oppgitt';
+      const activationText = Number.isFinite(activationPrice) && activationPrice > 0
+        ? ` | Aktivering ${formatNok(activationPrice)}/MW/h`
+        : '';
+      el.tenderPrice.textContent = `${reservationText}${activationText}`;
+    }
+    if (el.tenderVolume) {
+      el.tenderVolume.textContent = `Tender ${formatMw(tenderMw)} | Beregning ${formatMw(batteryMw)}`;
+    }
+    if (el.tenderHours) {
+      el.tenderHours.textContent = hours.total > 0
+        ? `${hours.eligible.toLocaleString('nb-NO')} av ${hours.total.toLocaleString('nb-NO')} timer`
+        : 'Ikke beregnbart';
+    }
+
+    if (el.tenderSummary) {
+      const summaryPrefix = hours.total > 0
+        ? `${hours.eligible.toLocaleString('nb-NO')} av ${hours.total.toLocaleString('nb-NO')} timer er kvalifisert`
+        : 'Kvalifiserte timer beregnes fra periode, dager og tidsvinduer';
+      el.tenderSummary.textContent = `${summaryPrefix}. Inntekt = reservasjonspris × valgt MW × kvalifiserte timer.`;
+    }
+  }
 
   function ensureVisualState(container: HTMLElement): HTMLElement | null {
     if (!container) return null;
@@ -124,10 +296,7 @@ export function createNodesUI(): { init: () => Promise<void> } {
 
   function calculate(): void {
     if (isCalculating) return;
-    if (!el.tenderSelect) return;
-
-    const selectedIndex = Number(el.tenderSelect.value);
-    const tender = allTenders[selectedIndex];
+    const tender = getSelectedTender();
     if (!tender) {
       showStatus('Velg en tender fra listen.', 'warning');
       return;
@@ -136,8 +305,8 @@ export function createNodesUI(): { init: () => Promise<void> } {
     const reservationPrice = Number(tender.reservationPriceNokMwH);
     const powerMwInput = document.getElementById('powerMw') as HTMLInputElement | null;
     const quantityMw = parseFloat(powerMwInput?.value || '0');
-    const periodStartTs = Number(tender.periodStartTs);
-    const periodEndTs = Number(tender.periodEndTs);
+    const periodStartTs = normalizeTimestamp(tender.periodStartTs);
+    const periodEndTs = normalizeTimestamp(tender.periodEndTs);
 
     if (!Number.isFinite(reservationPrice) || reservationPrice <= 0) {
       showStatus('Valgt tender mangler reservasjonspris.', 'warning');
@@ -147,7 +316,7 @@ export function createNodesUI(): { init: () => Promise<void> } {
       showStatus('Valgt tender mangler MW-mengde.', 'warning');
       return;
     }
-    if (!Number.isFinite(periodStartTs) || !Number.isFinite(periodEndTs) || periodStartTs >= periodEndTs) {
+    if (!periodStartTs || !periodEndTs || periodStartTs >= periodEndTs) {
       showStatus('Valgt tender har ugyldig periode.', 'warning');
       return;
     }
@@ -188,7 +357,7 @@ export function createNodesUI(): { init: () => Promise<void> } {
       income_nok: row.incomeNok.toFixed(2),
     })));
 
-    const tender = allTenders[Number(el.tenderSelect?.value)];
+    const tender = getSelectedTender();
     const tenderName = (tender?.name || 'nodes').replace(/\s+/g, '_');
     await window.electronAPI.saveFile(csvContent, `nodes_inntekt_${tenderName}.csv`);
   }
@@ -199,6 +368,14 @@ export function createNodesUI(): { init: () => Promise<void> } {
     el.totalIncome = document.getElementById('nodesTotalIncome');
     el.eligibleHours = document.getElementById('nodesEligibleHours');
     el.priceNokMwH = document.getElementById('nodesPriceNokMwH');
+    el.tenderSummary = document.getElementById('nodesTenderSummary');
+    el.tenderName = document.getElementById('nodesTenderName');
+    el.tenderMarket = document.getElementById('nodesTenderMarket');
+    el.tenderPeriod = document.getElementById('nodesTenderPeriod');
+    el.tenderSchedule = document.getElementById('nodesTenderSchedule');
+    el.tenderPrice = document.getElementById('nodesTenderPrice');
+    el.tenderVolume = document.getElementById('nodesTenderVolume');
+    el.tenderHours = document.getElementById('nodesTenderHours');
     el.summaryTable = document.getElementById('nodesTable')?.querySelector('tbody') ?? null;
     el.tenderSelect = document.getElementById('nodesTender') as HTMLSelectElement | null;
     el.calculateBtn = document.getElementById('calculateNodesBtn') as HTMLButtonElement | null;
@@ -217,7 +394,12 @@ export function createNodesUI(): { init: () => Promise<void> } {
       if (allTenders.length === 0) {
         showStatus('Ingen tendere funnet i Convex.', 'warning');
         setTableState('empty', 'Ingen tendere tilgjengelig.');
+        renderTenderInfo(null);
       } else {
+        if (el.tenderSelect) {
+          el.tenderSelect.value = '0';
+        }
+        renderTenderInfo(getSelectedTender());
         showStatus(`${allTenders.length} tender(e) lastet. Velg en og trykk "Beregn inntekt".`, 'success');
         setTableState('empty', 'Trykk "Beregn inntekt" for å vise resultater.');
       }
@@ -225,8 +407,20 @@ export function createNodesUI(): { init: () => Promise<void> } {
       console.error('Failed to load node tenders:', error);
       showStatus('Kunne ikke laste tendere fra Convex.', 'warning');
       setTableState('empty', 'Kunne ikke laste data.');
+      renderTenderInfo(null);
     }
 
+    if (el.tenderSelect) {
+      el.tenderSelect.addEventListener('change', () => {
+        renderTenderInfo(getSelectedTender());
+      });
+    }
+    const powerMwInput = document.getElementById('powerMw') as HTMLInputElement | null;
+    if (powerMwInput) {
+      powerMwInput.addEventListener('input', () => {
+        renderTenderInfo(getSelectedTender());
+      });
+    }
     if (el.calculateBtn) {
       el.calculateBtn.addEventListener('click', calculate);
     }
