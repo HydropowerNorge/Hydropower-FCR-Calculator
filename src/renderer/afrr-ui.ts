@@ -18,7 +18,6 @@ interface AfrrElements {
   avgPrice: HTMLElement | null;
   summaryTable: HTMLTableSectionElement | null;
   year: HTMLSelectElement | null;
-  minBidMw: HTMLInputElement | null;
   calculateBtn: HTMLButtonElement | null;
   exportCsvBtn: HTMLButtonElement | null;
 }
@@ -44,7 +43,6 @@ export function createAfrrUI(): { init: () => Promise<void> } {
     avgPrice: null,
     summaryTable: null,
     year: null,
-    minBidMw: null,
     calculateBtn: null,
     exportCsvBtn: null,
   };
@@ -248,7 +246,7 @@ export function createAfrrUI(): { init: () => Promise<void> } {
         return;
       }
 
-      const minBidMw = Number(el.minBidMw?.value) || 1;
+      const minBidMw = 1;
       // 2022/2023 have market volume data; 2025 uses contracted data without volume info
       const hasMarketVolume = selectedYear <= 2023;
       const excludeZeroVolume = hasMarketVolume;
@@ -256,7 +254,7 @@ export function createAfrrUI(): { init: () => Promise<void> } {
 
       showStatus('Laster aFRR-, sol- og spotdata for valgt år...', 'info');
       setAllVisualStates('loading', 'Beregner aFRR-inntekt...');
-      console.log(`[afrr-ui] Calculation started: aFRR year=${selectedYear}, solar year=${resolvedSolarYear}, minBidMw=${minBidMw}`);
+      console.log(`[afrr-ui] Calculation started: aFRR year=${selectedYear}, solar year=${resolvedSolarYear}, minBidMw=1 (locked)`);
 
       const [afrrRowsRaw, solarRowsRaw, spotRowsRaw] = await Promise.all([
         timedFetch(`aFRR ${selectedYear}`, () => window.electronAPI.loadAfrrData(selectedYear, {
@@ -336,7 +334,6 @@ export function createAfrrUI(): { init: () => Promise<void> } {
     el.summaryTable = document.getElementById('afrrSummaryTable')?.querySelector('tbody') ?? null;
 
     el.year = document.getElementById('afrrYear') as HTMLSelectElement | null;
-    el.minBidMw = document.getElementById('afrrMinBidMw') as HTMLInputElement | null;
     el.calculateBtn = document.getElementById('calculateAfrrBtn') as HTMLButtonElement | null;
     el.exportCsvBtn = document.getElementById('afrrExportCsvBtn') as HTMLButtonElement | null;
 

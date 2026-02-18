@@ -97,9 +97,7 @@ const elements = {
   socMax: document.getElementById('socMax') as HTMLInputElement,
   socMaxValue: document.getElementById('socMaxValue')!,
   batteryConfigSection: document.getElementById('batteryConfigSection') as HTMLElement | null,
-  batteryConfigHeading: document.getElementById('batteryConfigHeading') as HTMLElement | null,
-  batteryConfigFields: document.getElementById('batteryConfigFields') as HTMLElement | null,
-  solarConfigVisual: document.getElementById('solarConfigVisual') as HTMLElement | null,
+  solarConfigSection: document.getElementById('solarConfigSection') as HTMLElement | null,
   year: document.getElementById('year') as HTMLSelectElement,
   simHours: document.getElementById('simHours') as HTMLInputElement,
   seed: document.getElementById('seed') as HTMLInputElement,
@@ -363,19 +361,16 @@ function setBatteryConfigLocked(locked: boolean): void {
   }
 }
 
-function updateBatteryConfigPresentation(tab: string): void {
+function updateConfigSectionsVisibility(tab: string): void {
   const isAfrrTab = tab === 'afrr';
+  const isYearlyCombinedTab = tab === 'yearlyCombined';
 
-  if (elements.batteryConfigHeading) {
-    elements.batteryConfigHeading.textContent = isAfrrTab ? 'Solkonfigurasjon' : 'Batterikonfigurasjon';
+  if (elements.batteryConfigSection) {
+    elements.batteryConfigSection.style.display = isAfrrTab ? 'none' : '';
   }
 
-  if (elements.batteryConfigFields) {
-    elements.batteryConfigFields.style.display = isAfrrTab ? 'none' : '';
-  }
-
-  if (elements.solarConfigVisual) {
-    elements.solarConfigVisual.style.display = isAfrrTab ? 'block' : 'none';
+  if (elements.solarConfigSection) {
+    elements.solarConfigSection.style.display = (isAfrrTab || isYearlyCombinedTab) ? '' : 'none';
   }
 }
 
@@ -415,8 +410,8 @@ function setupTabs(): void {
       config.style.display = config.dataset.tabConfig === tab ? '' : 'none';
     });
 
-    updateBatteryConfigPresentation(tab);
-    setBatteryConfigLocked(tab === 'fcr');
+    updateConfigSectionsVisibility(tab);
+    setBatteryConfigLocked(tab === 'fcr' || tab === 'yearlyCombined');
     applyHeroCopy(tab);
   }
 
@@ -813,8 +808,7 @@ async function calculateFcrYearlyForCombined(year: number): Promise<{ totalEur: 
 }
 
 async function calculateAfrrYearlyForCombined(afrrYear: number): Promise<{ totalEur: number; monthlyByMonth: number[] }> {
-  const minBidMwInput = document.getElementById('afrrMinBidMw') as HTMLInputElement | null;
-  const minBidMw = Number(minBidMwInput?.value) || 1;
+  const minBidMw = 1;
   const hasMarketVolume = afrrYear <= 2023;
   const excludeZeroVolume = hasMarketVolume;
   const limitToMarketVolume = hasMarketVolume;
