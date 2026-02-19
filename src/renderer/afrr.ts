@@ -241,24 +241,6 @@ export function calculateAfrrYearlyRevenue({
     const afrrIncomeEur = hasBid ? capacityMw * afrrPriceEurMw : 0;
     const totalIncomeEur = spotIncomeEur + afrrIncomeEur - activationCostEur;
 
-    // Log first bid hour for verification
-    if (hasBid && bidHours === 0) {
-      const ts = new Date(timestamp).toISOString();
-      console.info(
-        `[aFRR] First bid hour ${ts}:\n` +
-        `  Solar production: ${solarMw.toFixed(2)} MW\n` +
-        `  Spot price: ${spotPriceEurMwh.toFixed(2)} EUR/MWh\n` +
-        `  aFRR capacity price: ${afrrPriceEurMw.toFixed(2)} EUR/MW\n` +
-        `  Market volume: ${marketVolumeMw.toFixed(2)} MW | Activated: ${marketActivatedMw.toFixed(2)} MW\n` +
-        `  Bid capacity: ${capacityMw.toFixed(2)} MW\n` +
-        `  Activated capacity: ${activatedMw.toFixed(2)} MW (${marketVolumeMw > 0 ? ((marketActivatedMw / marketVolumeMw) * 100).toFixed(1) : 0}%)\n` +
-        `  Spot income: ${spotIncomeEur.toFixed(2)} EUR (${solarMw.toFixed(2)} MW × ${spotPriceEurMwh.toFixed(2)} EUR/MWh)\n` +
-        `  aFRR income: ${afrrIncomeEur.toFixed(2)} EUR (${capacityMw.toFixed(2)} MW × ${afrrPriceEurMw.toFixed(2)} EUR/MW)\n` +
-        `  Activation cost: ${activationCostEur.toFixed(2)} EUR (${activatedMw.toFixed(2)} MW × ${spotPriceEurMwh.toFixed(2)} EUR/MWh)\n` +
-        `  Total income: ${totalIncomeEur.toFixed(2)} EUR`,
-      );
-    }
-
     totalSpotIncomeEur += spotIncomeEur;
     totalAfrrIncomeEur += afrrIncomeEur;
     totalActivationCostEur += activationCostEur;

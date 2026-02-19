@@ -113,17 +113,13 @@ function normalizeSimulationPayload(payload: Partial<SimulatePayload>): {
 
 declare const self: DedicatedWorkerGlobalScope;
 
-console.log('[worker] Simulation worker loaded');
-
 self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
   const message = event.data;
-  console.log('[worker] Received message:', message?.type);
   if (!message || message.type !== 'simulate-fcr') return;
 
   try {
     const payload = normalizeSimulationPayload(message.payload || {});
     const { year, hours, seed, profileName, priceData } = payload;
-    console.log('[worker] Simulation params:', { year, hours, seed, profileName, priceRows: priceData.length });
 
     const configValues = payload.config;
     const config = new BatteryConfig(
@@ -146,7 +142,6 @@ self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
     const priceDataWithDates = toPriceDataWithDates(priceData);
     const result = calculateRevenue(priceDataWithDates, socData, config);
 
-    console.log('[worker] Simulation complete, posting result');
     postWorkerMessage({
       type: 'result',
       payload: {
@@ -156,7 +151,6 @@ self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
       }
     } satisfies WorkerOutgoingMessage);
   } catch (error) {
-    console.error('[worker] Simulation failed:', error);
     postWorkerMessage({
       type: 'error',
       error: error instanceof Error ? error.message : String(error)

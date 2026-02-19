@@ -1,5 +1,3 @@
-console.log('[app] Renderer script loading');
-
 import Chart from 'chart.js/auto';
 import Papa from 'papaparse';
 import * as Calculator from './calculator';
@@ -13,12 +11,9 @@ import { showStatusMessage } from './status-message';
 import { buildExcelFileBytes } from './excel-export';
 import { roundValuesToTarget } from './rounding';
 import { ensureRuntimeApi, isElectronRuntime } from './runtime-api';
+import { logInfo, logError } from './logger';
 
 ensureRuntimeApi();
-
-console.log('[app] Modules imported successfully');
-console.log('[app] electronAPI available:', !!window.electronAPI);
-console.log('[app] electronAPI methods:', window.electronAPI ? Object.keys(window.electronAPI) : 'N/A');
 
 interface MonthlyAggregate {
   month: string;
@@ -276,8 +271,7 @@ async function loadAppVersionLabel(): Promise<void> {
   try {
     const version = await window.electronAPI.getAppVersion();
     elements.appVersion.textContent = `Versjon ${version}`;
-  } catch (error) {
-    console.warn('[app] Could not load app version:', error);
+  } catch {
     elements.appVersion.textContent = 'Versjon ukjent';
   }
 }
@@ -436,6 +430,9 @@ async function runSidebarExport(
   button.textContent = busyLabel;
   try {
     await action();
+  } catch (error) {
+    logError('export', 'export_failed', { error: error instanceof Error ? error.message : String(error) });
+    throw error;
   } finally {
     button.textContent = previousLabel || fallbackIdleLabel;
     updateSidebarCsvExportState();
@@ -473,9 +470,10 @@ async function runFcrSimulationInWorker(payload: Record<string, unknown>): Promi
   }
 
   return new Promise((resolve, reject) => {
-    const workerUrl = new URL('./simulation-worker.ts', import.meta.url);
-    console.log('[app] Creating Web Worker from URL:', workerUrl.href);
-    const worker = new Worker(workerUrl, { type: 'module' });
+    const worker = new Worker(
+      new URL('./simulation-worker.ts', import.meta.url),
+      { type: 'module' },
+    );
     activeSimulationWorker = worker;
 
     const cleanup = () => {
@@ -490,27 +488,23 @@ async function runFcrSimulationInWorker(payload: Record<string, unknown>): Promi
       if (!message || typeof message !== 'object') return;
 
       if (message.type === 'progress') {
-        console.log('[app] Worker progress:', message.message);
         showStatus(message.message, 'info', { autoHide: !isCalculating });
         return;
       }
 
       if (message.type === 'result') {
-        console.log('[app] Worker returned result');
         cleanup();
         resolve(message.payload);
         return;
       }
 
       if (message.type === 'error') {
-        console.error('[app] Worker error:', message.error);
         cleanup();
         reject(new Error(message.error || 'Simulation worker failed'));
       }
     });
 
     worker.addEventListener('error', (event: ErrorEvent) => {
-      console.error('[app] Worker crashed:', event.message, event.filename, event.lineno);
       cleanup();
       reject(new Error(event.message || 'Simulation worker crashed'));
     });
@@ -631,6 +625,7 @@ function setupTabs(): void {
   }
 
   function activateTab(tab: string): void {
+    logInfo('app', 'tab_switch', { tab });
     tabBtns.forEach(btn => {
       const isActive = btn.dataset.tab === tab;
       btn.classList.toggle('active', isActive);
@@ -703,15 +698,12 @@ function setYearSelectorLoading(
 }
 
 async function init(): Promise<void> {
-  console.log('[app] init() starting');
+  logInfo('app', 'init_start');
   await loadAppVersionLabel();
   setupTabs();
   setupMobileSidebar();
-  console.log('[app] Tabs set up');
 
-  console.log('[app] Initializing aFRR UI');
   await afrrUI.init();
-  console.log('[app] aFRR UI initialized');
 
   setFcrVisualStates('loading', 'Laster visualiseringer...');
   setupSliders();
@@ -724,12 +716,10 @@ async function init(): Promise<void> {
     true,
   );
   try {
-    console.log('[app] Fetching available years from Convex');
     const years = (await window.electronAPI.getAvailableYears('NO1'))
       .map(y => Number(y))
       .filter(y => Number.isFinite(y) && !HIDDEN_YEARS.has(y))
       .sort((a, b) => a - b);
-    console.log('[app] Available years:', years);
 
     populateYearSelect(elements.year, years);
     populateYearSelect(elements.yearlyCombinedYear, years);
@@ -750,7 +740,7 @@ async function init(): Promise<void> {
       setFcrVisualStates('empty', 'Ingen data tilgjengelig for visualisering.');
     }
   } catch (error) {
-    console.error('[app] Could not fetch available years:', error);
+    logError('app', 'available_years_failed', { error: error instanceof Error ? error.message : String(error) });
     setFcrResultContainerVisible(true);
     showStatus('Kunne ikke laste årsliste fra datakilden.', 'warning');
     setFcrVisualStates('empty', 'Ingen data tilgjengelig for visualisering.');
@@ -763,9 +753,7 @@ async function init(): Promise<void> {
     );
   }
 
-  console.log('[app] Initializing nodes module');
   await nodesUI.init();
-  console.log('[app] Nodes module initialized');
   initCombinedView();
   setYearlyCombinedVisualStates('empty', 'Trykk "Beregn årlig total".');
   if (defaultYear !== null) {
@@ -774,7 +762,6 @@ async function init(): Promise<void> {
     showYearlyCombinedStatus('Ingen år tilgjengelig for årskalkyle.', 'warning');
   }
 
-  console.log('[app] init() complete — attaching event listeners');
   elements.year.addEventListener('change', async () => {
     await loadPriceData(parseInt(elements.year.value));
   });
@@ -1122,6 +1109,7 @@ async function calculateFcrYearlyForCombined(year: number): Promise<{ totalEur: 
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
   if (localPriceData.length === 0) {
+    logError('calc', 'fcr_yearly_no_data', { year });
     throw new Error(`Ingen FCR-prisdata funnet for ${year}`);
   }
 
@@ -1145,8 +1133,8 @@ async function calculateFcrYearlyForCombined(year: number): Promise<{ totalEur: 
         price: row.price
       }))
     });
-  } catch (error) {
-    console.warn('[combined-yearly] Worker unavailable, using main thread fallback', error);
+  } catch {
+    logInfo('calc', 'fcr_worker_fallback', { year });
     const startTime = new Date(Date.UTC(year, 0, 1));
     const localFreqData = FrequencySimulator.simulateFrequency(startTime, hours, 1, seed, profileName);
     const socData = Calculator.simulateSocHourly(localFreqData, config);
@@ -1185,6 +1173,7 @@ async function calculateAfrrYearlyForCombined(afrrYear: number): Promise<{ total
 
   const solarYear = solarYears.length > 0 ? solarYears[solarYears.length - 1] : null;
   if (solarYear === null) {
+    logError('calc', 'afrr_yearly_no_solar', { afrrYear });
     throw new Error('Ingen solprofil tilgjengelig for aFRR-beregning');
   }
 
@@ -1199,11 +1188,16 @@ async function calculateAfrrYearlyForCombined(afrrYear: number): Promise<{ total
     window.electronAPI.loadSpotData('NO1', afrrYear),
   ]);
 
+  const afrrRows = Array.isArray(afrrRowsRaw) ? afrrRowsRaw : [];
+  const solarRows = Array.isArray(solarRowsRaw) ? solarRowsRaw : [];
+  const spotRows = Array.isArray(spotRowsRaw) ? spotRowsRaw : [];
+  logInfo('calc', 'afrr_yearly_data_loaded', { afrrYear, afrrRows: afrrRows.length, solarRows: solarRows.length, spotRows: spotRows.length });
+
   const afrrResult = calculateAfrrYearlyRevenue({
     year: afrrYear,
-    afrrRows: Array.isArray(afrrRowsRaw) ? afrrRowsRaw : [],
-    solarRows: Array.isArray(solarRowsRaw) ? solarRowsRaw : [],
-    spotRows: Array.isArray(spotRowsRaw) ? spotRowsRaw : [],
+    afrrRows,
+    solarRows,
+    spotRows,
     direction: 'down',
     minBidMw,
     excludeZeroVolume,
@@ -1390,12 +1384,14 @@ function renderYearlyCombinedResult(result: YearlyCombinedResult): void {
 async function calculateYearlyCombined(): Promise<void> {
   if (isYearlyCombinedCalculating) return;
   isYearlyCombinedCalculating = true;
+  const combinedStartMs = performance.now();
 
   const calculateButton = document.getElementById('calculateYearlyCombinedBtn') as HTMLButtonElement | null;
   if (calculateButton) calculateButton.disabled = true;
 
   try {
     const fcrYear = Number(elements.yearlyCombinedYear.value);
+    logInfo('calc', 'yearly_combined_start', { year: fcrYear });
     if (!Number.isInteger(fcrYear)) {
       throw new Error('Velg et gyldig år for årskalkylen.');
     }
@@ -1447,13 +1443,14 @@ async function calculateYearlyCombined(): Promise<void> {
     updateSidebarCsvExportState();
 
     renderYearlyCombinedResult(currentYearlyCombinedResult);
+    logInfo('calc', 'yearly_combined_finish', { durationMs: Math.round(performance.now() - combinedStartMs), totalEur: currentYearlyCombinedResult.totalEur });
     if (isYearlyCombinedNodesIncluded()) {
       showYearlyCombinedStatus('Fullført (3/3). Nodes er inkludert i total.', 'success', { autoHide: true });
     } else {
       showYearlyCombinedStatus('Fullført (3/3).', 'success', { autoHide: true });
     }
   } catch (error) {
-    console.error('[combined-yearly] Calculation failed:', error);
+    logError('calc', 'yearly_combined_error', { error: error instanceof Error ? error.message : String(error), durationMs: Math.round(performance.now() - combinedStartMs) });
     const message = error instanceof Error ? error.message : 'Årskalkyle feilet.';
     showYearlyCombinedStatus(message, 'warning');
     setYearlyCombinedVisualStates('empty', 'Kunne ikke beregne årlig kalkyle.');
@@ -1528,7 +1525,7 @@ async function exportYearlyCombinedExcel(): Promise<void> {
 }
 
 async function loadPriceData(year: number): Promise<void> {
-  console.log('[app] loadPriceData() called for year:', year);
+  logInfo('app', 'year_loading', { year });
   currentResult = null;
   updateSidebarCsvExportState();
   setFcrResultContainerVisible(false);
@@ -1536,7 +1533,7 @@ async function loadPriceData(year: number): Promise<void> {
   showStatus(`Laster prisdata for ${year}...`, 'info');
 
   const rows = await window.electronAPI.loadPriceData(year, 'NO1');
-  console.log('[app] Price data received:', rows?.length || 0, 'rows');
+  logInfo('app', 'year_loaded', { year, rows: rows?.length || 0 });
   if (!rows || rows.length === 0) {
     setFcrResultContainerVisible(true);
     showStatus(`Ingen Convex-prisdata funnet for ${year}`, 'warning');
@@ -1561,9 +1558,9 @@ async function loadPriceData(year: number): Promise<void> {
 }
 
 async function calculate(): Promise<void> {
-  console.log('[app] calculate() called');
-  if (isCalculating) { console.log('[app] Calculation already in progress, skipping'); return; }
+  if (isCalculating) return;
   isCalculating = true;
+  const calcStartMs = performance.now();
   const calculateBtn = document.getElementById('calculateBtn') as HTMLButtonElement | null;
   if (calculateBtn) calculateBtn.disabled = true;
 
@@ -1575,6 +1572,7 @@ async function calculate(): Promise<void> {
     const hours = parseInt(elements.simHours.value);
     const seed = parseInt(elements.seed.value);
     const year = parseInt(elements.year.value);
+    logInfo('calc', 'calc_start', { year, hours, seed, profile: profileName });
     setFcrVisualStates('loading', 'Beregner visualiseringer...');
 
     showStatus('Simulerer frekvens', 'info', { autoHide: false });
@@ -1593,9 +1591,8 @@ async function calculate(): Promise<void> {
           price: row.price
         }))
       });
-    } catch (err) {
-      console.warn('Worker simulation unavailable, falling back to main thread simulation:', err);
-
+    } catch {
+      logInfo('calc', 'worker_fallback', { year });
       const startTime = new Date(Date.UTC(year, 0, 1));
       showStatus('Simulerer batteri', 'info', { autoHide: false });
       await new Promise(r => setTimeout(r, 10));
@@ -1619,12 +1616,13 @@ async function calculate(): Promise<void> {
     result.freqSummary = workerResult.summary;
 
     showStatus('Simulering fullført', 'success', { autoHide: false });
+    logInfo('calc', 'calc_finish', { durationMs: Math.round(performance.now() - calcStartMs), totalRevenue: result.totalRevenue });
 
     currentResult = result;
     updateSidebarCsvExportState();
     displayResults(result, true, true);
   } catch (err) {
-    console.error('Calculation failed:', err);
+    logError('calc', 'calc_error', { error: err instanceof Error ? err.message : String(err), durationMs: Math.round(performance.now() - calcStartMs) });
     showStatus('Beregning feilet. Prøv igjen.', 'warning', { autoHide: false });
     setFcrVisualStates('empty', 'Kunne ikke generere visualiseringer.');
   } finally {
@@ -2141,9 +2139,8 @@ document.querySelectorAll<HTMLButtonElement>('.collapsible-toggle').forEach((btn
   });
 });
 
-console.log('[app] Calling init()');
 init().then(() => {
-  console.log('[app] init() resolved successfully');
+  logInfo('app', 'init_complete');
 }).catch((error) => {
-  console.error('[app] init() failed:', error);
+  logError('app', 'init_error', { error: error instanceof Error ? error.message : String(error) });
 });

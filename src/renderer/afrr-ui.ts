@@ -5,6 +5,7 @@ import type { AfrrYearlyResult, AfrrMonthlyRow } from './afrr';
 import { showStatusMessage } from './status-message';
 import { buildExcelFileBytes } from './excel-export';
 import { roundValuesToTarget } from './rounding';
+import { logInfo, logError } from './logger';
 
 const MONTH_NAMES_NB_FULL = ['Januar', 'Februar', 'Mars', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Desember'];
 const HIDDEN_YEARS = new Set<number>([2021, 2026]);
@@ -130,8 +131,6 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
     const startedAt = performance.now();
     const result = await fetcher();
     const durationMs = Math.round(performance.now() - startedAt);
-    const rowCount = Array.isArray(result) ? result.length : 0;
-    console.info(`[aFRR UI] ${label}: ${rowCount} rows fetched in ${durationMs}ms`);
     return result;
   }
 
@@ -164,7 +163,6 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
   }
 
   async function loadStaticInputs(): Promise<void> {
-    console.log('[afrr-ui] Loading static inputs (aFRR years + solar years)');
     const [afrrYearsRaw, solarYearsRaw] = await Promise.all([
       window.electronAPI.getAfrrAvailableYears({
         biddingZone: 'NO1',
@@ -178,8 +176,6 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
     const afrrYears = normalizeYearList(afrrYearsRaw)
       .filter((year) => !HIDDEN_YEARS.has(year));
     const solarYears = normalizeYearList(solarYearsRaw);
-
-    console.log('[afrr-ui] aFRR years:', afrrYears, 'Solar years:', solarYears);
 
     populateSelect(el.year, afrrYears);
 
@@ -288,8 +284,6 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
 
       showStatus('Laster aFRR-, sol- og spotdata for valgt år...', 'info');
       setAllVisualStates('loading', 'Beregner aFRR-inntekt...');
-      console.log(`[afrr-ui] Calculation started: aFRR year=${selectedYear}, solar year=${resolvedSolarYear}, minBidMw=1 (locked)`);
-
       const [afrrRowsRaw, solarRowsRaw, spotRowsRaw] = await Promise.all([
         timedFetch(`aFRR ${selectedYear}`, () => window.electronAPI.loadAfrrData(selectedYear, {
           biddingZone: 'NO1',
@@ -304,6 +298,7 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
       const afrrRows = Array.isArray(afrrRowsRaw) ? afrrRowsRaw : [];
       const solarRows = Array.isArray(solarRowsRaw) ? solarRowsRaw : [];
       const spotRowsForYear = Array.isArray(spotRowsRaw) ? spotRowsRaw : [];
+      logInfo('afrr', 'data_loaded', { year: selectedYear, afrrRows: afrrRows.length, solarRows: solarRows.length, spotRows: spotRowsForYear.length });
 
       currentResult = calculateAfrrYearlyRevenue({
         year: selectedYear,
@@ -318,21 +313,11 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
 
       displayResults(currentResult);
       options.onStateChange?.();
-      console.info(
-        `[aFRR UI] === ${selectedYear} Summary ===\n` +
-        `  Data: ${afrrRows.length} aFRR rows, ${solarRows.length} solar rows, ${spotRowsForYear.length} spot rows\n` +
-        `  Bid hours: ${currentResult.bidHours} / ${currentResult.totalHours} (${((currentResult.bidHours / currentResult.totalHours) * 100).toFixed(1)}%)\n` +
-        `  Avg bid capacity: ${currentResult.avgBidCapacityMw.toFixed(2)} MW\n` +
-        `  Avg aFRR price: ${currentResult.avgAfrrPriceEurMw.toFixed(2)} EUR/MW\n` +
-        `  aFRR income: ${currentResult.totalAfrrIncomeEur.toFixed(2)} EUR\n` +
-        `  Spot income: ${currentResult.totalSpotIncomeEur.toFixed(2)} EUR\n` +
-        `  Activation cost: ${currentResult.totalActivationCostEur.toFixed(2)} EUR\n` +
-        `  Total income: ${currentResult.totalIncomeEur.toFixed(2)} EUR`,
-      );
+      logInfo('afrr', 'calc_finish', { year: selectedYear, totalIncomeEur: currentResult.totalIncomeEur });
       showStatus('aFRR-beregning fullført for hele året.', 'success');
     } catch (error) {
-      console.error('aFRR calculation failed:', error);
-      showStatus('aFRR-beregning feilet. Se konsoll for detaljer.', 'warning');
+      logError('afrr', 'calc_failed', { error: error instanceof Error ? error.message : String(error) });
+      showStatus('aFRR-beregning feilet.', 'warning');
       setAllVisualStates('empty', 'Kunne ikke beregne aFRR-resultater.');
     } finally {
       isCalculating = false;
@@ -418,7 +403,6 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
   }
 
   async function init(): Promise<void> {
-    console.log('[afrr-ui] init() starting');
     el.statusMessage = document.getElementById('afrrStatusMessage');
     el.afrrRevenue = document.getElementById('afrrRevenue');
     el.bidHours = document.getElementById('afrrBidHours');
@@ -437,7 +421,7 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
       await loadStaticInputs();
       staticInputsLoaded = true;
     } catch (error) {
-      console.error('[afrr-ui] Could not load static inputs:', error);
+      logError('afrr', 'init_load_failed', { error: error instanceof Error ? error.message : String(error) });
       showStatus('Kunne ikke laste årsliste for aFRR.', 'warning');
       setAllVisualStates('empty', 'Ingen aFRR-data tilgjengelig.');
     } finally {
@@ -458,8 +442,6 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
       showStatus('Klar. Velg år og trykk "Beregn aFRR".', 'info');
       setAllVisualStates('empty', 'Trykk "Beregn aFRR".');
     }
-    console.log('[afrr-ui] init() complete');
-
     if (el.calculateBtn) {
       el.calculateBtn.addEventListener('click', calculate);
     }

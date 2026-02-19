@@ -5,6 +5,7 @@ import type { NodeTenderRow } from '../shared/electron-api';
 import { showStatusMessage } from './status-message';
 import { buildExcelFileBytes } from './excel-export';
 import { roundValuesToTarget } from './rounding';
+import { logInfo, logError } from './logger';
 
 interface NodesElements {
   statusMessage: HTMLElement | null;
@@ -374,11 +375,12 @@ export function createNodesUI(options: NodesUIOptions = {}): {
       });
 
       displayResults(currentResult);
+      logInfo('nodes', 'calc_finish', { totalIncomeNok: currentResult.totalIncomeNok, tender: tender.name });
       showStatus('Beregning fullført.', 'success');
       options.onStateChange?.();
     } catch (error) {
-      console.error('Node income calculation failed:', error);
-      showStatus('Beregning feilet. Se konsoll for detaljer.', 'warning');
+      logError('nodes', 'calc_failed', { error: error instanceof Error ? error.message : String(error), tender: tender?.name });
+      showStatus('Beregning feilet.', 'warning');
       setTableState('empty', 'Kunne ikke beregne inntekt.');
     } finally {
       isCalculating = false;
@@ -485,7 +487,6 @@ export function createNodesUI(options: NodesUIOptions = {}): {
   }
 
   async function init(): Promise<void> {
-    console.log('[nodes-ui] init() starting');
     el.statusMessage = document.getElementById('nodesStatusMessage');
     el.totalIncome = document.getElementById('nodesTotalIncome');
     el.eligibleHours = document.getElementById('nodesEligibleHours');
@@ -509,7 +510,6 @@ export function createNodesUI(options: NodesUIOptions = {}): {
     try {
       const rows = await window.electronAPI.loadNodeTenders({});
       allTenders = Array.isArray(rows) ? rows : [];
-      console.log('[nodes-ui] Loaded', allTenders.length, 'tenders');
 
       populateTenderSelect();
 
@@ -526,7 +526,7 @@ export function createNodesUI(options: NodesUIOptions = {}): {
         setTableState('empty', 'Trykk "Beregn inntekt" for å vise resultater.');
       }
     } catch (error) {
-      console.error('Failed to load node tenders:', error);
+      logError('nodes', 'init_load_failed', { error: error instanceof Error ? error.message : String(error) });
       showStatus('Kunne ikke laste tendere fra Convex.', 'warning');
       setTableState('empty', 'Kunne ikke laste data.');
       renderTenderInfo(null);
@@ -551,7 +551,6 @@ export function createNodesUI(options: NodesUIOptions = {}): {
     }
 
     options.onStateChange?.();
-    console.log('[nodes-ui] init() complete');
   }
 
   return {

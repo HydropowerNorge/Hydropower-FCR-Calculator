@@ -15,6 +15,9 @@ export default defineConfig({
       process.env.VITE_CONVEX_URL || process.env.CONVEX_URL || ''
     ),
   },
+  worker: {
+    format: 'es',
+  },
   build: {
     outDir: path.join(__dirname, 'dist', 'web'),
     emptyOutDir: true,

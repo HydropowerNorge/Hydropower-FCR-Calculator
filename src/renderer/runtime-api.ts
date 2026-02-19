@@ -7,6 +7,7 @@ import type {
   NodeTenderRow,
   PdfExportData,
 } from '../shared/electron-api';
+import { logError } from './logger';
 
 interface PaginatedResult<T> {
   page: T[];
@@ -30,6 +31,7 @@ function getWebConvexUrl(): string {
   if (envUrl.length > 0) {
     return envUrl;
   }
+  logError('api', 'convex_url_missing');
   throw new Error('Mangler VITE_CONVEX_URL i web-modus.');
 }
 
@@ -44,7 +46,12 @@ function getWebClient(): ConvexHttpClient {
 
 async function runConvexQuery<T = unknown>(functionName: string, args: ConvexArgs = {}): Promise<T> {
   const client = getWebClient();
-  return client.query(functionName as never, args as never) as Promise<T>;
+  try {
+    return await (client.query(functionName as never, args as never) as Promise<T>);
+  } catch (error) {
+    logError('api', 'convex_query_failed', { fn: functionName, error: error instanceof Error ? error.message : String(error) });
+    throw error;
+  }
 }
 
 async function runConvexMutation<T = unknown>(functionName: string, args: ConvexArgs = {}): Promise<T> {
@@ -113,8 +120,8 @@ function registerWebOpenUsage(): void {
   void runConvexMutation('usage:registerOpen', {
     hardwareId: getOrCreateBrowserHardwareId(),
     openedAtTs: Date.now(),
-  }).catch((error: unknown) => {
-    console.warn('[web-runtime] usage:registerOpen failed:', error);
+  }).catch(() => {
+    // fire-and-forget
   });
 }
 
