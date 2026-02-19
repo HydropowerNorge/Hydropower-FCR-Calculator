@@ -4,7 +4,9 @@ import { calculateAfrrYearlyRevenue } from './afrr';
 import type { AfrrYearlyResult, AfrrMonthlyRow } from './afrr';
 import { showStatusMessage } from './status-message';
 import { buildExcelFileBytes } from './excel-export';
-import { roundValuesToTarget } from './rounding';
+import { withExportTimestamp } from './export-filename';
+import { EXPORT_RESOLUTION_FILENAME_SUFFIX } from './export-resolution';
+import type { ExportResolution } from './export-resolution';
 import { logInfo, logError } from './logger';
 
 const MONTH_NAMES_NB_FULL = ['Januar', 'Februar', 'Mars', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Desember'];
@@ -27,6 +29,53 @@ function formatYearMonthLabelNb(value: string): string {
     return value;
   }
   return `${MONTH_NAMES_NB_FULL[monthIndex]} ${year}`;
+}
+
+function formatDayLabelNb(value: string): string {
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+  return `${match[3]}.${match[2]}.${match[1]}`;
+}
+
+function formatHourLabelNb(value: string): string {
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):00$/);
+  if (!match) return value;
+  return `${match[3]}.${match[2]}.${match[1]} ${match[4]}:00`;
+}
+
+function appendResolutionSuffix(filename: string, resolution: ExportResolution): string {
+  if (resolution === 'month') return filename;
+  const suffix = EXPORT_RESOLUTION_FILENAME_SUFFIX[resolution];
+  return filename.replace(/(\.[^.]+)$/, `_${suffix}$1`);
+}
+
+function toUtcDayKey(timestamp: number): string {
+  const date = new Date(timestamp);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function toUtcMonthKey(timestamp: number): string {
+  const date = new Date(timestamp);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+function toUtcHourKey(timestamp: number): string {
+  const date = new Date(timestamp);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hour = String(date.getUTCHours()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hour}:00`;
+}
+
+function roundToTwoDecimals(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 interface AfrrElements {
@@ -54,8 +103,8 @@ function normalizeYearList(values: unknown): number[] {
 
 export function createAfrrUI(options: AfrrUIOptions = {}): {
   init: () => Promise<void>;
-  exportCsv: () => Promise<void>;
-  exportExcel: () => Promise<void>;
+  exportCsv: (resolution?: ExportResolution) => Promise<void>;
+  exportExcel: (resolution?: ExportResolution) => Promise<void>;
   hasResult: () => boolean;
 } {
   const charts: {
@@ -131,6 +180,7 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
     const startedAt = performance.now();
     const result = await fetcher();
     const durationMs = Math.round(performance.now() - startedAt);
+    logInfo('afrr', 'fetch_timed', { label, durationMs });
     return result;
   }
 
@@ -327,79 +377,101 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
   }
 
   interface AfrrExportRow {
-    month: string;
-    totalHours: number;
-    bidHours: number;
-    avgAfrrPriceEurMw: number;
-    afrrCapacityIncomeEur: number;
-    totalIncomeEur: number;
+    periodLabel: string;
+    solarProductionMw: number;
+    bidAmountMw: number;
+    priceEurMw: number;
+    incomeEur: number;
   }
 
-  function buildAfrrExportRows(result: AfrrYearlyResult): AfrrExportRow[] {
-    const sortedRows = result.monthly
-      .slice()
-      .sort((a, b) => a.month.localeCompare(b.month));
+  function buildAfrrExportRows(result: AfrrYearlyResult, resolution: ExportResolution): AfrrExportRow[] {
+    const byPeriod = new Map<string, {
+      totalHours: number;
+      solarProductionMwSum: number;
+      bidCapacityMwSum: number;
+      bidHours: number;
+      priceSum: number;
+      incomeSum: number;
+    }>();
 
-    return sortedRows.map((row) => ({
-      month: formatYearMonthLabelNb(row.month),
-      totalHours: row.hours,
-      bidHours: row.bidHours,
-      avgAfrrPriceEurMw: row.avgAfrrPriceEurMw,
-      afrrCapacityIncomeEur: row.afrrIncomeEur,
-      totalIncomeEur: row.totalIncomeEur,
+    result.hourlyData.forEach((row) => {
+      const periodKey = resolution === 'month'
+        ? toUtcMonthKey(row.timestamp)
+        : resolution === 'day'
+          ? toUtcDayKey(row.timestamp)
+          : toUtcHourKey(row.timestamp);
+      const current = byPeriod.get(periodKey) || {
+        totalHours: 0,
+        solarProductionMwSum: 0,
+        bidCapacityMwSum: 0,
+        bidHours: 0,
+        priceSum: 0,
+        incomeSum: 0,
+      };
+
+      current.totalHours += 1;
+      current.solarProductionMwSum += row.solarProductionMw;
+      current.incomeSum += row.afrrIncomeEur;
+      if (row.hasBid) {
+        current.bidHours += 1;
+        current.bidCapacityMwSum += row.afrrCapacityMw;
+        current.priceSum += row.afrrPriceEurMw;
+      }
+      byPeriod.set(periodKey, current);
+    });
+
+    return Array.from(byPeriod.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([periodKey, values]) => ({
+        periodLabel: resolution === 'month'
+          ? formatYearMonthLabelNb(periodKey)
+          : resolution === 'day'
+            ? formatDayLabelNb(periodKey)
+            : formatHourLabelNb(periodKey),
+        solarProductionMw: resolution === 'hour'
+          ? (values.totalHours > 0 ? values.solarProductionMwSum / values.totalHours : 0)
+          : values.solarProductionMwSum,
+        bidAmountMw: values.bidHours > 0 ? values.bidCapacityMwSum / values.bidHours : 0,
+        priceEurMw: values.bidHours > 0 ? values.priceSum / values.bidHours : 0,
+        incomeEur: values.incomeSum,
+      }));
+  }
+
+  function buildAfrrResolvedRows(
+    rows: AfrrExportRow[],
+    resolution: ExportResolution,
+  ): Array<Record<string, string | number>> {
+    const periodKey = resolution === 'month' ? 'Måned' : resolution === 'day' ? 'Dag' : 'Time';
+    const solarColumnLabel = resolution === 'hour' ? 'Solproduksjon (MW)' : 'Solproduksjon (MWh)';
+    return rows.map((row) => ({
+      [periodKey]: row.periodLabel,
+      [solarColumnLabel]: roundToTwoDecimals(row.solarProductionMw),
+      'Budmengde (MW)': roundToTwoDecimals(row.bidAmountMw),
+      'aFRR-pris (EUR/MW)': roundToTwoDecimals(row.priceEurMw),
+      'Inntekt aFRR (EUR)': roundToTwoDecimals(row.incomeEur),
     }));
   }
 
-  async function exportCsv(): Promise<void> {
+  async function exportCsv(resolution: ExportResolution = 'month'): Promise<void> {
     if (!currentResult) return;
     const result = currentResult;
-    const monthlyRows = buildAfrrExportRows(result);
-    const roundedCapacityIncome = roundValuesToTarget(
-      monthlyRows.map((row) => row.afrrCapacityIncomeEur),
-      result.totalAfrrIncomeEur,
-    );
-    const roundedTotalIncome = roundValuesToTarget(
-      monthlyRows.map((row) => row.totalIncomeEur),
-      result.totalIncomeEur,
-    );
-
-    const exportRows = monthlyRows.map((row, index) => ({
-      'Måned': row.month,
-      'Timer totalt': row.totalHours,
-      'Budtimer': row.bidHours,
-      'Snitt aFRR-pris (EUR/MW)': Math.round(row.avgAfrrPriceEurMw),
-      'aFRR kapasitetsinntekt (EUR)': roundedCapacityIncome[index],
-      'Sum inntekt (EUR)': roundedTotalIncome[index],
-    }));
+    const rows = buildAfrrExportRows(result, resolution);
+    const exportRows = buildAfrrResolvedRows(rows, resolution);
 
     const csvContent = Papa.unparse(exportRows);
-    await window.electronAPI.saveFile(csvContent, `afrr_inntekt_${result.year}.csv`);
+    const defaultName = appendResolutionSuffix(`afrr_inntekt_${result.year}.csv`, resolution);
+    await window.electronAPI.saveFile(csvContent, withExportTimestamp(defaultName));
   }
 
-  async function exportExcel(): Promise<void> {
+  async function exportExcel(resolution: ExportResolution = 'month'): Promise<void> {
     if (!currentResult) return;
     const result = currentResult;
-    const monthlyRows = buildAfrrExportRows(result);
-    const roundedCapacityIncome = roundValuesToTarget(
-      monthlyRows.map((row) => row.afrrCapacityIncomeEur),
-      result.totalAfrrIncomeEur,
-    );
-    const roundedTotalIncome = roundValuesToTarget(
-      monthlyRows.map((row) => row.totalIncomeEur),
-      result.totalIncomeEur,
-    );
-
-    const excelRows = monthlyRows.map((row, index) => ({
-      'Måned': row.month,
-      'Timer totalt': row.totalHours,
-      'Budtimer': row.bidHours,
-      'Snitt aFRR-pris (EUR/MW)': Math.round(row.avgAfrrPriceEurMw),
-      'aFRR kapasitetsinntekt (EUR)': roundedCapacityIncome[index],
-      'Sum inntekt (EUR)': roundedTotalIncome[index],
-    }));
+    const rows = buildAfrrExportRows(result, resolution);
+    const excelRows = buildAfrrResolvedRows(rows, resolution);
 
     const excelBytes = buildExcelFileBytes(excelRows, `aFRR ${result.year}`);
-    await window.electronAPI.saveExcel(excelBytes, `afrr_inntekt_${result.year}.xlsx`);
+    const defaultName = appendResolutionSuffix(`afrr_inntekt_${result.year}.xlsx`, resolution);
+    await window.electronAPI.saveExcel(excelBytes, withExportTimestamp(defaultName));
   }
 
   async function init(): Promise<void> {
@@ -446,7 +518,9 @@ export function createAfrrUI(options: AfrrUIOptions = {}): {
       el.calculateBtn.addEventListener('click', calculate);
     }
     if (el.exportCsvBtn) {
-      el.exportCsvBtn.addEventListener('click', exportCsv);
+      el.exportCsvBtn.addEventListener('click', () => {
+        void exportCsv();
+      });
     }
     options.onStateChange?.();
   }

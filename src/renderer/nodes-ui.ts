@@ -1,9 +1,12 @@
 import Papa from 'papaparse';
-import { calculateNodeYearlyIncome } from './nodes';
+import { calculateNodeHourlyIncome, calculateNodeYearlyIncome } from './nodes';
 import type { NodeYearlyResult } from './nodes';
 import type { NodeTenderRow } from '../shared/electron-api';
 import { showStatusMessage } from './status-message';
 import { buildExcelFileBytes } from './excel-export';
+import { withExportTimestamp } from './export-filename';
+import { EXPORT_RESOLUTION_FILENAME_SUFFIX } from './export-resolution';
+import type { ExportResolution } from './export-resolution';
 import { roundValuesToTarget } from './rounding';
 import { logInfo, logError } from './logger';
 
@@ -122,6 +125,62 @@ function formatWindows(activeWindows: { start: string; end: string }[]): string 
     .join(', ');
 }
 
+function formatDayLabelNb(value: string): string {
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+  return `${match[3]}.${match[2]}.${match[1]}`;
+}
+
+function formatHourLabelNb(value: string): string {
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):00$/);
+  if (!match) return value;
+  return `${match[3]}.${match[2]}.${match[1]} ${match[4]}:00`;
+}
+
+function appendResolutionSuffix(filename: string, resolution: ExportResolution): string {
+  if (resolution === 'month') return filename;
+  const suffix = EXPORT_RESOLUTION_FILENAME_SUFFIX[resolution];
+  return filename.replace(/(\.[^.]+)$/, `_${suffix}$1`);
+}
+
+const OSLO_DAY_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Oslo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+const OSLO_HOUR_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Oslo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  hour12: false,
+});
+
+function getFormattedPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
+  return parts.find((part) => part.type === type)?.value || '';
+}
+
+function toOsloDayKey(timestamp: number): string {
+  const parts = OSLO_DAY_FORMATTER.formatToParts(new Date(timestamp));
+  const year = getFormattedPart(parts, 'year');
+  const month = getFormattedPart(parts, 'month');
+  const day = getFormattedPart(parts, 'day');
+  return `${year}-${month}-${day}`;
+}
+
+function toOsloHourKey(timestamp: number): string {
+  const parts = OSLO_HOUR_FORMATTER.formatToParts(new Date(timestamp));
+  const year = getFormattedPart(parts, 'year');
+  const month = getFormattedPart(parts, 'month');
+  const day = getFormattedPart(parts, 'day');
+  const rawHour = Number(getFormattedPart(parts, 'hour'));
+  const hour = Number.isFinite(rawHour) ? (rawHour === 24 ? 0 : rawHour) : 0;
+  return `${year}-${month}-${day} ${String(hour).padStart(2, '0')}:00`;
+}
+
 function estimateTenderHours(tender: NodeTenderRow): { eligible: number; total: number } {
   const periodStartTs = normalizeTimestamp(tender.periodStartTs);
   const periodEndTs = normalizeTimestamp(tender.periodEndTs);
@@ -154,8 +213,8 @@ function estimateTenderHours(tender: NodeTenderRow): { eligible: number; total: 
 
 export function createNodesUI(options: NodesUIOptions = {}): {
   init: () => Promise<void>;
-  exportCsv: () => Promise<void>;
-  exportExcel: () => Promise<void>;
+  exportCsv: (resolution?: ExportResolution) => Promise<void>;
+  exportExcel: (resolution?: ExportResolution) => Promise<void>;
   hasResult: () => boolean;
 } {
   const el: NodesElements = {
@@ -178,6 +237,7 @@ export function createNodesUI(options: NodesUIOptions = {}): {
   };
 
   let currentResult: NodeYearlyResult | null = null;
+  let resultTender: NodeTenderRow | null = null;
   let isCalculating = false;
   let allTenders: NodeTenderRow[] = [];
 
@@ -373,6 +433,7 @@ export function createNodesUI(options: NodesUIOptions = {}): {
         activeDays: Array.isArray(tender.activeDays) ? tender.activeDays : [],
         activeWindows: Array.isArray(tender.activeWindows) ? tender.activeWindows : [],
       });
+      resultTender = tender;
 
       displayResults(currentResult);
       logInfo('nodes', 'calc_finish', { totalIncomeNok: currentResult.totalIncomeNok, tender: tender.name });
@@ -391,99 +452,159 @@ export function createNodesUI(options: NodesUIOptions = {}): {
 
   interface NodesMonthlyExportRow {
     monthLabel: string;
+    totalHours: number;
     eligibleHours: number;
     reservationPriceNokMwH: number;
     quantityMw: number;
     hourlyIncomeNok: number;
     incomeNok: number;
-    accumulatedIncomeNok: number;
-    yearlyIncomeNok: number;
   }
 
   function buildNodesMonthlyExportRows(result: NodeYearlyResult): NodesMonthlyExportRow[] {
     const rowsByMonth = new Map(result.monthly.map((row) => [row.month, row]));
     const hourlyIncomeNok = result.priceNokMwH * result.quantityMw;
-    let accumulatedIncomeNok = 0;
 
     return MONTH_SEQUENCE.map((month) => {
       const row = rowsByMonth.get(month.key);
       const eligibleHours = row?.eligibleHours ?? 0;
       const incomeNok = row?.incomeNok ?? 0;
-      accumulatedIncomeNok += incomeNok;
 
       return {
         monthLabel: month.label,
+        totalHours: 0,
         eligibleHours,
         reservationPriceNokMwH: result.priceNokMwH,
         quantityMw: result.quantityMw,
         hourlyIncomeNok,
         incomeNok,
-        accumulatedIncomeNok,
-        yearlyIncomeNok: result.totalIncomeNok,
       };
     });
   }
 
-  async function exportCsv(): Promise<void> {
-    if (!currentResult) return;
-    const result = currentResult;
-    const monthlyRows = buildNodesMonthlyExportRows(result);
+  interface NodesResolutionExportRow extends NodesMonthlyExportRow {
+    periodLabel: string;
+  }
+
+  function buildNodesByResolution(
+    result: NodeYearlyResult,
+    tender: NodeTenderRow | null,
+    resolution: Exclude<ExportResolution, 'month'>,
+  ): NodesResolutionExportRow[] {
+    const periodStartTs = normalizeTimestamp(tender?.periodStartTs);
+    const periodEndTs = normalizeTimestamp(tender?.periodEndTs);
+    if (!periodStartTs || !periodEndTs || periodStartTs >= periodEndTs) {
+      return [];
+    }
+
+    const activeDays = Array.isArray(tender?.activeDays) ? tender.activeDays : [];
+    const activeWindows = Array.isArray(tender?.activeWindows) ? tender.activeWindows : [];
+    const hourlyIncomeNok = result.priceNokMwH * result.quantityMw;
+
+    const timeline = calculateNodeHourlyIncome({
+      reservationPriceNokMwH: result.priceNokMwH,
+      quantityMw: result.quantityMw,
+      periodStartTs,
+      periodEndTs,
+      activeDays,
+      activeWindows,
+    });
+
+    const byPeriod = new Map<string, { totalHours: number; eligibleHours: number; incomeNok: number }>();
+    timeline.forEach((row) => {
+      const periodKey = resolution === 'day' ? toOsloDayKey(row.timestamp) : toOsloHourKey(row.timestamp);
+      const current = byPeriod.get(periodKey) || { totalHours: 0, eligibleHours: 0, incomeNok: 0 };
+      current.totalHours += 1;
+      current.eligibleHours += row.eligible ? 1 : 0;
+      current.incomeNok += row.incomeNok;
+      byPeriod.set(periodKey, current);
+    });
+
+    return Array.from(byPeriod.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([periodKey, values]) => ({
+        periodLabel: resolution === 'day' ? formatDayLabelNb(periodKey) : formatHourLabelNb(periodKey),
+        monthLabel: '',
+        totalHours: values.totalHours,
+        eligibleHours: values.eligibleHours,
+        reservationPriceNokMwH: result.priceNokMwH,
+        quantityMw: result.quantityMw,
+        hourlyIncomeNok,
+        incomeNok: values.incomeNok,
+      }));
+  }
+
+  function buildNodesExportRows(
+    result: NodeYearlyResult,
+    resolution: ExportResolution,
+  ): Array<Record<string, string | number>> {
+    const tender = resultTender || getSelectedTender();
+
+    if (resolution === 'month') {
+      const monthlyRows = buildNodesMonthlyExportRows(result);
+      const roundedIncome = roundValuesToTarget(
+        monthlyRows.map((row) => row.incomeNok),
+        result.totalIncomeNok,
+      );
+      return monthlyRows.map((row, index) => {
+        return {
+          'Måned': row.monthLabel,
+          'Kvalifiserte timer': row.eligibleHours,
+          'Reservasjonspris (NOK/MW/h)': Math.round(row.reservationPriceNokMwH),
+          'Volum (MW)': Math.round(row.quantityMw),
+          'Inntekt Nodes (NOK)': roundedIncome[index],
+        };
+      });
+    }
+
+    const rows = buildNodesByResolution(result, tender, resolution);
     const roundedIncome = roundValuesToTarget(
-      monthlyRows.map((row) => row.incomeNok),
+      rows.map((row) => row.incomeNok),
       result.totalIncomeNok,
     );
-    const roundedYearlyTotal = Math.round(result.totalIncomeNok);
-    let accumulatedRoundedIncome = 0;
+    const periodColumn = resolution === 'day' ? 'Dag' : 'Time';
 
-    const csvRows = monthlyRows.map((row, index) => {
-      accumulatedRoundedIncome += roundedIncome[index];
+    return rows.map((row, index) => {
       return {
-        'Måned': row.monthLabel,
+        [periodColumn]: row.periodLabel,
+        'Timer totalt': row.totalHours,
         'Kvalifiserte timer': row.eligibleHours,
         'Reservasjonspris (NOK/MW/h)': Math.round(row.reservationPriceNokMwH),
         'Volum (MW)': Math.round(row.quantityMw),
-        'Timeinntekt (NOK/h)': Math.round(row.hourlyIncomeNok),
         'Inntekt Nodes (NOK)': roundedIncome[index],
-        'Akkumulert Nodes (NOK)': accumulatedRoundedIncome,
-        'Årssum Nodes (NOK)': roundedYearlyTotal,
       };
     });
-    const csvContent = Papa.unparse(csvRows);
+  }
 
-    const tender = getSelectedTender();
+  async function exportCsv(resolution: ExportResolution = 'month'): Promise<void> {
+    if (!currentResult) return;
+    const result = currentResult;
+    const exportRows = buildNodesExportRows(result, resolution);
+    if (exportRows.length === 0) {
+      showStatus('Ingen data tilgjengelig for valgt eksportoppløsning.', 'warning');
+      return;
+    }
+
+    const csvContent = Papa.unparse(exportRows);
+    const tender = resultTender || getSelectedTender();
     const yearSuffix = getTenderYearSuffix(tender);
-    await window.electronAPI.saveFile(csvContent, `nodes_inntekt_${yearSuffix}.csv`);
+    const defaultName = appendResolutionSuffix(`nodes_inntekt_${yearSuffix}.csv`, resolution);
+    await window.electronAPI.saveFile(csvContent, withExportTimestamp(defaultName));
   }
 
-  async function exportExcel(): Promise<void> {
+  async function exportExcel(resolution: ExportResolution = 'month'): Promise<void> {
     if (!currentResult) return;
     const result = currentResult;
-    const monthlyRows = buildNodesMonthlyExportRows(result);
-    const roundedIncome = roundValuesToTarget(
-      monthlyRows.map((row) => row.incomeNok),
-      result.totalIncomeNok,
-    );
-    const roundedYearlyTotal = Math.round(result.totalIncomeNok);
-    let accumulatedRoundedIncome = 0;
+    const excelRows = buildNodesExportRows(result, resolution);
+    if (excelRows.length === 0) {
+      showStatus('Ingen data tilgjengelig for valgt eksportoppløsning.', 'warning');
+      return;
+    }
 
-    const excelRows = monthlyRows.map((row, index) => {
-      accumulatedRoundedIncome += roundedIncome[index];
-      return {
-        'Måned': row.monthLabel,
-        'Kvalifiserte timer': row.eligibleHours,
-        'Reservasjonspris (NOK/MW/h)': Math.round(row.reservationPriceNokMwH),
-        'Volum (MW)': Math.round(row.quantityMw),
-        'Timeinntekt (NOK/h)': Math.round(row.hourlyIncomeNok),
-        'Inntekt Nodes (NOK)': roundedIncome[index],
-        'Akkumulert Nodes (NOK)': accumulatedRoundedIncome,
-        'Årssum Nodes (NOK)': roundedYearlyTotal,
-      };
-    });
-
-    const tender = getSelectedTender();
+    const tender = resultTender || getSelectedTender();
     const yearSuffix = getTenderYearSuffix(tender);
     const excelBytes = buildExcelFileBytes(excelRows, 'Nodes');
-    await window.electronAPI.saveExcel(excelBytes, `nodes_inntekt_${yearSuffix}.xlsx`);
+    const defaultName = appendResolutionSuffix(`nodes_inntekt_${yearSuffix}.xlsx`, resolution);
+    await window.electronAPI.saveExcel(excelBytes, withExportTimestamp(defaultName));
   }
 
   async function init(): Promise<void> {
@@ -547,7 +668,9 @@ export function createNodesUI(options: NodesUIOptions = {}): {
       el.calculateBtn.addEventListener('click', calculate);
     }
     if (el.exportCsvBtn) {
-      el.exportCsvBtn.addEventListener('click', exportCsv);
+      el.exportCsvBtn.addEventListener('click', () => {
+        void exportCsv();
+      });
     }
 
     options.onStateChange?.();

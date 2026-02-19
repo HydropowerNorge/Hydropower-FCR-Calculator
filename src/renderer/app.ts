@@ -4,12 +4,20 @@ import * as Calculator from './calculator';
 import type { FrequencySummary, HourlyRevenueRow, RevenueResult } from './calculator';
 import * as FrequencySimulator from './frequency';
 import { calculateAfrrYearlyRevenue } from './afrr';
-import { calculateNodeYearlyIncome } from './nodes';
+import { calculateNodeHourlyIncome, calculateNodeYearlyIncome } from './nodes';
 import { createAfrrUI } from './afrr-ui';
 import { createNodesUI } from './nodes-ui';
 import { showStatusMessage } from './status-message';
 import { buildExcelFileBytes } from './excel-export';
+import { withExportTimestamp } from './export-filename';
 import { roundValuesToTarget } from './rounding';
+import {
+  EXPORT_RESOLUTIONS,
+  EXPORT_RESOLUTION_FILENAME_SUFFIX,
+  EXPORT_RESOLUTION_LABELS_NB,
+  parseExportResolution,
+} from './export-resolution';
+import type { ExportResolution } from './export-resolution';
 import { ensureRuntimeApi, isElectronRuntime } from './runtime-api';
 import { logInfo, logError } from './logger';
 
@@ -28,6 +36,15 @@ interface FcrMonthlyCsvAggregate {
   totalHours: number;
   availableHours: number;
   unavailableHours: number;
+  avgPriceEurMw: number;
+  revenueEur: number;
+}
+
+interface FcrResolutionAggregate {
+  periodKey: string;
+  periodLabel: string;
+  totalHours: number;
+  availableHours: number;
   avgPriceEurMw: number;
   revenueEur: number;
 }
@@ -74,6 +91,26 @@ interface YearlyCombinedResult {
   afrrYear: number;
   nodesTenderName: string;
   monthly: YearlyCombinedMonthlyRow[];
+  hourly: YearlyCombinedHourlyRow[];
+}
+
+interface YearlyCombinedHourlyRow {
+  timestamp: number;
+  fcrEur: number;
+  afrrEur: number;
+  nodesNok: number;
+  nodesEur: number;
+  totalEur: number;
+}
+
+interface YearlyCombinedEurHourlyInputRow {
+  timestamp: number;
+  valueEur: number;
+}
+
+interface YearlyCombinedNokHourlyInputRow {
+  timestamp: number;
+  valueNok: number;
 }
 
 let priceData: PriceDataRow[] = [];
@@ -155,6 +192,10 @@ const elements = {
   yearlyCombinedNodesEur: document.getElementById('yearlyCombinedNodesEur')!,
   yearlyCombinedNodesCard: document.getElementById('yearlyCombinedNodesCard') as HTMLElement | null,
   yearlyCombinedSummaryTable: document.getElementById('yearlyCombinedSummaryTable')!.querySelector('tbody') as HTMLTableSectionElement,
+  sidebarExportResolutionSection: document.getElementById('sidebarExportResolutionSection') as HTMLElement | null,
+  sidebarExportResolutionMonth: document.getElementById('sidebarExportResolutionMonth') as HTMLInputElement | null,
+  sidebarExportResolutionDay: document.getElementById('sidebarExportResolutionDay') as HTMLInputElement | null,
+  sidebarExportResolutionHour: document.getElementById('sidebarExportResolutionHour') as HTMLInputElement | null,
   sidebarExportCsvBtn: document.getElementById('sidebarExportCsvBtn') as HTMLButtonElement | null,
   sidebarExportExcelBtn: document.getElementById('sidebarExportExcelBtn') as HTMLButtonElement | null,
 };
@@ -225,6 +266,20 @@ const combinedPriorityRows: CombinedPriorityRow[] = [
     consequence: 'Ny allokering per timeblokk, fortsatt uten dobbelbooking.'
   }
 ];
+
+function getHoursInCalendarYear(year: number): number {
+  const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+  return isLeapYear ? 8784 : 8760;
+}
+
+function trimPriceDataToYearHours(rows: PriceDataRow[], year: number): PriceDataRow[] {
+  const expectedHours = getHoursInCalendarYear(year);
+  if (!Array.isArray(rows) || rows.length <= expectedHours) {
+    return rows;
+  }
+  logInfo('app', 'price_rows_trimmed', { year, rowsBefore: rows.length, expectedHours });
+  return rows.slice(0, expectedHours);
+}
 
 function isMobileViewport(): boolean {
   return window.matchMedia('(max-width: 980px)').matches;
@@ -310,6 +365,24 @@ function formatShortMonthLabelNb(value: string): string {
   return MONTH_NAMES_NB_FULL[index];
 }
 
+function formatDayLabelNb(value: string): string {
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+  return `${match[3]}.${match[2]}.${match[1]}`;
+}
+
+function formatHourLabelNb(value: string): string {
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):00$/);
+  if (!match) return value;
+  return `${match[3]}.${match[2]}.${match[1]} ${match[4]}:00`;
+}
+
+function appendResolutionSuffix(filename: string, resolution: ExportResolution): string {
+  if (resolution === 'month') return filename;
+  const suffix = EXPORT_RESOLUTION_FILENAME_SUFFIX[resolution];
+  return filename.replace(/(\.[^.]+)$/, `_${suffix}$1`);
+}
+
 function setYearlyCombinedVisualStates(state: string, message: string): void {
   setChartState('yearlyCombinedMonthlyChart', state, message);
   setTableState('yearlyCombinedSummaryTable', state, message);
@@ -342,15 +415,17 @@ type ExportableMainTab = 'fcr' | 'afrr' | 'nodes' | 'yearlyCombined';
 interface SidebarExportConfig {
   csvLabel: string;
   excelLabel: string;
+  supportedResolutions: ExportResolution[];
   canExport: () => boolean;
-  exportCsv: () => Promise<void>;
-  exportExcel: () => Promise<void>;
+  exportCsv: (resolution: ExportResolution) => Promise<void>;
+  exportExcel: (resolution: ExportResolution) => Promise<void>;
 }
 
 const SIDEBAR_EXPORT_CONFIGS: Record<ExportableMainTab, SidebarExportConfig> = {
   fcr: {
     csvLabel: 'Eksporter CSV (FCR-N)',
     excelLabel: 'Eksporter Excel (FCR-N)',
+    supportedResolutions: EXPORT_RESOLUTIONS,
     canExport: (): boolean => currentResult !== null,
     exportCsv,
     exportExcel,
@@ -358,20 +433,23 @@ const SIDEBAR_EXPORT_CONFIGS: Record<ExportableMainTab, SidebarExportConfig> = {
   afrr: {
     csvLabel: 'Eksporter CSV (aFRR)',
     excelLabel: 'Eksporter Excel (aFRR)',
+    supportedResolutions: EXPORT_RESOLUTIONS,
     canExport: (): boolean => afrrUI.hasResult(),
-    exportCsv: (): Promise<void> => afrrUI.exportCsv(),
-    exportExcel: (): Promise<void> => afrrUI.exportExcel(),
+    exportCsv: (resolution: ExportResolution): Promise<void> => afrrUI.exportCsv(resolution),
+    exportExcel: (resolution: ExportResolution): Promise<void> => afrrUI.exportExcel(resolution),
   },
   nodes: {
     csvLabel: 'Eksporter CSV (Nodes)',
     excelLabel: 'Eksporter Excel (Nodes)',
+    supportedResolutions: EXPORT_RESOLUTIONS,
     canExport: (): boolean => nodesUI.hasResult(),
-    exportCsv: (): Promise<void> => nodesUI.exportCsv(),
-    exportExcel: (): Promise<void> => nodesUI.exportExcel(),
+    exportCsv: (resolution: ExportResolution): Promise<void> => nodesUI.exportCsv(resolution),
+    exportExcel: (resolution: ExportResolution): Promise<void> => nodesUI.exportExcel(resolution),
   },
   yearlyCombined: {
     csvLabel: 'Eksporter CSV (Årskalkyle)',
     excelLabel: 'Eksporter Excel (Årskalkyle)',
+    supportedResolutions: ['month'],
     canExport: (): boolean => currentYearlyCombinedResult !== null,
     exportCsv: exportYearlyCombinedCsv,
     exportExcel: exportYearlyCombinedExcel,
@@ -394,6 +472,40 @@ function setSidebarExportButtonsDisabled(disabled: boolean): void {
   }
 }
 
+function getSidebarResolutionInputs(): Record<ExportResolution, HTMLInputElement | null> {
+  return {
+    month: elements.sidebarExportResolutionMonth,
+    day: elements.sidebarExportResolutionDay,
+    hour: elements.sidebarExportResolutionHour,
+  };
+}
+
+function setSidebarResolutionEnabledState(enabledResolutions: ExportResolution[]): void {
+  const inputs = getSidebarResolutionInputs();
+  EXPORT_RESOLUTIONS.forEach((resolution) => {
+    const input = inputs[resolution];
+    if (!input) return;
+    input.disabled = !enabledResolutions.includes(resolution);
+  });
+}
+
+function ensureSidebarResolutionSelection(enabledResolutions: ExportResolution[]): ExportResolution {
+  const inputs = getSidebarResolutionInputs();
+  const selectedResolution = EXPORT_RESOLUTIONS.find((resolution) => inputs[resolution]?.checked);
+  const parsedSelected = parseExportResolution(selectedResolution);
+
+  if (enabledResolutions.includes(parsedSelected)) {
+    return parsedSelected;
+  }
+
+  const fallback = enabledResolutions[0] ?? 'month';
+  const fallbackInput = inputs[fallback];
+  if (fallbackInput) {
+    fallbackInput.checked = true;
+  }
+  return fallback;
+}
+
 function updateSidebarCsvExportState(): void {
   const csvButton = elements.sidebarExportCsvBtn;
   const excelButton = elements.sidebarExportExcelBtn;
@@ -406,7 +518,19 @@ function updateSidebarCsvExportState(): void {
   if (exportSection) {
     exportSection.style.display = exportConfig ? '' : 'none';
   }
-  if (!exportConfig) return;
+  if (!exportConfig) {
+    setSidebarResolutionEnabledState([]);
+    if (elements.sidebarExportResolutionSection) {
+      elements.sidebarExportResolutionSection.style.display = 'none';
+    }
+    return;
+  }
+
+  if (elements.sidebarExportResolutionSection) {
+    elements.sidebarExportResolutionSection.style.display = exportConfig.supportedResolutions.length > 1 ? '' : 'none';
+  }
+  setSidebarResolutionEnabledState(exportConfig.supportedResolutions);
+  ensureSidebarResolutionSelection(exportConfig.supportedResolutions);
 
   const canExport = exportConfig.canExport();
   if (csvButton) {
@@ -446,7 +570,9 @@ async function exportCsvForActiveTab(): Promise<void> {
   const exportConfig = getSidebarExportConfig(getActiveMainTab());
   if (!exportConfig) return;
 
-  await runSidebarExport(csvButton, 'Eksporterer CSV...', 'Eksporter CSV', exportConfig.exportCsv);
+  const resolution = ensureSidebarResolutionSelection(exportConfig.supportedResolutions);
+  const busyLabel = `Eksporterer CSV (${EXPORT_RESOLUTION_LABELS_NB[resolution].toLowerCase()})...`;
+  await runSidebarExport(csvButton, busyLabel, 'Eksporter CSV', () => exportConfig.exportCsv(resolution));
 }
 
 async function exportExcelForActiveTab(): Promise<void> {
@@ -456,7 +582,9 @@ async function exportExcelForActiveTab(): Promise<void> {
   const exportConfig = getSidebarExportConfig(getActiveMainTab());
   if (!exportConfig) return;
 
-  await runSidebarExport(excelButton, 'Eksporterer Excel...', 'Eksporter Excel', exportConfig.exportExcel);
+  const resolution = ensureSidebarResolutionSelection(exportConfig.supportedResolutions);
+  const busyLabel = `Eksporterer Excel (${EXPORT_RESOLUTION_LABELS_NB[resolution].toLowerCase()})...`;
+  await runSidebarExport(excelButton, busyLabel, 'Eksporter Excel', () => exportConfig.exportExcel(resolution));
 }
 
 async function runFcrSimulationInWorker(payload: Record<string, unknown>): Promise<WorkerPayload> {
@@ -1096,9 +1224,13 @@ function createBatteryConfigFromInputs(): Calculator.BatteryConfig {
   );
 }
 
-async function calculateFcrYearlyForCombined(year: number): Promise<{ totalEur: number; monthlyByMonth: number[] }> {
+async function calculateFcrYearlyForCombined(year: number): Promise<{
+  totalEur: number;
+  monthlyByMonth: number[];
+  hourlyRows: YearlyCombinedEurHourlyInputRow[];
+}> {
   const rows = await window.electronAPI.loadPriceData(year, 'NO1');
-  const localPriceData = (Array.isArray(rows) ? rows : [])
+  const localPriceDataRaw = (Array.isArray(rows) ? rows : [])
     .map(row => ({
       timestamp: new Date(row.timestamp),
       hourNumber: Number(row.hourNumber) || 0,
@@ -1107,6 +1239,7 @@ async function calculateFcrYearlyForCombined(year: number): Promise<{ totalEur: 
     }))
     .filter(row => !Number.isNaN(row.timestamp.getTime()))
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  const localPriceData = trimPriceDataToYearHours(localPriceDataRaw, year);
 
   if (localPriceData.length === 0) {
     logError('calc', 'fcr_yearly_no_data', { year });
@@ -1125,6 +1258,7 @@ async function calculateFcrYearlyForCombined(year: number): Promise<{ totalEur: 
     workerResult = await runFcrSimulationInWorker({
       year,
       hours,
+      startTimestamp: localPriceData.length > 0 ? new Date(localPriceData[0].timestamp).getTime() : Date.UTC(year, 0, 1),
       seed,
       profileName,
       config: configValues,
@@ -1135,7 +1269,9 @@ async function calculateFcrYearlyForCombined(year: number): Promise<{ totalEur: 
     });
   } catch {
     logInfo('calc', 'fcr_worker_fallback', { year });
-    const startTime = new Date(Date.UTC(year, 0, 1));
+    const startTime = localPriceData.length > 0
+      ? new Date(localPriceData[0].timestamp)
+      : new Date(Date.UTC(year, 0, 1));
     const localFreqData = FrequencySimulator.simulateFrequency(startTime, hours, 1, seed, profileName);
     const socData = Calculator.simulateSocHourly(localFreqData, config);
     const result = Calculator.calculateRevenue(localPriceData, socData, config);
@@ -1147,20 +1283,30 @@ async function calculateFcrYearlyForCombined(year: number): Promise<{ totalEur: 
   }
 
   const monthlyByMonth = new Array<number>(12).fill(0);
+  const hourlyRows: YearlyCombinedEurHourlyInputRow[] = [];
   for (const row of workerResult.result.hourlyData) {
     const monthIndex = new Date(row.timestamp).getUTCMonth();
     if (monthIndex >= 0 && monthIndex < 12) {
       monthlyByMonth[monthIndex] += row.revenue;
     }
+    hourlyRows.push({
+      timestamp: new Date(row.timestamp).getTime(),
+      valueEur: row.revenue,
+    });
   }
 
   return {
     totalEur: workerResult.result.totalRevenue,
-    monthlyByMonth
+    monthlyByMonth,
+    hourlyRows,
   };
 }
 
-async function calculateAfrrYearlyForCombined(afrrYear: number): Promise<{ totalEur: number; monthlyByMonth: number[] }> {
+async function calculateAfrrYearlyForCombined(afrrYear: number): Promise<{
+  totalEur: number;
+  monthlyByMonth: number[];
+  hourlyRows: YearlyCombinedEurHourlyInputRow[];
+}> {
   const minBidMw = 1;
   const hasMarketVolume = afrrYear <= 2023;
   const excludeZeroVolume = hasMarketVolume;
@@ -1214,7 +1360,11 @@ async function calculateAfrrYearlyForCombined(afrrYear: number): Promise<{ total
 
   return {
     totalEur: afrrResult.totalAfrrIncomeEur,
-    monthlyByMonth
+    monthlyByMonth,
+    hourlyRows: afrrResult.hourlyData.map((row) => ({
+      timestamp: row.timestamp,
+      valueEur: row.afrrIncomeEur,
+    })),
   };
 }
 
@@ -1222,6 +1372,7 @@ async function calculateNodesYearlyForCombined(quantityMw: number): Promise<{
   totalNok: number;
   monthlyByMonth: number[];
   tenderName: string;
+  hourlyRows: YearlyCombinedNokHourlyInputRow[];
 }> {
   const tenders = await window.electronAPI.loadNodeTenders({});
   const tenderRows = Array.isArray(tenders) ? tenders : [];
@@ -1246,14 +1397,29 @@ async function calculateNodesYearlyForCombined(quantityMw: number): Promise<{
     throw new Error('Nodes tender mangler gyldig periode');
   }
 
+  const activeDays = Array.isArray(tender.activeDays) ? tender.activeDays : [];
+  const activeWindows = Array.isArray(tender.activeWindows) ? tender.activeWindows : [];
+
   const nodesResult = calculateNodeYearlyIncome({
     reservationPriceNokMwH: reservationPrice,
     quantityMw,
     periodStartTs,
     periodEndTs,
-    activeDays: Array.isArray(tender.activeDays) ? tender.activeDays : [],
-    activeWindows: Array.isArray(tender.activeWindows) ? tender.activeWindows : [],
+    activeDays,
+    activeWindows,
   });
+
+  const nodesHourlyRows = calculateNodeHourlyIncome({
+    reservationPriceNokMwH: reservationPrice,
+    quantityMw,
+    periodStartTs,
+    periodEndTs,
+    activeDays,
+    activeWindows,
+  }).map((row) => ({
+    timestamp: row.timestamp,
+    valueNok: row.incomeNok,
+  }));
 
   const monthlyByMonth = new Array<number>(12).fill(0);
   nodesResult.monthly.forEach((row) => {
@@ -1266,8 +1432,58 @@ async function calculateNodesYearlyForCombined(quantityMw: number): Promise<{
   return {
     totalNok: nodesResult.totalIncomeNok,
     monthlyByMonth,
-    tenderName: tender.name || 'Nodes-tender'
+    tenderName: tender.name || 'Nodes-tender',
+    hourlyRows: nodesHourlyRows,
   };
+}
+
+function buildYearlyCombinedHourlyRows(
+  fcrRows: YearlyCombinedEurHourlyInputRow[],
+  afrrRows: YearlyCombinedEurHourlyInputRow[],
+  nodesRows: YearlyCombinedNokHourlyInputRow[],
+): YearlyCombinedHourlyRow[] {
+  const byTimestamp = new Map<number, YearlyCombinedHourlyRow>();
+
+  const ensureRow = (timestamp: number): YearlyCombinedHourlyRow => {
+    const existing = byTimestamp.get(timestamp);
+    if (existing) return existing;
+    const created: YearlyCombinedHourlyRow = {
+      timestamp,
+      fcrEur: 0,
+      afrrEur: 0,
+      nodesNok: 0,
+      nodesEur: 0,
+      totalEur: 0,
+    };
+    byTimestamp.set(timestamp, created);
+    return created;
+  };
+
+  fcrRows.forEach((row) => {
+    const item = ensureRow(row.timestamp);
+    item.fcrEur += row.valueEur;
+  });
+
+  afrrRows.forEach((row) => {
+    const item = ensureRow(row.timestamp);
+    item.afrrEur += row.valueEur;
+  });
+
+  nodesRows.forEach((row) => {
+    const item = ensureRow(row.timestamp);
+    item.nodesNok += row.valueNok;
+  });
+
+  return Array.from(byTimestamp.values())
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .map((row) => {
+      const nodesEur = row.nodesNok / NODES_NOK_PER_EUR;
+      return {
+        ...row,
+        nodesEur,
+        totalEur: row.fcrEur + row.afrrEur + nodesEur,
+      };
+    });
 }
 
 function updateYearlyCombinedMonthlyChart(monthly: YearlyCombinedMonthlyRow[], includeNodes: boolean): void {
@@ -1427,6 +1643,11 @@ async function calculateYearlyCombined(): Promise<void> {
         totalEur: fcrEur + afrrEur + nodesEur
       };
     });
+    const hourly = buildYearlyCombinedHourlyRows(
+      fcrResult.hourlyRows,
+      afrrResult.hourlyRows,
+      nodesResult.hourlyRows,
+    );
 
     const nodesEur = nodesResult.totalNok / NODES_NOK_PER_EUR;
     currentYearlyCombinedResult = {
@@ -1438,7 +1659,8 @@ async function calculateYearlyCombined(): Promise<void> {
       fcrYear,
       afrrYear,
       nodesTenderName: nodesResult.tenderName,
-      monthly
+      monthly,
+      hourly,
     };
     updateSidebarCsvExportState();
 
@@ -1461,37 +1683,139 @@ async function calculateYearlyCombined(): Promise<void> {
   }
 }
 
-function buildYearlyCombinedExportRows(result: YearlyCombinedResult, includeNodes: boolean): Array<Record<string, string | number>> {
+interface YearlyCombinedResolutionAggregate {
+  periodKey: string;
+  periodLabel: string;
+  fcrEur: number;
+  afrrEur: number;
+  nodesEur: number;
+}
+
+function toUtcDayKey(timestamp: number): string {
+  const date = new Date(timestamp);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function toUtcHourKey(timestamp: number): string {
+  const date = new Date(timestamp);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hour = String(date.getUTCHours()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hour}:00`;
+}
+
+function aggregateYearlyCombinedByResolution(
+  result: YearlyCombinedResult,
+  resolution: Exclude<ExportResolution, 'month'>,
+): YearlyCombinedResolutionAggregate[] {
+  const byPeriod = new Map<string, { fcrEur: number; afrrEur: number; nodesEur: number }>();
+
+  result.hourly.forEach((row) => {
+    const periodKey = resolution === 'day'
+      ? toUtcDayKey(row.timestamp)
+      : toUtcHourKey(row.timestamp);
+    const current = byPeriod.get(periodKey) || { fcrEur: 0, afrrEur: 0, nodesEur: 0 };
+    current.fcrEur += row.fcrEur;
+    current.afrrEur += row.afrrEur;
+    current.nodesEur += row.nodesEur;
+    byPeriod.set(periodKey, current);
+  });
+
+  return Array.from(byPeriod.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([periodKey, values]) => ({
+      periodKey,
+      periodLabel: resolution === 'day' ? formatDayLabelNb(periodKey) : formatHourLabelNb(periodKey),
+      fcrEur: values.fcrEur,
+      afrrEur: values.afrrEur,
+      nodesEur: values.nodesEur,
+    }));
+}
+
+function buildYearlyCombinedExportRows(
+  result: YearlyCombinedResult,
+  includeNodes: boolean,
+  resolution: ExportResolution,
+): Array<Record<string, string | number>> {
+  if (resolution === 'month') {
+    const roundedFcr = roundValuesToTarget(
+      result.monthly.map((row) => row.fcrEur),
+      result.fcrEur,
+    );
+    const roundedAfrr = roundValuesToTarget(
+      result.monthly.map((row) => row.afrrEur),
+      result.afrrEur,
+    );
+    const roundedNodes = roundValuesToTarget(
+      result.monthly.map((row) => row.nodesEur),
+      result.nodesEur,
+    );
+
+    let accumulatedTotalEur = 0;
+    return result.monthly.map((row, index) => {
+      const effectiveTotalEur = roundedFcr[index] + roundedAfrr[index] + (includeNodes ? roundedNodes[index] : 0);
+      accumulatedTotalEur += effectiveTotalEur;
+      return {
+        'Måned': formatShortMonthLabelNb(row.month),
+        'FCR-N (EUR)': roundedFcr[index],
+        'aFRR (EUR)': roundedAfrr[index],
+        'Nodes/Euroflex (EUR)': roundedNodes[index],
+        'Sum reservemarkeder (EUR)': effectiveTotalEur,
+        'Akkumulert sum (EUR)': accumulatedTotalEur,
+        'År (FCR/aFRR)': result.fcrYear,
+      };
+    });
+  }
+
+  const periodRows = aggregateYearlyCombinedByResolution(result, resolution);
   const roundedFcr = roundValuesToTarget(
-    result.monthly.map((row) => row.fcrEur),
+    periodRows.map((row) => row.fcrEur),
     result.fcrEur,
   );
   const roundedAfrr = roundValuesToTarget(
-    result.monthly.map((row) => row.afrrEur),
+    periodRows.map((row) => row.afrrEur),
     result.afrrEur,
   );
   const roundedNodes = roundValuesToTarget(
-    result.monthly.map((row) => row.nodesEur),
+    periodRows.map((row) => row.nodesEur),
     result.nodesEur,
   );
 
   let accumulatedTotalEur = 0;
-  return result.monthly.map((row, index) => {
+  if (resolution === 'day') {
+    return periodRows.map((row, index) => {
+      const effectiveTotalEur = roundedFcr[index] + roundedAfrr[index] + (includeNodes ? roundedNodes[index] : 0);
+      accumulatedTotalEur += effectiveTotalEur;
+      return {
+        'Dag': row.periodLabel,
+        'FCR-N (EUR)': roundedFcr[index],
+        'aFRR (EUR)': roundedAfrr[index],
+        'Nodes/Euroflex (EUR)': roundedNodes[index],
+        'Sum reservemarkeder (EUR)': effectiveTotalEur,
+        'Akkumulert sum (EUR)': accumulatedTotalEur,
+      };
+    });
+  }
+
+  return periodRows.map((row, index) => {
     const effectiveTotalEur = roundedFcr[index] + roundedAfrr[index] + (includeNodes ? roundedNodes[index] : 0);
     accumulatedTotalEur += effectiveTotalEur;
     return {
-      'Måned': formatShortMonthLabelNb(row.month),
+      'Time': row.periodLabel,
       'FCR-N (EUR)': roundedFcr[index],
       'aFRR (EUR)': roundedAfrr[index],
       'Nodes/Euroflex (EUR)': roundedNodes[index],
       'Sum reservemarkeder (EUR)': effectiveTotalEur,
       'Akkumulert sum (EUR)': accumulatedTotalEur,
-      'År (FCR/aFRR)': result.fcrYear,
     };
   });
 }
 
-async function exportYearlyCombinedCsv(): Promise<void> {
+async function exportYearlyCombinedCsv(resolution: ExportResolution = 'month'): Promise<void> {
   if (!currentYearlyCombinedResult) {
     showYearlyCombinedStatus('Beregn årlig total før eksport.', 'warning');
     return;
@@ -1499,16 +1823,17 @@ async function exportYearlyCombinedCsv(): Promise<void> {
 
   const result = currentYearlyCombinedResult;
   const includeNodes = isYearlyCombinedNodesIncluded();
-  const rows = buildYearlyCombinedExportRows(result, includeNodes);
+  const rows = buildYearlyCombinedExportRows(result, includeNodes, resolution);
   const csvContent = Papa.unparse(rows);
 
   const yearSuffix = result.fcrYear === result.afrrYear
     ? `${result.fcrYear}`
     : `${result.fcrYear}_${result.afrrYear}`;
-  await window.electronAPI.saveFile(csvContent, `aarskalkyle_kombinert_${yearSuffix}.csv`);
+  const defaultName = appendResolutionSuffix(`aarskalkyle_kombinert_${yearSuffix}.csv`, resolution);
+  await window.electronAPI.saveFile(csvContent, withExportTimestamp(defaultName));
 }
 
-async function exportYearlyCombinedExcel(): Promise<void> {
+async function exportYearlyCombinedExcel(resolution: ExportResolution = 'month'): Promise<void> {
   if (!currentYearlyCombinedResult) {
     showYearlyCombinedStatus('Beregn årlig total før eksport.', 'warning');
     return;
@@ -1516,12 +1841,13 @@ async function exportYearlyCombinedExcel(): Promise<void> {
 
   const result = currentYearlyCombinedResult;
   const includeNodes = isYearlyCombinedNodesIncluded();
-  const rows = buildYearlyCombinedExportRows(result, includeNodes);
+  const rows = buildYearlyCombinedExportRows(result, includeNodes, resolution);
   const excelBytes = buildExcelFileBytes(rows, 'Årskalkyle');
   const yearSuffix = result.fcrYear === result.afrrYear
     ? `${result.fcrYear}`
     : `${result.fcrYear}_${result.afrrYear}`;
-  await window.electronAPI.saveExcel(excelBytes, `aarskalkyle_kombinert_${yearSuffix}.xlsx`);
+  const defaultName = appendResolutionSuffix(`aarskalkyle_kombinert_${yearSuffix}.xlsx`, resolution);
+  await window.electronAPI.saveExcel(excelBytes, withExportTimestamp(defaultName));
 }
 
 async function loadPriceData(year: number): Promise<void> {
@@ -1541,7 +1867,7 @@ async function loadPriceData(year: number): Promise<void> {
     return;
   }
 
-  priceData = rows
+  const loadedPriceData = rows
     .map(row => ({
       timestamp: new Date(row.timestamp),
       hourNumber: Number(row.hourNumber) || 0,
@@ -1550,6 +1876,7 @@ async function loadPriceData(year: number): Promise<void> {
     }))
     .filter(row => !Number.isNaN(row.timestamp.getTime()))
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  priceData = trimPriceDataToYearHours(loadedPriceData, year);
 
   setFcrResultContainerVisible(true);
 
@@ -1583,6 +1910,7 @@ async function calculate(): Promise<void> {
       workerResult = await runFcrSimulationInWorker({
         year,
         hours,
+        startTimestamp: priceData.length > 0 ? new Date(priceData[0].timestamp).getTime() : Date.UTC(year, 0, 1),
         seed,
         profileName,
         config: configValues,
@@ -1593,7 +1921,9 @@ async function calculate(): Promise<void> {
       });
     } catch {
       logInfo('calc', 'worker_fallback', { year });
-      const startTime = new Date(Date.UTC(year, 0, 1));
+      const startTime = priceData.length > 0
+        ? new Date(priceData[0].timestamp)
+        : new Date(Date.UTC(year, 0, 1));
       showStatus('Simulerer batteri', 'info', { autoHide: false });
       await new Promise(r => setTimeout(r, 10));
 
@@ -1975,40 +2305,190 @@ function updateSummaryTable(monthly: MonthlyAggregate[]): void {
   setTableState('summaryTable', 'ready', '');
 }
 
-function buildFcrExportRows(result: RevenueResult): Array<Record<string, string | number>> {
-  const monthlyRows = aggregateFcrMonthlyForCsv(result.hourlyData);
-  const roundedRevenue = roundValuesToTarget(
-    monthlyRows.map((row) => row.revenueEur),
-    result.totalRevenue,
-  );
-  return monthlyRows.map((row, index) => ({
-    'Måned': row.monthLabel,
-    'Timer totalt': row.totalHours,
-    'Timer deltagelse': row.availableHours,
-    'Snittpris (EUR/MW)': Math.round(row.avgPriceEurMw),
-    'Inntekt FCR-N (EUR)': roundedRevenue[index],
+function aggregateFcrByResolution(
+  hourlyData: HourlyRevenueRow[],
+  resolution: Exclude<ExportResolution, 'month'>,
+): FcrResolutionAggregate[] {
+  const byPeriod = new Map<string, { totalHours: number; availableHours: number; priceSum: number; revenueEur: number }>();
+
+  for (const row of hourlyData) {
+    const date = new Date(row.timestamp);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const periodKey = resolution === 'day'
+      ? `${year}-${month}-${day}`
+      : `${year}-${month}-${day} ${String(date.getHours()).padStart(2, '0')}:00`;
+
+    const existing = byPeriod.get(periodKey) || {
+      totalHours: 0,
+      availableHours: 0,
+      priceSum: 0,
+      revenueEur: 0,
+    };
+    existing.totalHours += 1;
+    existing.availableHours += row.available ? 1 : 0;
+    existing.priceSum += row.price;
+    existing.revenueEur += row.revenue;
+    byPeriod.set(periodKey, existing);
+  }
+
+  return Array.from(byPeriod.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([periodKey, values]) => ({
+      periodKey,
+      periodLabel: resolution === 'day' ? formatDayLabelNb(periodKey) : formatHourLabelNb(periodKey),
+      totalHours: values.totalHours,
+      availableHours: values.availableHours,
+      avgPriceEurMw: values.totalHours > 0 ? values.priceSum / values.totalHours : 0,
+      revenueEur: values.revenueEur,
+    }));
+}
+
+interface FcrExportMetaValues {
+  market: string;
+  powerMw: number;
+  capacityMwh: number;
+}
+
+function getFcrExportMetaValues(): FcrExportMetaValues {
+  const powerMw = parseFloat(elements.powerMw.value);
+  const capacityMwh = parseFloat(elements.capacityMwh.value);
+  const safePowerMw = Number.isFinite(powerMw) ? powerMw : 0;
+  const safeCapacityMwh = Number.isFinite(capacityMwh) ? capacityMwh : 0;
+
+  return {
+    market: 'FCR-N',
+    powerMw: safePowerMw,
+    capacityMwh: safeCapacityMwh,
+  };
+}
+
+function calculateFcrFormulaPriceEurMw(
+  revenueEur: number,
+  powerMw: number,
+  participatingHours: number,
+): number {
+  if (!Number.isFinite(revenueEur) || !Number.isFinite(powerMw) || !Number.isFinite(participatingHours)) {
+    return 0;
+  }
+  if (powerMw <= 0 || participatingHours <= 0) return 0;
+  return revenueEur / (powerMw * participatingHours);
+}
+
+function roundToTwoDecimals(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function buildFcrVerificationColumns(
+  meta: FcrExportMetaValues,
+  revenueEur: number,
+  participatingHours: number,
+  options: { fcrPriceEurMw?: number; hoursInPeriod?: number; hoursLabel?: string } = {},
+): Record<string, string | number> {
+  const formulaPrice = Number.isFinite(options.fcrPriceEurMw)
+    ? Number(options.fcrPriceEurMw)
+    : calculateFcrFormulaPriceEurMw(revenueEur, meta.powerMw, participatingHours);
+  const columns: Record<string, string | number> = {
+    'Marked': meta.market,
+    'Effekt (MW)': meta.powerMw,
+    'Kapasitet (MWh)': meta.capacityMwh,
+    'FCR-pris (EUR/MW)': roundToTwoDecimals(formulaPrice),
+  };
+  if (Number.isFinite(options.hoursInPeriod)) {
+    const hoursLabel = options.hoursLabel || 'Timer i perioden';
+    columns[hoursLabel] = Number(options.hoursInPeriod);
+  }
+  columns['Inntekt FCR-N (EUR)'] = roundToTwoDecimals(revenueEur);
+  return columns;
+}
+
+function buildFcrExportRows(
+  result: RevenueResult,
+  resolution: ExportResolution,
+): Array<Record<string, string | number>> {
+  const meta = getFcrExportMetaValues();
+
+  if (resolution === 'month') {
+    const monthlyRows = aggregateFcrMonthlyForCsv(result.hourlyData);
+    const exportRevenue = monthlyRows.map((row) => roundToTwoDecimals(row.revenueEur));
+    return monthlyRows.map((row, index) => ({
+      'Måned': row.monthLabel,
+      ...buildFcrVerificationColumns(meta, exportRevenue[index], row.availableHours, {
+        hoursInPeriod: row.totalHours,
+        hoursLabel: 'Timer i måneden',
+      }),
+    }));
+  }
+
+  if (resolution === 'hour') {
+    const hourlyRows = result.hourlyData
+      .slice()
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    const exportRevenue = hourlyRows.map((row) => roundToTwoDecimals(row.revenue));
+
+    return hourlyRows.map((row, index) => {
+      const date = new Date(row.timestamp);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hour = String(date.getHours()).padStart(2, '0');
+      const hourLabel = formatHourLabelNb(`${year}-${month}-${day} ${hour}:00`);
+      const participatingHours = row.available ? 1 : 0;
+
+      return {
+        'Time': hourLabel,
+        ...buildFcrVerificationColumns(meta, exportRevenue[index], participatingHours, {
+          fcrPriceEurMw: row.price,
+        }),
+        'SOC start (%)': row.socStart === null ? '' : Number((row.socStart * 100).toFixed(3)),
+        'SOC slutt (%)': row.socEnd === null ? '' : Number((row.socEnd * 100).toFixed(3)),
+      };
+    });
+  }
+
+  const periodRows = aggregateFcrByResolution(result.hourlyData, resolution);
+  const exportRevenue = periodRows.map((row) => roundToTwoDecimals(row.revenueEur));
+
+  if (resolution === 'day') {
+    return periodRows.map((row, index) => ({
+      'Dag': row.periodLabel,
+      ...buildFcrVerificationColumns(meta, exportRevenue[index], row.availableHours, {
+        fcrPriceEurMw: row.avgPriceEurMw,
+        hoursInPeriod: row.totalHours,
+        hoursLabel: 'Timer i døgnet',
+      }),
+    }));
+  }
+
+  return periodRows.map((row, index) => ({
+    'Time': row.periodLabel,
+    ...buildFcrVerificationColumns(meta, exportRevenue[index], row.availableHours),
   }));
 }
 
-async function exportCsv(): Promise<void> {
+async function exportCsv(resolution: ExportResolution = 'month'): Promise<void> {
   if (!currentResult) return;
   const result = currentResult;
 
-  const rows = buildFcrExportRows(result);
+  const rows = buildFcrExportRows(result, resolution);
   const csvContent = Papa.unparse(rows);
 
   const year = elements.year.value;
-  await window.electronAPI.saveFile(csvContent, `fcr_inntekt_${year}.csv`);
+  const defaultName = appendResolutionSuffix(`fcr_inntekt_${year}.csv`, resolution);
+  await window.electronAPI.saveFile(csvContent, withExportTimestamp(defaultName));
 }
 
-async function exportExcel(): Promise<void> {
+async function exportExcel(resolution: ExportResolution = 'month'): Promise<void> {
   if (!currentResult) return;
   const result = currentResult;
 
-  const rows = buildFcrExportRows(result);
+  const rows = buildFcrExportRows(result, resolution);
   const excelBytes = buildExcelFileBytes(rows, `FCR-N ${elements.year.value}`);
   const year = elements.year.value;
-  await window.electronAPI.saveExcel(excelBytes, `fcr_inntekt_${year}.xlsx`);
+  const defaultName = appendResolutionSuffix(`fcr_inntekt_${year}.xlsx`, resolution);
+  await window.electronAPI.saveExcel(excelBytes, withExportTimestamp(defaultName));
 }
 
 async function exportPdf(): Promise<void> {
@@ -2045,7 +2525,8 @@ async function exportPdf(): Promise<void> {
     }
   };
 
-  const result = await window.electronAPI.savePdf(pdfData, `FCR-N_Rapport_${year}.pdf`);
+  const pdfName = withExportTimestamp(`FCR-N_Rapport_${year}.pdf`);
+  const result = await window.electronAPI.savePdf(pdfData, pdfName);
   if (result) {
     showStatus('PDF eksportert!', 'success');
   } else {
