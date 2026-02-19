@@ -13,6 +13,14 @@ export interface NodeMonthlyRow {
   incomeNok: number;
 }
 
+export interface NodeHourlyRow {
+  timestamp: number;
+  monthIndex: number;
+  monthLabel: string;
+  eligible: boolean;
+  incomeNok: number;
+}
+
 export interface NodeYearlyResult {
   totalIncomeNok: number;
   totalEligibleHours: number;
@@ -67,21 +75,16 @@ function getOsloComponents(date: Date): { dayName: string; hour: number; monthIn
   return { dayName, hour, monthIndex };
 }
 
-export function calculateNodeYearlyIncome(params: NodeIncomeParams): NodeYearlyResult {
+export function calculateNodeHourlyIncome(params: NodeIncomeParams): NodeHourlyRow[] {
   const { reservationPriceNokMwH, quantityMw, periodStartTs, periodEndTs, activeDays, activeWindows } = params;
 
   const hourlyIncome = reservationPriceNokMwH * quantityMw;
   const hasDayFilter = activeDays.length > 0;
   const hasWindowFilter = activeWindows.length > 0;
-
-  // Build monthly buckets
-  const monthlyHours = new Array<number>(12).fill(0);
-  const monthlyIncome = new Array<number>(12).fill(0);
-
-  // Iterate hour-by-hour
   const oneHourMs = 3_600_000;
-  let ts = periodStartTs;
 
+  const rows: NodeHourlyRow[] = [];
+  let ts = periodStartTs;
   while (ts < periodEndTs) {
     const date = new Date(ts);
     const { dayName, hour, monthIndex } = getOsloComponents(date);
@@ -90,13 +93,41 @@ export function calculateNodeYearlyIncome(params: NodeIncomeParams): NodeYearlyR
     const matchesWindowFilter = !hasWindowFilter || isHourInWindows(hour, activeWindows);
     const eligible = matchesDayFilter && matchesWindowFilter;
 
-    if (eligible) {
-      monthlyHours[monthIndex] += 1;
-      monthlyIncome[monthIndex] += hourlyIncome;
-    }
+    rows.push({
+      timestamp: ts,
+      monthIndex,
+      monthLabel: MONTH_LABELS[monthIndex],
+      eligible,
+      incomeNok: eligible ? hourlyIncome : 0,
+    });
 
     ts += oneHourMs;
   }
+
+  return rows;
+}
+
+export function calculateNodeYearlyIncome(params: NodeIncomeParams): NodeYearlyResult {
+  const { reservationPriceNokMwH, quantityMw, periodStartTs, periodEndTs, activeDays, activeWindows } = params;
+  const timeline = calculateNodeHourlyIncome({
+    reservationPriceNokMwH,
+    quantityMw,
+    periodStartTs,
+    periodEndTs,
+    activeDays,
+    activeWindows,
+  });
+
+  // Build monthly buckets
+  const monthlyHours = new Array<number>(12).fill(0);
+  const monthlyIncome = new Array<number>(12).fill(0);
+
+  timeline.forEach((row) => {
+    if (row.eligible) {
+      monthlyHours[row.monthIndex] += 1;
+      monthlyIncome[row.monthIndex] += row.incomeNok;
+    }
+  });
 
   const monthly: NodeMonthlyRow[] = [];
   let totalEligibleHours = 0;

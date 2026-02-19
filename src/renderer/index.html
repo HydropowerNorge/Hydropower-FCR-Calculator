@@ -303,6 +303,23 @@
       </div>
 
       <section class="sidebar-export">
+        <div id="sidebarExportResolutionSection" class="sidebar-export-resolution">
+          <p class="sidebar-export-resolution-label">Eksportoppløsning</p>
+          <div class="sidebar-export-resolution-group" role="radiogroup" aria-label="Velg eksportoppløsning">
+            <label class="sidebar-export-resolution-option">
+              <input id="sidebarExportResolutionMonth" type="radio" name="sidebarExportResolution" value="month" checked>
+              <span>Måned</span>
+            </label>
+            <label class="sidebar-export-resolution-option">
+              <input id="sidebarExportResolutionDay" type="radio" name="sidebarExportResolution" value="day">
+              <span>Dag</span>
+            </label>
+            <label class="sidebar-export-resolution-option">
+              <input id="sidebarExportResolutionHour" type="radio" name="sidebarExportResolution" value="hour">
+              <span>Time</span>
+            </label>
+          </div>
+        </div>
         <button id="sidebarExportCsvBtn" class="btn btn-secondary" type="button" disabled>Eksporter CSV</button>
         <button id="sidebarExportExcelBtn" class="btn btn-secondary" type="button" disabled>Eksporter Excel</button>
       </section>

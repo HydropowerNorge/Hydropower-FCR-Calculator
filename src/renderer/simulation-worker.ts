@@ -5,6 +5,7 @@ import { simulateFrequency } from './frequency';
 interface SimulatePayload {
   year: number;
   hours: number;
+  startTimestamp?: number;
   seed: number;
   profileName: string;
   config: {
@@ -88,6 +89,7 @@ function postProgress(message: string): void {
 function normalizeSimulationPayload(payload: Partial<SimulatePayload>): {
   year: number;
   hours: number;
+  startTimestamp: number | null;
   seed: number;
   profileName: string;
   priceData: { timestamp: number; price: number }[];
@@ -98,6 +100,9 @@ function normalizeSimulationPayload(payload: Partial<SimulatePayload>): {
   return {
     year: toFiniteNumber(payload.year, new Date().getUTCFullYear()),
     hours: Math.max(0, Math.floor(toFiniteNumber(payload.hours, 0))),
+    startTimestamp: Number.isFinite(Number(payload.startTimestamp))
+      ? Math.round(Number(payload.startTimestamp))
+      : null,
     seed: Math.floor(toFiniteNumber(payload.seed, 42)),
     profileName: typeof payload.profileName === 'string' ? payload.profileName : 'medium',
     priceData: normalizePriceData(payload.priceData),
@@ -119,7 +124,7 @@ self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
 
   try {
     const payload = normalizeSimulationPayload(message.payload || {});
-    const { year, hours, seed, profileName, priceData } = payload;
+    const { year, hours, startTimestamp, seed, profileName, priceData } = payload;
 
     const configValues = payload.config;
     const config = new BatteryConfig(
@@ -132,7 +137,9 @@ self.addEventListener('message', (event: MessageEvent<SimulateMessage>) => {
 
     postProgress('Simulerer frekvens');
 
-    const startTime = new Date(Date.UTC(year, 0, 1));
+    const startTime = startTimestamp !== null
+      ? new Date(startTimestamp)
+      : new Date(Date.UTC(year, 0, 1));
     const freqData = simulateFrequency(startTime, hours, 1, seed, profileName);
 
     postProgress('Simulerer batteri');
